@@ -1,0 +1,721 @@
+/* ================================
+   두더지 웹사이트 공통 색상 설정
+================================ */
+:root {
+  --background: #f4f7f5;
+  --card: #ffffff;
+  --text: #18312a;
+  --muted: #6c7f78;
+  --border: #dce7e2;
+
+  --green: #1e8f67;
+  --green-dark: #126447;
+  --green-light: #e6f5ef;
+
+  --blue: #3d7dd8;
+  --blue-light: #eaf2ff;
+
+  --shadow: 0 18px 45px rgba(34, 72, 59, 0.1);
+}
+
+/* 모든 요소의 크기 계산 방식을 통일한다. */
+* {
+  box-sizing: border-box;
+}
+
+/* 웹페이지 전체 배경과 기본 글꼴 */
+body {
+  margin: 0;
+  min-width: 320px;
+
+  background:
+    radial-gradient(circle at top left, #eaf7f1 0, transparent 34%),
+    linear-gradient(180deg, #f8faf9 0%, var(--background) 100%);
+
+  color: var(--text);
+
+  font-family:
+    Pretendard,
+    "Noto Sans KR",
+    Arial,
+    sans-serif;
+}
+
+/* 전체 페이지의 최대 너비와 바깥 여백 */
+.app {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 28px 0 70px;
+}
+
+/* ================================
+   상단 로고와 센서 상태
+================================ */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+/* 두더지 로고 영역 */
+.logo {
+  display: grid;
+  width: 50px;
+  height: 50px;
+
+  place-items: center;
+
+  border-radius: 16px;
+  background: var(--green);
+
+  box-shadow: var(--shadow);
+  font-size: 25px;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.brand p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* 센서 연결 상태 표시 */
+.sensor-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  padding: 10px 14px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  background: white;
+  color: var(--muted);
+
+  font-size: 13px;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+
+  border-radius: 50%;
+  background: #36b37e;
+
+  box-shadow: 0 0 0 5px #e7f7f0;
+}
+
+/* ================================
+   공통 카드 디자인
+================================ */
+.card {
+  border: 1px solid var(--border);
+  border-radius: 24px;
+
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+/* 위쪽 카드 두 개 배치 */
+.top-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr;
+
+  gap: 22px;
+}
+
+/* 아래쪽 카드 두 개 배치 */
+.bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+
+  gap: 22px;
+  margin-top: 22px;
+}
+
+/* ================================
+   현재 추천 카드
+================================ */
+.recommendation-card {
+  padding: 30px;
+}
+
+.section-label {
+  margin: 0;
+
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.recommendation-main {
+  display: flex;
+  align-items: center;
+
+  gap: 22px;
+  margin-top: 18px;
+}
+
+/* 창문, 에어컨 등의 추천 아이콘 */
+.recommendation-icon {
+  display: grid;
+
+  width: 92px;
+  height: 92px;
+  flex: 0 0 92px;
+
+  place-items: center;
+
+  border-radius: 28px;
+  background: var(--green-light);
+
+  font-size: 45px;
+}
+
+/* 에어컨 추천일 때 아이콘 배경색 */
+.recommendation-card.aircon .recommendation-icon {
+  background: var(--blue-light);
+}
+
+/* 현재 상태 유지 추천일 때 아이콘 배경색 */
+.recommendation-card.maintain .recommendation-icon {
+  background: #eef7ee;
+}
+
+.recommendation-main h2 {
+  margin: 0 0 10px;
+
+  font-size: clamp(26px, 4vw, 35px);
+  line-height: 1.25;
+}
+
+.recommendation-main p {
+  margin: 0;
+
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* 추천 이유를 보여주는 박스 */
+.reason-box {
+  display: flex;
+  align-items: flex-start;
+
+  gap: 13px;
+  margin-top: 26px;
+  padding: 18px 20px;
+
+  border: 1px solid var(--border);
+  border-radius: 18px;
+
+  background: #f7faf8;
+}
+
+.reason-box strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.reason-box p {
+  margin: 0;
+
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ================================
+   실내외 환경 카드
+================================ */
+.environment-card {
+  padding: 25px;
+}
+
+.card h3 {
+  margin: 0 0 18px;
+  font-size: 18px;
+}
+
+.environment-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+
+  gap: 14px;
+}
+
+/* 실내와 실외의 개별 온습도 카드 */
+.environment-item {
+  padding: 18px;
+
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+
+.environment-item.indoor {
+  background: #eaf2ff;
+}
+
+.environment-item.outdoor {
+  background: #eff9ff;
+}
+
+.environment-title {
+  display: flex;
+  justify-content: space-between;
+
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.environment-item strong {
+  display: block;
+
+  margin: 12px 0 6px;
+  font-size: 29px;
+}
+
+.environment-item p {
+  margin: 0;
+
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* 예상 절감 시간 박스 */
+.saving-box {
+  display: flex;
+  justify-content: space-between;
+
+  margin-top: 16px;
+  padding: 20px;
+
+  border-radius: 20px;
+
+  background: linear-gradient(
+    135deg,
+    var(--green-dark),
+    var(--green)
+  );
+
+  color: white;
+}
+
+.saving-box span,
+.saving-box strong,
+.saving-box small {
+  display: block;
+}
+
+.saving-box strong {
+  margin: 7px 0 4px;
+  font-size: 28px;
+}
+
+.saving-box small {
+  opacity: 0.8;
+}
+
+.saving-icon {
+  font-size: 25px;
+}
+
+/* ================================
+   온도 변화 그래프
+================================ */
+.chart-card,
+.test-card {
+  padding: 25px;
+}
+
+.chart-legend {
+  display: flex;
+
+  gap: 20px;
+
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.chart-legend span::before {
+  display: inline-block;
+
+  width: 9px;
+  height: 9px;
+
+  margin-right: 7px;
+  border-radius: 50%;
+
+  content: "";
+}
+
+.indoor-legend::before {
+  background: var(--green);
+}
+
+.outdoor-legend::before {
+  background: var(--blue);
+}
+
+/* 현재 그래프는 가상 데이터를 표현한다. */
+.fake-chart {
+  position: relative;
+
+  height: 230px;
+  margin-top: 15px;
+
+  overflow: hidden;
+
+  border: 1px solid var(--border);
+  border-radius: 18px;
+
+  background:
+    linear-gradient(
+      to bottom,
+      transparent 32%,
+      #e3ebe7 33%,
+      transparent 34%,
+      transparent 65%,
+      #e3ebe7 66%,
+      transparent 67%
+    ),
+    #fbfdfc;
+}
+
+.fake-chart svg {
+  width: 100%;
+  height: 100%;
+}
+
+.fake-chart polyline {
+  fill: none;
+
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.indoor-line {
+  stroke: var(--green);
+}
+
+.outdoor-line {
+  stroke: var(--blue);
+}
+
+.chart-times {
+  display: flex;
+  justify-content: space-between;
+
+  margin-top: 10px;
+
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ================================
+   가상 센서 입력 영역
+================================ */
+.input-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+
+  gap: 15px;
+}
+
+.input-grid label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.input-grid input {
+  width: 100%;
+
+  margin-top: 7px;
+  padding: 13px 14px;
+
+  border: 1px solid var(--border);
+  border-radius: 14px;
+
+  outline: none;
+  background: #fbfdfc;
+
+  color: var(--text);
+  font-size: 15px;
+}
+
+/* 입력창을 클릭했을 때 강조 표시 */
+.input-grid input:focus {
+  border-color: #7ac4a8;
+  box-shadow: 0 0 0 4px #eaf7f2;
+}
+
+/* 추천 결과 확인 버튼 */
+.test-card button {
+  width: 100%;
+
+  margin-top: 18px;
+  padding: 15px 18px;
+
+  border: 0;
+  border-radius: 16px;
+
+  background: var(--green);
+  color: white;
+
+  font-size: 15px;
+  font-weight: 700;
+
+  cursor: pointer;
+}
+
+.test-card button:hover {
+  background: var(--green-dark);
+}
+
+/* 추천 기준 설명 */
+.rule-description {
+  margin: 14px 0 0;
+  padding: 13px 15px;
+
+  border-radius: 14px;
+
+  background: #fff8ef;
+  color: #9b5b22;
+
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ================================
+   태블릿 화면 대응
+================================ */
+@media (max-width: 850px) {
+  .top-grid,
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ================================
+   휴대폰 화면 대응
+================================ */
+@media (max-width: 560px) {
+  .app {
+    width: calc(100% - 28px);
+    padding-top: 18px;
+  }
+
+  .header {
+    align-items: flex-start;
+  }
+
+  /* 휴대폰에서는 업데이트 시각을 숨긴다. */
+  .sensor-status span:last-child {
+    display: none;
+  }
+
+  .recommendation-card,
+  .environment-card,
+  .chart-card,
+  .test-card {
+    padding: 20px;
+  }
+
+  .recommendation-main {
+    align-items: flex-start;
+  }
+
+  .recommendation-icon {
+    width: 70px;
+    height: 70px;
+    flex-basis: 70px;
+
+    border-radius: 21px;
+    font-size: 34px;
+  }
+
+  .environment-grid,
+  .input-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ================================
+   실제 온도 기록 그래프
+================================ */
+
+/* 입력 기록을 표시하는 그래프 영역 */
+.real-chart {
+  width: 100%;
+  height: 230px;
+  margin-top: 15px;
+  overflow: hidden;
+
+  border: 1px solid var(--border);
+  border-radius: 18px;
+
+  background: #fbfdfc;
+}
+
+/* 그래프 SVG가 영역 전체를 사용하도록 한다. */
+.real-chart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 실내외 온도 선의 공통 디자인 */
+.real-chart polyline {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 실내 온도 선 */
+.real-chart .indoor-line {
+  stroke: var(--green);
+}
+
+/* 실외 온도 선 */
+.real-chart .outdoor-line {
+  stroke: var(--blue);
+}
+
+/* 그래프의 가로 기준선 */
+.chart-guide-line {
+  stroke: #e3ebe7;
+  stroke-width: 1;
+  stroke-dasharray: 5 5;
+}
+
+/* 그래프 왼쪽의 온도 숫자 */
+.chart-guide-label {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+/* 실내 온도 기록을 나타내는 초록색 점 */
+.indoor-point {
+  fill: var(--green);
+  stroke: white;
+  stroke-width: 2;
+}
+
+/* 실외 온도 기록을 나타내는 파란색 점 */
+.outdoor-point {
+  fill: var(--blue);
+  stroke: white;
+  stroke-width: 2;
+}
+
+/* 그래프 아래 시간 목록 */
+.chart-times {
+  display: flex;
+  justify-content: space-between;
+
+  gap: 8px;
+  margin-top: 10px;
+
+  overflow-x: auto;
+
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* 시간 하나당 최소 너비를 설정한다. */
+.chart-times span {
+  min-width: 56px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* 현재 표시 중인 기록 개수 */
+.chart-record-count {
+  margin: 13px 0 0;
+
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+/* 백엔드 연결 상태를 표시하는 작은 원 */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  display: inline-block;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+/* 백엔드 연결을 확인하는 중 */
+.status-dot.checking {
+  background-color: #f5a623;
+}
+
+/* 백엔드 연결 성공 */
+.status-dot.connected {
+  background-color: #22c55e;
+}
+
+/* 백엔드 연결 실패 */
+.status-dot.error {
+  background-color: #ef4444;
+}
+
+/* 백엔드 요청 중에는 버튼을 흐리게 표시한다. */
+.test-card button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 백엔드 연결 오류 문구 */
+.connection-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background-color: #fee2e2;
+  color: #b91c1c;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* 아직 측정 기록이 없을 때 표시되는 영역 */
+.chart-empty {
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  color: #64748b;
+}
+
+/* 빈 그래프 안내 제목 */
+.chart-empty strong {
+  margin-bottom: 8px;
+  color: #334155;
+  font-size: 16px;
+}
+
+/* 빈 그래프 안내 설명 */
+.chart-empty p {
+  margin: 0;
+  font-size: 14px;
+}
