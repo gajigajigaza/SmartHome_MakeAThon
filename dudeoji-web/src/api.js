@@ -1,8 +1,8 @@
-// 백엔드 서버의 기본 주소를 가져온다.
-// .env 파일에 주소가 없으면 기본값으로 FastAPI 서버 주소를 사용한다.
+// Render에 배포한 FastAPI 백엔드 주소를 사용한다.
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
-
+  import.meta.env.VITE_API_BASE_URL ??
+  "https://dudeoji-makerthon.onrender.com";
+  
 /**
  * 백엔드 API에 요청을 보내는 공통 함수
  *
