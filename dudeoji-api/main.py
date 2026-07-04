@@ -48,12 +48,15 @@ app = FastAPI(
 )
 
 
-# 로컬에서 실행되는 React 개발 서버 주소들
+# React 프론트엔드의 요청을 허용할 주소 목록
 allowed_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:5174",
     "http://127.0.0.1:5174",
+
+    # Render에 배포한 프론트엔드 주소
+    "https://dudeoji-web.onrender.com",
 ]
 
 
