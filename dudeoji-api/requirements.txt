@@ -1,1 +1,2 @@
 fastapi[standard]==0.139.0
+supabase
