@@ -313,25 +313,34 @@ def health_check():
 
 
 # 새로운 센서값과 추천 결과를 Supabase에 저장한다.
-@app.post(
-    "/api/readings",
-    response_model=SensorReadingResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_reading(
-    sensor_data: SensorReadingCreate,
-):
-    # 입력된 센서값으로 추천 결과를 계산한다.
-    recommendation = calculate_recommendation(
-        sensor_data
-    )
+@app.post("/api/readings", response_model=SensorReadingResponse, status_code=status.HTTP_201_CREATED)
+def create_reading(sensor_data: SensorReadingCreate):
+    
+    # 1. 프론트/하드웨어에서 들어온 데이터를 엔진에 맞게 변환
+    env_data = {
+        "indoor_temperature": sensor_data.indoor_temperature,
+        "indoor_humidity": sensor_data.indoor_humidity,
+        "outdoor_temperature": sensor_data.outdoor_temperature,
+        "outdoor_humidity": sensor_data.outdoor_humidity,
+        # TODO: 센서 추가 시 실제 값으로 맵핑할 것
+        "is_raining": False, 
+        "pm25_bad": False,
+        "wind_speed": 3.0
+    }
 
-    # Supabase readings 테이블에 저장할 데이터를 만든다.
-    #
-    # measured_at은 Supabase 테이블의 default now()가 자동으로 넣는다.
+    # 2. 통합 엔진(processor.py) 호출! (기본 수동모드로 테스트, 창문은 닫혀있다고 가정)
+    recommendation_result = determine_action(env_data, window_is_open=False, current_mode="MANUAL")
+
+    # 3. Supabase에 저장할 데이터 조립
     reading_data = {
         **sensor_data.model_dump(),
-        "recommendation": recommendation.model_dump(),
+        # recommendation은 기존 프론트엔드가 요구하는 형식에 맞게 리턴
+        "recommendation": {
+            "action": recommendation_result["action"],
+            "title": "두더지 스마트홈 알림", 
+            "summary": recommendation_result["message"],
+            "reason": recommendation_result["warning"] if recommendation_result["warning"] else "정상 작동 중"
+        }
     }
 
     try:
@@ -421,3 +430,12 @@ def read_recommendation():
     latest_reading = get_latest_reading()
 
     return latest_reading.recommendation
+
+
+from mqtt_handler import start_mqtt
+
+# FastAPI 서버가 시작될 때 MQTT도 같이 실행되도록 설정
+@app.on_event("startup")
+def startup_event():
+    print("FastAPI 서버 시작: MQTT 수신기를 가동합니다.")
+    start_mqtt()
