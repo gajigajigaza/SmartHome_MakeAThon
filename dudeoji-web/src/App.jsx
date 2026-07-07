@@ -262,66 +262,31 @@ function App() {
     setErrorMessage("");
 
     try {
-      // React 입력값을 FastAPI 형식으로 바꿔 전송한다.
       const createdReading = await createReading({
-        indoor_temperature:
-          formData.indoorTemperature,
-
-        indoor_humidity:
-          formData.indoorHumidity,
-
-        outdoor_temperature:
-          formData.outdoorTemperature,
-
-        outdoor_humidity:
-          formData.outdoorHumidity,
+        indoor_temperature: formData.indoorTemperature,
+        indoor_humidity: formData.indoorHumidity,
+        outdoor_temperature: formData.outdoorTemperature,
+        outdoor_humidity: formData.outdoorHumidity,
       });
 
-      // 백엔드 응답을 React 형식으로 변환한다.
-      const convertedReading =
-        convertReading(createdReading);
-
-      // 백엔드에 저장된 값을 환경 카드에 표시한다.
+      // 3. 백엔드 응답을 화면용으로 변환하여 반영
       setSensorData({
-        indoorTemperature:
-          convertedReading.indoorTemperature,
-
-        indoorHumidity:
-          convertedReading.indoorHumidity,
-
-        outdoorTemperature:
-          convertedReading.outdoorTemperature,
-
-        outdoorHumidity:
-          convertedReading.outdoorHumidity,
+        indoorTemperature: createdReading.indoor_temperature,
+        indoorHumidity: createdReading.indoor_humidity,
+        outdoorTemperature: createdReading.outdoor_temperature,
+        outdoorHumidity: createdReading.outdoor_humidity,
       });
 
-      // 백엔드가 계산한 추천 결과를 표시한다.
-      setRecommendation(
-        convertRecommendation(
-          createdReading.recommendation
-        )
-      );
-
-      setUpdatedAt(
-        convertedReading.recordedAt
-      );
-
-      // 새 기록을 그래프에 추가하고 최근 8개만 남긴다.
-      setHistory((previousHistory) =>
-        [
-          ...previousHistory,
-          convertedReading,
-        ].slice(-8)
-      );
-
+      setRecommendation(convertRecommendation(createdReading.recommendation));
+      setUpdatedAt(new Date(createdReading.measured_at));
+      
+      // 그래프 기록 업데이트
+      setHistory((prev) => [...prev, convertReading(createdReading)].slice(-8));
       setConnectionStatus("connected");
+      
     } catch (error) {
       setConnectionStatus("error");
-
-      setErrorMessage(
-        `데이터 전송 실패: ${error.message}`
-      );
+      setErrorMessage(`데이터 전송 실패: ${error.message}`);
     } finally {
       setIsLoading(false);
     }

@@ -47,3 +47,14 @@ def determine_action(env_data, window_is_open):
         "action": "MAINTAIN",
         "message": "현재 온도와 습도가 아주 완벽해요! 지금 상태를 유지하세요."
     }
+
+# processor.py 추가할 로직
+def estimate_savings(action, consumption_per_hour=0.5):
+    # 에어컨(0.5kW/h) 절감 예시
+    if action == "OPEN_WINDOW":
+        return {
+            "kwh": 0.5,
+            "cost_won": 150,
+            "message": "창문 열기로 국밥 한 그릇 값 아끼기 성공!"
+        }
+    return {"kwh": 0, "cost_won": 0, "message": "에너지 절감 중입니다."}
