@@ -1,6 +1,11 @@
 # Render에 등록한 환경변수를 읽기 위해 가져온다.
 import os
 
+from dotenv import load_dotenv #dotenv 라이브러리 불러오기
+load_dotenv()
+
+from datetime import datetime
+
 # Supabase에서 받은 날짜 문자열을 날짜 형식으로 변환하기 위해 사용한다.
 from datetime import datetime
 
@@ -18,6 +23,12 @@ from pydantic import BaseModel, Field
 
 # Supabase DB에 연결하기 위한 기능이다.
 from supabase import Client, create_client
+
+# 통합 판단 규칙 엔진을 가져온다.
+from processor import determine_action
+
+# MQTT 실행 함수
+from mqtt_handler import start_mqtt
 
 
 # ---------------------------------------------------------
@@ -116,6 +127,8 @@ RecommendationAction = Literal[
     "OPEN_WINDOW",
     "USE_AIRCON",
     "MAINTAIN",
+    "CLOSE_WINDOW",
+    "ENJOY"
 ]
 
 
@@ -145,13 +158,19 @@ class SensorReadingCreate(BaseModel):
         description="실외 습도",
     )
 
+class Savings(BaseModel):
+    power_saved_kwh: float
+    time_applied_hours: int
+    cost_won: int
+    message: str
 
 # 백엔드가 계산하는 추천 결과의 형식이다.
 class Recommendation(BaseModel):
-    action: RecommendationAction
+    action: str
     title: str
     summary: str
     reason: str
+    savings: Savings | None = None  # 프론트엔드로 절감 데이터를 보내기 위해 추가!
 
 
 # Supabase에 저장된 센서 기록의 전체 응답 형식이다.
@@ -159,69 +178,6 @@ class SensorReadingResponse(SensorReadingCreate):
     id: int
     measured_at: datetime
     recommendation: Recommendation
-
-
-# ---------------------------------------------------------
-# 추천 계산
-# ---------------------------------------------------------
-
-def calculate_recommendation(
-    sensor_data: SensorReadingCreate,
-) -> Recommendation:
-    """
-    실내외 온도와 습도를 비교해 냉방 방법을 추천한다.
-    """
-
-    # 실내 온도에서 실외 온도를 뺀 값이다.
-    temperature_difference = (
-        sensor_data.indoor_temperature
-        - sensor_data.outdoor_temperature
-    )
-
-    # 실외가 2℃ 이상 낮고 습도가 70% 이하이면 창문 열기를 추천한다.
-    if (
-        temperature_difference >= 2
-        and sensor_data.outdoor_humidity <= 70
-    ):
-        return Recommendation(
-            action="OPEN_WINDOW",
-            title="지금은 창문을 열어보세요",
-            summary="실외 공기가 더 시원하고 습도도 적절합니다.",
-            reason=(
-                f"실외 온도가 실내보다 "
-                f"{temperature_difference:.1f}℃ 낮고, "
-                f"실외 습도가 "
-                f"{sensor_data.outdoor_humidity:.0f}%이므로 "
-                f"자연환기가 유리합니다."
-            ),
-        )
-
-    # 실내가 27℃ 이상이면 에어컨 사용을 추천한다.
-    if sensor_data.indoor_temperature >= 27:
-        return Recommendation(
-            action="USE_AIRCON",
-            title="에어컨 사용을 권장해요",
-            summary="외부 공기로는 실내를 충분히 식히기 어렵습니다.",
-            reason=(
-                f"현재 실내 온도는 "
-                f"{sensor_data.indoor_temperature:.1f}℃이고, "
-                f"실내외 온도 차이는 "
-                f"{temperature_difference:.1f}℃입니다. "
-                f"자연환기보다 냉방이 적절합니다."
-            ),
-        )
-
-    # 위 조건에 해당하지 않으면 현재 상태 유지를 추천한다.
-    return Recommendation(
-        action="MAINTAIN",
-        title="현재 상태를 유지해도 좋아요",
-        summary="실내 환경이 비교적 쾌적한 범위입니다.",
-        reason=(
-            f"현재 실내 온도는 "
-            f"{sensor_data.indoor_temperature:.1f}℃로 "
-            f"냉방이 꼭 필요한 수준은 아닙니다."
-        ),
-    )
 
 
 # ---------------------------------------------------------
@@ -312,34 +268,50 @@ def health_check():
     }
 
 
+def fetch_real_weather():
+    """
+    외부 날씨 API (기상청 등) 연동을 위한 함수입니다.
+    # TODO: 추후 여기에 실제 기상청/OpenWeather API 호출 로직을 연결하면 됩니다.
+    """
+    # 임시 mock 데이터 (현재는 고정값, 나중에 동적으로 교체)
+    return {
+        "weather": "맑음", # 맑음, 비, 눈, 태풍 등
+        "pm25": 15.0,
+        "wind_speed": 3.5
+    }
+
+
 # 새로운 센서값과 추천 결과를 Supabase에 저장한다.
 @app.post("/api/readings", response_model=SensorReadingResponse, status_code=status.HTTP_201_CREATED)
 def create_reading(sensor_data: SensorReadingCreate):
     
-    # 1. 프론트/하드웨어에서 들어온 데이터를 엔진에 맞게 변환
+    # 1. 외부 날씨 API 데이터 가져오기 (가상 또는 실제)
+    weather_info = fetch_real_weather()
+
+    # 2. 통합 엔진에 맞게 데이터 조립
     env_data = {
         "indoor_temperature": sensor_data.indoor_temperature,
         "indoor_humidity": sensor_data.indoor_humidity,
         "outdoor_temperature": sensor_data.outdoor_temperature,
         "outdoor_humidity": sensor_data.outdoor_humidity,
-        # TODO: 센서 추가 시 실제 값으로 맵핑할 것
-        "is_raining": False, 
-        "pm25_bad": False,
-        "wind_speed": 3.0
+        "weather": weather_info["weather"],
+        "pm25": weather_info["pm25"],
+        "wind_speed": weather_info["wind_speed"]
     }
 
-    # 2. 통합 엔진(processor.py) 호출! (기본 수동모드로 테스트, 창문은 닫혀있다고 가정)
+    # 3. 통합 엔진(processor.py) 호출! (기본 수동모드로 테스트, 창문은 닫혀있다고 가정)
+    # TODO: 센서 추가 시 window_is_open 값은 실제 창문 센서값과 연동하세요.
     recommendation_result = determine_action(env_data, window_is_open=False, current_mode="MANUAL")
 
-    # 3. Supabase에 저장할 데이터 조립
+    # 4. Supabase에 저장할 데이터 조립
     reading_data = {
         **sensor_data.model_dump(),
-        # recommendation은 기존 프론트엔드가 요구하는 형식에 맞게 리턴
         "recommendation": {
             "action": recommendation_result["action"],
-            "title": "두더지 스마트홈 알림", 
+            "title": "두더지 스마트홈 추천", 
             "summary": recommendation_result["message"],
-            "reason": recommendation_result["warning"] if recommendation_result["warning"] else "정상 작동 중"
+            "reason": recommendation_result["warning"] if recommendation_result["warning"] else "현재 상태 정상",
+            "savings": recommendation_result["savings"]
         }
     }
 
@@ -431,8 +403,6 @@ def read_recommendation():
 
     return latest_reading.recommendation
 
-
-from mqtt_handler import start_mqtt
 
 # FastAPI 서버가 시작될 때 MQTT도 같이 실행되도록 설정
 @app.on_event("startup")
