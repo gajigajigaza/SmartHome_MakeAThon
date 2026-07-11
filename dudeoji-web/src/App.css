@@ -196,6 +196,16 @@ body {
   background: #eef7ee;
 }
 
+/* 창문을 닫아야 할 때(경고성) 아이콘 배경색 */
+.recommendation-card.close-window .recommendation-icon {
+  background: #fdece7;
+}
+
+/* 환기를 계속 즐기는 중일 때 아이콘 배경색 */
+.recommendation-card.enjoy .recommendation-icon {
+  background: var(--green-light);
+}
+
 .recommendation-main h2 {
   margin: 0 0 10px;
 

@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   deleteMyAccount,
-  fetchMyPlaces,
   updateMyNickname,
   updateMyPassword,
   updateMyRecovery,
-} from "../../api";
+} from "../auth/authApi";
+import { fetchMyPlaces } from "../places/placesApi";
 
 const RECOVERY_ITEMS = [
   { value: "acorn", icon: "🌰" },

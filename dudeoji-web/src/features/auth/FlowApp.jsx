@@ -5,18 +5,22 @@ import "../../FlowApp.css";
 import sproutMenuIcon from "../../assets/sprout-menu.svg";
 import {
   clearAuthToken,
+  getStoredToken,
+} from "../../api";
+import {
   completeSignup,
-  createPlaceWithAircons,
-  fetchAirconModels,
-  fetchMyPlaces,
   getCurrentUser,
   checkUsernameAvailability,
-  getStoredToken,
   loginAccount,
   logoutAccount,
   resetPasswordWithToken,
   verifyRecoveryIdentity,
-} from "../../api";
+} from "./authApi";
+import {
+  createPlaceWithAircons,
+  fetchAirconModels,
+  fetchMyPlaces,
+} from "../places/placesApi";
 
 // 현재는 화면 흐름 테스트를 위한 임시 유사 제품 추정 기준이다.
 // 이후 Supabase의 실제 제품 표본 중앙값으로 교체한다.

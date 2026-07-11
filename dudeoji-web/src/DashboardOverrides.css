@@ -3021,3 +3021,117 @@ main {
   visibility: visible !important;
   pointer-events: auto !important;
 }
+
+/* ---------------------------------------------------------
+   위치 스위처 / 위치 목록 패널 (담당: 정현) — 최소 기본 스타일
+   본격적인 디자인은 위치 기능을 실제로 채울 때 다시 다듬어도 됩니다.
+--------------------------------------------------------- */
+.location-switcher {
+  position: relative;
+  display: inline-block;
+}
+
+.location-switcher-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #e2e2e2);
+  background: var(--surface, #fff);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.location-switcher-button em {
+  font-style: normal;
+  opacity: 0.5;
+  font-size: 12px;
+}
+
+.location-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+
+  width: 240px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border, #e2e2e2);
+  background: var(--surface, #fff);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+}
+
+.location-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.location-panel-header button {
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.location-panel-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.location-panel-list li + li {
+  margin-top: 4px;
+}
+
+.location-panel-list button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.location-panel-list button.active {
+  background: var(--green-light, #eef7ee);
+  font-weight: 600;
+}
+
+.location-panel-empty {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-muted, #888);
+}
+
+.location-panel-add {
+  display: flex;
+  gap: 6px;
+}
+
+.location-panel-add input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border, #e2e2e2);
+  font-size: 13px;
+}
+
+.location-panel-add button {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: none;
+  background: var(--green, #1d9e75);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}

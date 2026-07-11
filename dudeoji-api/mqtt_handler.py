@@ -1,14 +1,17 @@
 # dudeoji-api/mqtt_handler.py
 """라즈베리파이 게이트웨이가 MQTT로 보내는 센서 데이터를 수신하는 모듈.
 
+담당: 민주 (MQTT 사전준비 코드) — 실제 하드웨어 연결·전환은 특정 담당자
+없이 대면 3박4일 현장에서 하드웨어를 세팅하는 사람이 진행합니다.
+
 minzoo 브랜치의 mqtt_handler.py를 옮겨오면서, 실제 저장까지 연결했습니다.
 단, ryeun 스키마는 센서 기록에 user_id가 필요합니다(사용자별 데이터 분리).
 지금은 place_id -> user_id 매핑이 아직 없으므로(= '위치 추가' 기능,
-담당: 나), 페이로드에 place_id를 함께 보내도록 임시로 정해두었습니다.
+담당: 정현(나)), 페이로드에 place_id를 함께 보내도록 임시로 정해두었습니다.
 위치 기능이 붙으면 아래 TODO만 교체하면 됩니다.
 
-기본적으로 비활성화되어 있습니다. 실제 브로커/하드웨어가 준비되면
-환경변수 MQTT_ENABLED=true 로 켜세요.
+기본적으로 비활성화되어 있습니다. 현장에서 실제 브로커/하드웨어를 연결할 때
+MQTT_ENABLED=true로 켜고 아래 TODO(place_id 매핑)를 마무리하면 됩니다.
 """
 import json
 import os
@@ -21,7 +24,7 @@ TOPIC = os.getenv("MQTT_TOPIC", "smarthome/dudeoji/sensor")
 def _resolve_user_id_for_place(supabase, place_id: int):
     """place_id로 해당 장소를 등록한 user_id를 찾는다.
 
-    TODO(나 - 위치 추가 기능): 장치(device)를 place에 직접 매핑하는
+    TODO(정현 - 위치 추가 기능): 장치(device)를 place에 직접 매핑하는
     테이블이 생기면 place_id 대신 device_token으로 조회하도록 변경.
     """
     result = (

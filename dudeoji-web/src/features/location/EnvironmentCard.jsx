@@ -1,5 +1,5 @@
 // src/features/location/EnvironmentCard.jsx
-// 담당: 나 (위치 추가 · 실외 날씨 · 실내외 환경 · 예상 절감)
+// 담당: 정현(나) (위치 추가 · 실외 날씨 · 실내외 환경 · 예상 절감)
 //
 // 지금은 sensorData(백엔드 최신 기록)만 표시합니다.
 // 위치/날씨 입력 UI는 LocationBar.jsx, 절감 요약은 SavingsSummary.jsx에서

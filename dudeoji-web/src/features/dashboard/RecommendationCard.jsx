@@ -17,12 +17,16 @@ export const initialRecommendation = {
 function convertActionToType(action) {
   if (action === "OPEN_WINDOW") return "window";
   if (action === "USE_AIRCON") return "aircon";
+  if (action === "CLOSE_WINDOW") return "close-window";
+  if (action === "ENJOY") return "enjoy";
   return "maintain";
 }
 
 function getRecommendationIcon(action) {
   if (action === "OPEN_WINDOW") return "🪟";
   if (action === "USE_AIRCON") return "❄️";
+  if (action === "CLOSE_WINDOW") return "🚪";
+  if (action === "ENJOY") return "🍃";
   return "✅";
 }
 

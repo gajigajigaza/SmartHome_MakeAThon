@@ -1,5 +1,5 @@
 // src/features/location/SavingsSummary.jsx
-// 담당: 나 (예상 절감 1일 / 1주 / 1달)
+// 담당: 정현(나) (예상 절감 1일 / 1주 / 1달)
 //
 // 지금은 자리만 잡아둔 placeholder입니다.
 // 백엔드 Recommendation.savings(power_saved_kwh, cost_won 등)를

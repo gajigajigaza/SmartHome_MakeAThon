@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import "./App.css";
 import "./DashboardOverrides.css";
-import { getLatestReading, getReadingHistory } from "./api";
+import { getLatestReading, getReadingHistory } from "./features/sensors/readingsApi";
 
 import MyPage from "./features/mypage/MyPage";
 import BadgePage from "./features/badge/BadgePage";
@@ -14,7 +14,7 @@ import RecommendationCard, {
 } from "./features/dashboard/RecommendationCard";
 import EnvironmentCard from "./features/location/EnvironmentCard";
 import SavingsSummary from "./features/location/SavingsSummary";
-import LocationBar from "./features/location/LocationBar";
+import LocationSwitcher from "./features/location/LocationSwitcher";
 import SensorReadings from "./features/sensors/SensorReadings";
 import {
   ProfileBadgeIcon,
@@ -319,8 +319,8 @@ function App({
           isTutorialTarget={isIconTutorialStep}
         />
 
-        {/* 담당: 나 - 위치 추가 / 실외 날씨 (좌측 상단) */}
-        <LocationBar />
+        {/* 담당: 정현(나) - 위치 추가 / 실외 날씨 (좌측 상단) */}
+        <LocationSwitcher />
       </header>
 
       <main>
