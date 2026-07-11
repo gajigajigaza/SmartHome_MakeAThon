@@ -8,7 +8,7 @@ function TemperatureChart({ history }) {
         <strong>아직 측정 기록이 없습니다.</strong>
 
         <p>
-          가상 센서 값을 입력하면 그래프가 자동으로 생성됩니다.
+          센서 노드에서 데이터가 들어오면 그래프가 자동으로 생성됩니다.
         </p>
       </div>
     );

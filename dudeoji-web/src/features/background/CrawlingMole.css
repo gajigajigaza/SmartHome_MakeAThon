@@ -1,0 +1,364 @@
+/* 배경 장식용 두더지: 흰 카드 위가 아니라 상단 초록 배경 영역에서만 한 마리가 천천히 지나간다. */
+.dudeoji-crawling-mole-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 100vw;
+  height: clamp(132px, 20vh, 190px);
+  overflow: hidden;
+  pointer-events: none;
+  contain: layout paint;
+}
+
+.dudeoji-crawling-mole-track {
+  position: absolute;
+  left: 0;
+  top: clamp(88px, 12vh, 126px);
+  width: 100vw;
+  height: 58px;
+  pointer-events: none;
+}
+
+.dudeoji-crawling-mole {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 92px;
+  height: 56px;
+  opacity: 0;
+  transform: translateX(-140px);
+  animation: dudeoji-mole-crawl 68s linear infinite;
+  animation-delay: 3s;
+  pointer-events: none;
+}
+
+.mole-body {
+  position: absolute;
+  left: 13px;
+  top: 13px;
+  width: 54px;
+  height: 31px;
+  border-radius: 28px 28px 20px 20px;
+  background:
+    radial-gradient(circle at 33% 28%, rgba(255, 246, 222, 0.23), transparent 34%),
+    linear-gradient(145deg, #8d674c 0%, #6d4f3b 58%, #513a2d 100%);
+  box-shadow:
+    inset -5px -5px 9px rgba(58, 38, 28, 0.25),
+    0 5px 10px rgba(46, 43, 29, 0.09);
+  animation: dudeoji-mole-bob 1.8s ease-in-out infinite;
+}
+
+.mole-head {
+  position: absolute;
+  right: -10px;
+  top: 7px;
+  width: 25px;
+  height: 20px;
+  border-radius: 15px 17px 13px 12px;
+  background: linear-gradient(145deg, #795942 0%, #5d4232 100%);
+}
+
+.mole-ear {
+  position: absolute;
+  top: 2px;
+  width: 9px;
+  height: 8px;
+  border-radius: 999px;
+  background: #7c5a43;
+  box-shadow: inset -2px -2px 3px rgba(55, 35, 25, 0.18);
+}
+
+.mole-ear-left {
+  left: 14px;
+}
+
+.mole-ear-right {
+  right: 9px;
+}
+
+.mole-back {
+  position: absolute;
+  left: 8px;
+  top: -4px;
+  width: 27px;
+  height: 17px;
+  border-radius: 999px 999px 10px 10px;
+  background: rgba(96, 67, 49, 0.32);
+}
+
+.mole-eye {
+  position: absolute;
+  right: 8px;
+  top: 5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: #17120f;
+  box-shadow: 1px 0 0 rgba(255,255,255,0.35);
+}
+
+.mole-cheek {
+  position: absolute;
+  right: 5px;
+  top: 11px;
+  width: 7px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(218, 152, 116, 0.42);
+}
+
+.mole-nose {
+  position: absolute;
+  right: -4px;
+  top: 9px;
+  width: 8px;
+  height: 6px;
+  border-radius: 999px;
+  background: #302019;
+}
+
+.mole-paw {
+  position: absolute;
+  bottom: -3px;
+  width: 14px;
+  height: 8px;
+  border-radius: 999px;
+  background: #c89b76;
+  transform-origin: 50% 50%;
+}
+
+.mole-paw-front {
+  right: 5px;
+  animation: dudeoji-mole-paw-front 1.15s ease-in-out infinite;
+}
+
+.mole-paw-back {
+  left: 9px;
+  animation: dudeoji-mole-paw-back 1.15s ease-in-out infinite;
+}
+
+.mole-shadow {
+  position: absolute;
+  left: 8px;
+  bottom: 2px;
+  width: 68px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(68, 62, 42, 0.13);
+  filter: blur(1.5px);
+}
+
+.mole-dirt {
+  position: absolute;
+  bottom: 8px;
+  width: 6px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(113, 84, 55, 0.22);
+  animation: dudeoji-dirt-hop 1.6s ease-in-out infinite;
+}
+
+.mole-dirt-one {
+  left: 0;
+  animation-delay: 0s;
+}
+
+.mole-dirt-two {
+  left: 8px;
+  bottom: 14px;
+  transform: scale(0.78);
+  animation-delay: 0.26s;
+}
+
+.mole-dirt-three {
+  left: 18px;
+  transform: scale(0.62);
+  animation-delay: 0.48s;
+}
+
+@keyframes dudeoji-mole-crawl {
+  0% {
+    opacity: 0;
+    transform: translateX(-140px) rotate(0deg);
+  }
+
+  12% {
+    opacity: 0;
+  }
+
+  19% {
+    opacity: 0.58;
+  }
+
+  78% {
+    opacity: 0.58;
+  }
+
+  88% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(calc(100vw + 140px)) rotate(0deg);
+  }
+}
+
+@keyframes dudeoji-mole-bob {
+  0%, 100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes dudeoji-mole-paw-front {
+  0%, 100% {
+    transform: translateX(0) rotate(-8deg);
+  }
+
+  50% {
+    transform: translateX(5px) rotate(10deg);
+  }
+}
+
+@keyframes dudeoji-mole-paw-back {
+  0%, 100% {
+    transform: translateX(3px) rotate(10deg);
+  }
+
+  50% {
+    transform: translateX(-3px) rotate(-8deg);
+  }
+}
+
+@keyframes dudeoji-dirt-hop {
+  0%, 100% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.6);
+  }
+
+  45% {
+    opacity: 0.55;
+    transform: translate(-5px, -4px) scale(1);
+  }
+}
+
+/* 콘텐츠와 팝업은 두더지보다 위에 둔다. 단, fixed/absolute 레이아웃을 건드리지 않는다. */
+.app {
+  position: relative;
+}
+
+.dashboard-header,
+.app > main,
+.dashboard-toast {
+  position: relative;
+  z-index: 2;
+}
+
+@media (max-width: 720px) {
+  .dudeoji-crawling-mole-layer {
+    height: 124px;
+  }
+
+  .dudeoji-crawling-mole-track {
+    top: 82px;
+  }
+
+  .dudeoji-crawling-mole {
+    width: 78px;
+    height: 48px;
+    transform: translateX(-120px) scale(0.84);
+    animation-duration: 50s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dudeoji-crawling-mole {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+
+/* v59: 볼터치와 등 반원 제거 + 더 느리고 둥근 두더지 */
+.mole-cheek,
+.mole-back {
+  display: none !important;
+}
+
+.dudeoji-crawling-mole {
+  animation-duration: 68s !important;
+}
+
+.mole-body {
+  width: 58px !important;
+  height: 33px !important;
+  border-radius: 32px 32px 24px 24px !important;
+  background:
+    radial-gradient(circle at 34% 26%, rgba(255, 249, 232, 0.28), transparent 34%),
+    linear-gradient(145deg, #937158 0%, #735741 58%, #533d30 100%) !important;
+}
+
+.mole-head {
+  right: -12px !important;
+  top: 7px !important;
+  width: 27px !important;
+  height: 21px !important;
+  border-radius: 16px 18px 14px 13px !important;
+  background: linear-gradient(145deg, #80634c 0%, #604838 100%) !important;
+}
+
+.mole-ear {
+  background: #8a6a52 !important;
+}
+
+.mole-eye {
+  right: 8px !important;
+  top: 5px !important;
+  width: 4.5px !important;
+  height: 4.5px !important;
+}
+
+.mole-nose {
+  right: -4px !important;
+  top: 9px !important;
+  width: 8px !important;
+  height: 6px !important;
+  background: #2d211b !important;
+}
+
+.mole-paw {
+  background: #c7a07f !important;
+}
+
+@keyframes dudeoji-mole-crawl {
+  0% {
+    opacity: 0;
+    transform: translateX(-150px) rotate(0deg);
+  }
+
+  14% {
+    opacity: 0;
+  }
+
+  22% {
+    opacity: 0.58;
+  }
+
+  76% {
+    opacity: 0.58;
+  }
+
+  88% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(calc(100vw + 150px)) rotate(0deg);
+  }
+}

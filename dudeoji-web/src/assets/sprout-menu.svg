@@ -1,0 +1,27 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="31" fill="url(#backgroundGradient)"/>
+  <rect x="7" y="7" width="114" height="114" rx="27" fill="#11875E" fill-opacity="0.18"/>
+  <ellipse cx="64" cy="84" rx="24" ry="12" fill="#8D514C"/>
+  <ellipse cx="64" cy="84" rx="19" ry="8" fill="#9D5E55"/>
+  <path d="M64 84C64 69.5 64 57 64 43" stroke="#7CCB36" stroke-width="8" stroke-linecap="round"/>
+  <path d="M61 49C46 35.5 31 35 24 37.5C28 48.5 39.5 58.5 58 57.5C61 57.3 63.2 51.2 61 49Z" fill="url(#leftLeafGradient)"/>
+  <path d="M67.5 50C80.5 38.5 94 38 101 41C97.5 51 86 59 70.5 58.5C67.5 58.3 65 52.3 67.5 50Z" fill="url(#rightLeafGradient)"/>
+  <path d="M62 54C53 48 42 45.5 30 45" stroke="#D8F35C" stroke-width="3.2" stroke-linecap="round" opacity="0.55"/>
+  <path d="M68.5 54C76.5 49.5 85 47.5 96 47.5" stroke="#D8F35C" stroke-width="3.2" stroke-linecap="round" opacity="0.5"/>
+  <circle cx="36" cy="29" r="6" fill="#E7F774" opacity="0.18"/>
+  <circle cx="96" cy="30" r="4" fill="#E7F774" opacity="0.16"/>
+  <defs>
+    <linearGradient id="backgroundGradient" x1="19" y1="14" x2="113" y2="117" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#24966D"/>
+      <stop offset="1" stop-color="#08704E"/>
+    </linearGradient>
+    <linearGradient id="leftLeafGradient" x1="24" y1="36" x2="63" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DBF145"/>
+      <stop offset="1" stop-color="#65BC32"/>
+    </linearGradient>
+    <linearGradient id="rightLeafGradient" x1="102" y1="40" x2="65" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E2F54D"/>
+      <stop offset="1" stop-color="#6CC738"/>
+    </linearGradient>
+  </defs>
+</svg>
