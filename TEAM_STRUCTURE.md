@@ -254,19 +254,28 @@ dudeoji-web/src/features/badge/     (여유 있으면)
 
 ### 백엔드 (.env파일생성 후)
 cd dudeoji-api
+
 pip install -r requirements.txt
+
 fastapi dev main.py
 
 ### 프론트 (.env파일 생성 후)
 cd dudeoji-web
+
 npm install
+
 npm run dev
+
 cd dudeoji-api
+
 $env:AUTH_TOKEN="로그인 토큰"
+
 python dev_tools\mock_simulator.py
 
 ### 로컬말고 배포된 백엔드로 실행하고 싶으면
 cd dudeoji-web
+
 npm install
+
 npm run dev
 
