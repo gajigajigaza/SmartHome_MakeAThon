@@ -11,8 +11,10 @@ signup_complete)에서도 이 파일의 create_place_with_aircons_for_user를
 만들 때 이 places 테이블/엔드포인트를 그대로 재사용할 수도 있으니, 새로
 만들기 전에 먼저 상의해 주세요.
 """
+import os
 from typing import Literal, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
@@ -22,6 +24,13 @@ from db import AIRCON_MODELS_TABLE, PLACES_TABLE, USER_AIRCONS_TABLE, supabase
 router = APIRouter(prefix="/api", tags=["places"])
 
 PowerSource = Literal["database", "user_input", "estimated"]
+
+# jh 수정함 - GET /places/geocode에서 쓰는 카카오 로컬 API 설정
+# (주소 검색으로 결과가 없으면 키워드/장소 검색으로 폴백)
+KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
+KAKAO_ADDRESS_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/address.json"
+KAKAO_KEYWORD_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
+KAKAO_REQUEST_TIMEOUT = 5.0
 
 
 class UserAirconCreate(BaseModel):
@@ -40,7 +49,16 @@ class UserAirconCreate(BaseModel):
 
 class PlaceCreate(BaseModel):
     place_name: str = Field(min_length=1, max_length=50)
+    # jh 수정함 - 회원가입 흐름은 그대로 두기 위해 lat/lon을 선택값으로 추가
+    lat: Optional[float] = None
+    lon: Optional[float] = None
     aircons: list[UserAirconCreate] = Field(min_length=1, max_length=20)
+
+
+# jh 수정함 - PATCH /places/{place_id}에서 lat/lon만 갱신할 때 쓰는 스키마
+class PlaceLocationUpdate(BaseModel):
+    lat: float
+    lon: float
 
 
 def create_place_with_aircons_for_user(
@@ -57,6 +75,9 @@ def create_place_with_aircons_for_user(
                 {
                     "user_id": user_id,
                     "name": payload.place_name.strip(),
+                    # jh 수정함 - 회원가입 시 lat/lon 없으면 None으로 저장됨
+                    "lat": payload.lat,
+                    "lon": payload.lon,
                 }
             )
             .execute()
@@ -213,7 +234,8 @@ def create_place(
 def read_my_places(current_user: dict = Depends(get_current_user)):
     place_result = (
         supabase.table(PLACES_TABLE)
-        .select("id,name,created_at")
+        # jh 수정함 - 위치 기능에 필요한 lat/lon도 응답에 포함
+        .select("id,name,lat,lon,created_at")
         .eq("user_id", current_user["id"])
         .order("created_at")
         .execute()
@@ -231,3 +253,117 @@ def read_my_places(current_user: dict = Depends(get_current_user)):
         places.append({**place, "aircons": aircon_result.data or []})
 
     return places
+
+
+# jh 수정함 - 로그인 후 위치(lat/lon)를 별도로 설정/수정하는 엔드포인트
+@router.patch("/places/{place_id}")
+def update_place_location(
+    place_id: int,
+    payload: PlaceLocationUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    place_result = (
+        supabase.table(PLACES_TABLE)
+        .select("id")
+        .eq("id", place_id)
+        .eq("user_id", current_user["id"])
+        .limit(1)
+        .execute()
+    )
+    if not place_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="장소를 찾을 수 없습니다.",
+        )
+
+    update_result = (
+        supabase.table(PLACES_TABLE)
+        .update({"lat": payload.lat, "lon": payload.lon})
+        .eq("id", place_id)
+        .execute()
+    )
+    return update_result.data[0]
+
+
+# jh 수정함 - GET /places/geocode에서 카카오 API를 호출하는 공용 헬퍼
+# (주소 검색/키워드 검색 둘 다 인증 헤더와 에러 처리가 동일해서 분리함)
+async def _call_kakao_local_api(
+    client: httpx.AsyncClient, url: str, query: str
+) -> dict:
+    try:
+        response = await client.get(
+            url,
+            params={"query": query},
+            headers={"Authorization": f"KakaoAK {KAKAO_REST_API_KEY}"},
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as error:
+        print(f"카카오 로컬 API 오류({url}): {error}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"카카오 로컬 API가 오류를 반환했습니다 ({error.response.status_code}).",
+        ) from error
+    except httpx.HTTPError as error:
+        print(f"카카오 로컬 API 호출 실패({url}): {error}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="카카오 로컬 API 호출에 실패했습니다.",
+        ) from error
+
+
+# jh 수정함 - 위치 설정 화면에서 주소 검색 -> 위경도 변환에 쓰는 엔드포인트
+@router.get("/places/geocode")
+async def geocode_address(
+    query: str = Query(min_length=1, max_length=200),
+    current_user: dict = Depends(get_current_user),
+):
+    """카카오 로컬 API로 주소/장소 문자열을 위경도로 변환한다.
+
+    먼저 주소 검색(/search/address.json)을 시도하고, 결과가 없으면(예:
+    "강남역 스타벅스"처럼 지번/도로명 주소가 아닌 장소명 검색어) 키워드
+    검색(/search/keyword.json)으로 한 번 더 시도한다. 두 API 모두 좌표를
+    x=경도(lon), y=위도(lat) 순서로 반환하므로 여기서 lat/lon으로 맞춰서
+    돌려준다. 키워드 검색 결과는 address_name(주소)이 비어 있을 수 있어
+    place_name(장소명)을 우선 사용한다.
+    """
+    del current_user  # jh 수정함 - 로그인 여부만 확인하고 값은 쓰지 않음
+
+    if not KAKAO_REST_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="KAKAO_REST_API_KEY 환경변수가 설정되어 있지 않습니다.",
+        )
+
+    async with httpx.AsyncClient(timeout=KAKAO_REQUEST_TIMEOUT) as client:
+        address_data = await _call_kakao_local_api(
+            client, KAKAO_ADDRESS_SEARCH_URL, query
+        )
+        address_documents = address_data.get("documents", [])
+
+        if address_documents:
+            return [
+                {
+                    "address": document["address_name"],
+                    "lat": float(document["y"]),
+                    "lon": float(document["x"]),
+                }
+                for document in address_documents
+            ]
+
+        # jh 수정함 - 주소 검색 결과가 없으면 키워드(장소) 검색으로 폴백
+        keyword_data = await _call_kakao_local_api(
+            client, KAKAO_KEYWORD_SEARCH_URL, query
+        )
+        keyword_documents = keyword_data.get("documents", [])
+
+        return [
+            {
+                "address": document.get("place_name")
+                or document.get("address_name")
+                or "",
+                "lat": float(document["y"]),
+                "lon": float(document["x"]),
+            }
+            for document in keyword_documents
+        ]
