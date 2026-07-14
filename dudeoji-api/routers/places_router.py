@@ -25,11 +25,12 @@ router = APIRouter(prefix="/api", tags=["places"])
 
 PowerSource = Literal["database", "user_input", "estimated"]
 
-# jh 수정함 - GET /places/geocode에서 쓰는 카카오 로컬 API 설정
+# jh 수정함 - GET /places/geocode, /places/reverse-geocode에서 쓰는 카카오 로컬 API 설정
 # (주소 검색으로 결과가 없으면 키워드/장소 검색으로 폴백)
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
 KAKAO_ADDRESS_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/address.json"
 KAKAO_KEYWORD_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
+KAKAO_COORD_TO_ADDRESS_URL = "https://dapi.kakao.com/v2/local/geo/coord2address.json"
 KAKAO_REQUEST_TIMEOUT = 5.0
 
 
@@ -285,15 +286,15 @@ def update_place_location(
     return update_result.data[0]
 
 
-# jh 수정함 - GET /places/geocode에서 카카오 API를 호출하는 공용 헬퍼
-# (주소 검색/키워드 검색 둘 다 인증 헤더와 에러 처리가 동일해서 분리함)
+# jh 수정함 - 카카오 로컬 API(주소/키워드/좌표->주소 검색)를 호출하는 공용 헬퍼.
+# 셋 다 인증 헤더와 에러 처리가 동일해서 분리함(요청 파라미터만 다름)
 async def _call_kakao_local_api(
-    client: httpx.AsyncClient, url: str, query: str
+    client: httpx.AsyncClient, url: str, params: dict
 ) -> dict:
     try:
         response = await client.get(
             url,
-            params={"query": query},
+            params=params,
             headers={"Authorization": f"KakaoAK {KAKAO_REST_API_KEY}"},
         )
         response.raise_for_status()
@@ -312,11 +313,12 @@ async def _call_kakao_local_api(
         ) from error
 
 
-# jh 수정함 - 위치 설정 화면에서 주소 검색 -> 위경도 변환에 쓰는 엔드포인트
+# jh 수정함 - 위치 설정/회원가입 화면에서 주소 검색 -> 위경도 변환에 쓰는 엔드포인트.
+# 회원가입 도중(로그인 전)에도 호출해야 해서 인증은 요구하지 않고,
+# 대신 남용 방지를 위해 검색어 최소 길이만 검증한다.
 @router.get("/places/geocode")
 async def geocode_address(
-    query: str = Query(min_length=1, max_length=200),
-    current_user: dict = Depends(get_current_user),
+    query: str = Query(max_length=200),
 ):
     """카카오 로컬 API로 주소/장소 문자열을 위경도로 변환한다.
 
@@ -327,7 +329,12 @@ async def geocode_address(
     돌려준다. 키워드 검색 결과는 address_name(주소)이 비어 있을 수 있어
     place_name(장소명)을 우선 사용한다.
     """
-    del current_user  # jh 수정함 - 로그인 여부만 확인하고 값은 쓰지 않음
+    # jh 수정함 - 로그인 없이도 호출 가능하므로 최소한의 남용 방지 검증만 둠
+    if len(query.strip()) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="검색어는 2자 이상 입력해 주세요.",
+        )
 
     if not KAKAO_REST_API_KEY:
         raise HTTPException(
@@ -337,7 +344,7 @@ async def geocode_address(
 
     async with httpx.AsyncClient(timeout=KAKAO_REQUEST_TIMEOUT) as client:
         address_data = await _call_kakao_local_api(
-            client, KAKAO_ADDRESS_SEARCH_URL, query
+            client, KAKAO_ADDRESS_SEARCH_URL, {"query": query}
         )
         address_documents = address_data.get("documents", [])
 
@@ -353,7 +360,7 @@ async def geocode_address(
 
         # jh 수정함 - 주소 검색 결과가 없으면 키워드(장소) 검색으로 폴백
         keyword_data = await _call_kakao_local_api(
-            client, KAKAO_KEYWORD_SEARCH_URL, query
+            client, KAKAO_KEYWORD_SEARCH_URL, {"query": query}
         )
         keyword_documents = keyword_data.get("documents", [])
 
@@ -367,3 +374,46 @@ async def geocode_address(
             }
             for document in keyword_documents
         ]
+
+
+# jh 수정함 - "현재 위치로 찾기"에서 받은 lat/lon을 사람이 읽을 주소로 바꿔주는 엔드포인트.
+# geocode와 동일한 이유로 로그인 전(회원가입 도중)에도 호출해야 해서 인증을 요구하지 않는다.
+@router.get("/places/reverse-geocode")
+async def reverse_geocode(
+    lat: float = Query(...),
+    lon: float = Query(...),
+):
+    """카카오 좌표->주소 변환 API(coord2address)로 위경도를 주소 문자열로 바꾼다.
+
+    좌표에 대응하는 주소가 없으면(예: 바다 위, 국외 좌표) address를 null로 반환한다
+    (geocode와 달리 이건 남용 여지가 적어 좌표 형식 검증 외에 별도 최소 길이 검증은 두지 않았다).
+    도로명 주소(road_address)가 있으면 그걸 우선 쓰고, 없으면 지번 주소(address)를 쓴다.
+    """
+    if not KAKAO_REST_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="KAKAO_REST_API_KEY 환경변수가 설정되어 있지 않습니다.",
+        )
+
+    async with httpx.AsyncClient(timeout=KAKAO_REQUEST_TIMEOUT) as client:
+        # jh 수정함 - 카카오 좌표 파라미터는 x=경도(lon), y=위도(lat) 순서
+        data = await _call_kakao_local_api(
+            client, KAKAO_COORD_TO_ADDRESS_URL, {"x": lon, "y": lat}
+        )
+
+    documents = data.get("documents", [])
+
+    if not documents:
+        return {"address": None}
+
+    document = documents[0]
+    road_address = document.get("road_address")
+    lot_address = document.get("address")
+
+    address_name = None
+    if road_address:
+        address_name = road_address.get("address_name")
+    if not address_name and lot_address:
+        address_name = lot_address.get("address_name")
+
+    return {"address": address_name}
