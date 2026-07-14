@@ -7,4 +7,5 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi[standard]>=0.139.0",
     "paho-mqtt>=1.6",
+    "httpx>=0.28",
 ]

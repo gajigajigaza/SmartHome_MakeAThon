@@ -429,6 +429,200 @@
   margin-bottom: 20px;
 }
 
+/* jh 수정함 - 위치 검색(선택) UI. place-field/power-method-card/aircon-not-found-button 패턴을 따름 */
+.place-address-field {
+  position: relative;
+}
+
+.place-address-field-label {
+  display: block;
+}
+
+.place-location-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 4px;
+  border-radius: 13px;
+  background: var(--flow-primary-soft);
+}
+
+.place-location-tabs button {
+  flex: 1;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--flow-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.place-location-tabs button:hover {
+  color: var(--flow-primary-dark);
+}
+
+.place-location-tabs button.active {
+  background: white;
+  color: var(--flow-primary-dark);
+  box-shadow: 0 1px 4px rgba(15, 62, 46, 0.14);
+}
+
+.place-location-panel {
+  margin-top: 12px;
+}
+
+/* jh 수정함 - place-field input의 기본 margin-top: 8px을 상쇄해서, "현재 위치로 찾기"
+   탭의 버튼과 상단 위치가 정확히 맞도록 정렬(둘 다 place-location-panel의 첫 요소) */
+.place-location-panel > input.place-address-input {
+  margin-top: 0;
+}
+
+.place-address-input.selected {
+  border-color: var(--flow-primary);
+  background: var(--flow-primary-soft);
+  color: var(--flow-primary-dark);
+  font-weight: 700;
+}
+
+/* jh 수정함 - "위치 선택 취소"를 탭 콘텐츠 안에서 오른쪽 정렬로 배치하는 래퍼 */
+.place-location-clear-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.place-address-clear-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #d45b45;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.place-address-status {
+  display: block;
+  margin-top: 7px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--flow-muted);
+}
+
+.place-address-status.error {
+  color: #d45b45;
+}
+
+.place-address-results {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px;
+  border: 1px solid var(--flow-border);
+  border-radius: 15px;
+  background: #fbfdfc;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.place-address-result-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--flow-border);
+  border-radius: 13px;
+  background: white;
+  color: var(--flow-text);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.place-address-result-card:hover {
+  border-color: var(--flow-primary);
+  background: var(--flow-primary-soft);
+  color: var(--flow-primary-dark);
+  transform: translateY(-1px);
+}
+
+.place-address-result-icon {
+  font-size: 15px;
+}
+
+.place-current-location-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  /* jh 수정함 - 주소로 찾기 탭 입력창(49px)과 상단 정렬을 맞추기 위해 동일 높이 사용 */
+  height: 49px;
+  border: 1px dashed rgba(31, 148, 109, 0.55);
+  border-radius: 14px;
+  background: #f5fbf8;
+  color: var(--flow-primary-dark);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.place-current-location-button:hover:not(:disabled) {
+  border-color: var(--flow-primary);
+  background: var(--flow-primary-soft);
+}
+
+.place-current-location-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.place-current-location-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: rgba(212, 91, 69, 0.08);
+}
+
+.place-current-location-error p {
+  margin: 0;
+}
+
+.place-current-location-error button {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--flow-primary-dark);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
 .aircon-list {
   display: grid;
   gap: 10px;

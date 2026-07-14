@@ -58,7 +58,9 @@
 merged/
 ├── TEAM_STRUCTURE.md              이 문서
 ├── supabase/
-│   └── 002_user_readings.sql      DB 마이그레이션 SQL
+│   ├── 002_user_readings.sql          DB 마이그레이션 SQL
+│   ├── 003_sensor_engine_fields.sql   readings 테이블에 날씨/미세먼지/바람/창문상태 컬럼 추가
+│   └── 004_add_place_location.sql     places 테이블에 lat/lon(nullable) 컬럼 추가
 │
 ├── dudeoji-api/                   [백엔드 · FastAPI]
 │   ├── main.py                    ** 공용 - 라우터를 연결만 하는 앱 조립 파일 **
@@ -67,7 +69,7 @@ merged/
 │   ├── auth_utils.py              [류은] 세션/비밀번호 보안 유틸 + 인증 dependency
 │   ├── recommendation_engine.py   [민주] 판단 규칙 엔진
 │   ├── savings.py                 [정현] 절감량(전력·시간·비용) 계산
-│   ├── weather.py                 [정현] 날씨 API 연동 (추가 예정 · 뼈대만 있음)
+│   ├── weather.py                 [정현] 날씨 API 연동 (구현 완료 · OpenWeatherMap One Call/Air Pollution)
 │   ├── mqtt_handler.py            [민주] MQTT 사전 준비 코드 (실제 하드웨어 연결은 현장에서 진행)
 │   ├── routers/
 │   │   ├── auth_router.py         [류은] 회원가입/로그인/마이페이지 API
@@ -78,7 +80,7 @@ merged/
 │   │   ├── mock_simulator.py      서버로 가짜 센서값 계속 전송 (터미널에서 직접 실행)
 │   │   └── mock_generator.py      가짜 시계열 데이터 생성 함수
 │   ├── requirements.txt / pyproject.toml / uv.lock
-│   └── .env                       ← 각자 로컬에 직접 생성 (Supabase 키, git에 안 올라감)
+│   └── .env                       ← 각자 로컬에 직접 생성 (Supabase 키, OPENWEATHER_API_KEY, KAKAO_REST_API_KEY 등, git에 안 올라감)
 │
 └── dudeoji-web/                   [프론트 · React + Vite]
     └── src/
@@ -125,12 +127,12 @@ merged/
 | `database.py` | 예전 SQLite 버전의 흔적으로, 지금 서비스에서는 어디서도 호출되지 않는 미사용 파일 | - |
 | `auth_utils.py` | 비밀번호 해시, 세션 토큰 생성/검증, `get_current_user`(로그인한 사용자인지 확인하는 함수). 다른 라우터들이 이걸 가져다 씀 | **류은** |
 | `routers/auth_router.py` | `/api/auth/*` — 회원가입, 로그인, 로그아웃, 아이디 중복확인, 비번 찾기, 닉네임/비번/복구정보 변경, 탈퇴 | **류은** |
-| `routers/places_router.py` | `/api/aircon-models`, `/api/places` — 에어컨 제품 검색, 장소+에어컨 등록/조회 | **류은** |
+| `routers/places_router.py` | `/api/aircon-models`, `/api/places`(GET/POST), `/api/places/{place_id}`(PATCH, 위치만 갱신), `/api/places/geocode`, `/api/places/reverse-geocode` — 에어컨 제품 검색, 장소+에어컨 등록/조회, 주소·현재위치 ↔ 위경도 변환(카카오 로컬 API). `places` 테이블에 `lat`/`lon`(nullable) 컬럼 있음(`supabase/004_add_place_location.sql`) | **류은** |
 | `routers/readings_router.py` | `/api/readings/*`, `/api/recommendation` — 센서 기록 저장/조회, 추천 결과 조회. MQTT/dev_tools로 들어오는 센서 데이터도 결국 여기로 저장됨 | **민주** |
 | `recommendation_engine.py` | 실내외 온습도 + 날씨/미세먼지/바람을 보고 "창문 열기/에어컨/유지"를 판단하는 규칙 엔진 (`determine_action`) | **민주** |
 | `savings.py` | 판단된 행동(action)에 대해 절감 전력(kWh)·시간·비용(원)·멘트를 계산 (`estimate_savings`) | **정현** |
-| `weather.py` | 외부 날씨 API 연동. `추가 예정` — 지금은 함수 자리(`fetch_outdoor_weather`)만 있고 실제 호출 로직은 없음 | **정현** |
-| `routers/locations_router.py` | 위치(집/회사) 저장/조회/선택 API. `추가 예정` — 아직 엔드포인트가 없고 `main.py`에도 연결 안 함. 시작 전 류은의 `places_router.py`와 통합 방향부터 상의 필요 | **정현** |
+| `weather.py` | 외부 날씨 API 연동. 구현 완료 — `fetch_outdoor_weather(lat, lon)`이 OpenWeatherMap One Call/Air Pollution API를 호출해 실외 날씨+미세먼지를 반환. 다만 아직 `readings_router.py`가 이 함수를 호출하지 않아서 실제 파이프라인에는 연결 안 됨 | **정현** |
+| `routers/locations_router.py` | 위치(집/회사) 저장/조회/선택 API. `추가 예정` — 아직 엔드포인트가 없고 `main.py`에도 연결 안 됨. 류은의 `places_router.py`와의 통합 방향은 이미 실행됨(→ `places` 테이블에 `lat`/`lon` 컬럼 추가, 위치 검색은 `places_router.py`의 `geocode`/`reverse-geocode`로 구현됨) — 이 파일 자체는 여전히 빈 뼈대 상태 | **정현** |
 | `mqtt_handler.py` | 라즈베리파이 게이트웨이가 MQTT로 보내는 실제 센서 데이터를 받아서 저장까지 연결하는 코드(사전 준비) | **민주** (실제 하드웨어 연결·전환은 특정 담당자 없이 대면 현장에서 진행) |
 | `dev_tools/mock_simulator.py` | 하드웨어 없을 때 터미널에서 실행해서 가짜 센서값을 5초마다 서버로 계속 보내는 스크립트(지금 단계 테스트용) | **민주** (실제 하드웨어 연결·전환은 특정 담당자 없이 대면 현장에서 진행) |
 | `dev_tools/mock_generator.py` | 온도 그래프 화면 테스트용 가짜 시계열 데이터 생성 함수 | **민주** |
@@ -146,19 +148,24 @@ merged/
 
 ## 3. 위치 파트 구조에 대한 설명
 
-- `useSelectedLocation.js` — 저장된 위치 목록, 현재 선택된 위치를 관리하는 훅. 지금은 `localStorage`에 저장하는 임시 버전
+- `useSelectedLocation.js` — 저장된 위치 목록, 현재 선택된 위치를 관리하는 훅. 지금도 `localStorage`에 저장하는 임시 버전 그대로임(아직 API 연동 안 됨)
 - `LocationSwitcher.jsx` — 헤더 좌측 상단에 보이는 버튼. 누르면 `LocationListPanel`이 열림.
-- `LocationListPanel.jsx` — 위치 목록을 보여주고, 선택/추가하는 패널.
+- `LocationListPanel.jsx` — 위치 목록을 보여주고, 선택/추가하는 패널. 지금도 이름만 받는 자유 텍스트 폼이고, 주소 검색/좌표 연결은 아직 안 붙어 있음.
 
 **참고할 점:** 류은이 만든 장소(place) 등록 기능(`/api/places`)도 개념적으로
-"집/회사 같은 장소 여러 개"를 다룸. 지금은 완전히 독립된 로컬 저장 방식으로
-만들어뒀지만, 실제로는 이 `places` 테이블을 그대로 재사용하거나(위경도·지역 코드
-컬럼만 추가) 확장하는 방향이 나을 수 있음. 이 부분은 구현 전에 류은과 상의가
-필요 — `useSelectedLocation.js` 안에 관련 TODO 주석
+"집/회사 같은 장소 여러 개"를 다룸. 아래 두 가지는 이미 진행됨:
+- `places` 테이블에 `lat`/`lon`(nullable) 컬럼 추가(`supabase/004_add_place_location.sql`)
+- 주소/현재 위치를 위경도로 바꿔주는 `GET /places/geocode`, `GET /places/reverse-geocode`(카카오 로컬 API 연동)를 `places_router.py`에 구현
+
+다만 이 검색 UI는 여기(`features/location/`)가 아니라 `features/auth/FlowApp.jsx`의
+`AirconPage`(회원가입 2단계 '에어컨 등록' 화면, 장소를 처음 등록하는 시점)에 붙어
+있습니다. 여러 위치를 저장해두고 전환하는 `LocationSwitcher.jsx`/
+`LocationListPanel.jsx`/`useSelectedLocation.js` 쪽에는 아직 이 검색 UI가
+적용되지 않았습니다 — 같은 검색 UI를 여기에도 적용할지는 아직 미정.
 
 선택된 위치가 정해지면, 그 위치의 실외 날씨를 API로 받아서
 `SensorReadingCreate`의 `weather_condition`/`pm25`/`wind_speed`에 실어
-`/api/readings`로 보내기
+`/api/readings`로 보내기 (아직 미착수)
 
 ---
 
@@ -205,10 +212,10 @@ dudeoji-web/src/features/mypage/
 ### 정현 (나)
 ```
 dudeoji-api/savings.py
-dudeoji-api/weather.py                    → 추가 예정
-dudeoji-api/routers/locations_router.py   → 추가 예정, main.py에 아직 연결 안 됨
+dudeoji-api/weather.py                    → 구현 완료(OpenWeatherMap 연동)
+dudeoji-api/routers/locations_router.py   → 여전히 뼈대만 있고 main.py에 연결 안 됨(위치 통합은 places_router.py 쪽에서 진행됨)
 dudeoji-api/main.py, dudeoji-api/db.py    → 앱 전반 골격/에러 처리 패턴, 새 라우터 연결
-dudeoji-web/src/features/location/        → 여기에 날씨 API 연동 로직 + locationApi.js 추가 예정
+dudeoji-web/src/features/location/        → 위치 저장/전환 UI(useSelectedLocation 등)는 여전히 localStorage 임시 버전. 위치 검색(주소→좌표) UI는 여기가 아니라 features/auth/FlowApp.jsx에 구현됨
 ```
 
 ### 민주
@@ -240,12 +247,15 @@ dudeoji-web/src/features/badge/     (여유 있으면)
 
 ### 위치 추가/관리/설정 (정현)
 
-지난번에 만들어둔 `features/location/` 구조(`LocationSwitcher.jsx`,
-`LocationListPanel.jsx`, `useSelectedLocation.js`)가 이 역할을 위한
-뼈대입니다. 실제로 채울 때 주의할 점:
+`features/location/` 구조(`LocationSwitcher.jsx`, `LocationListPanel.jsx`,
+`useSelectedLocation.js`)가 이 역할을 위한 뼈대입니다. 진행 상황:
 
-- **류은의 장소(place) 등록 기능과 반드시 조율하기.** `/api/places`가 이미 "집/회사 같은 장소 여러 개 + 그 장소의 에어컨"을 다루고 있어서, 완전히 새로운 위치 시스템을 만들면 사용자 입장에서 "장소"와 "위치"가 두 개로 따로 놀 수 있습니다. 가능하면 `places` 테이블에 위경도/지역코드 컬럼만 추가해서 재사용하는 걸 먼저 검토해 주세요.
-- **지금 `useSelectedLocation.js`는 브라우저 `localStorage`에만 저장됩니다.** 한 번 설정하면 새로고침해도 유지되긴 하지만, 다른 기기/브라우저로 로그인하면 초기화됩니다. 최종적으로는 서버(Supabase)에 저장해야 로그아웃 후 재로그인·다른 기기에서도 유지되고, 위 항목처럼 `places` 테이블과 합치면 자연스럽게 서버 저장으로 넘어갑니다. `loadLocations`/`saveLocations`/`selectLocation` 부분만 API 호출로 바꾸면 되고, 이 훅을 쓰는 `LocationSwitcher.jsx` 등은 그대로 두면 됩니다.
+**완료됨**
+- **류은의 장소(place) 등록 기능과 조율 완료.** 새 위치 시스템을 따로 만들지 않고, `places` 테이블에 `lat`/`lon`(nullable) 컬럼을 추가하는 방향으로 진행함(`supabase/004_add_place_location.sql`). 주소/현재 위치를 위경도로 바꿔주는 `GET /places/geocode`, `GET /places/reverse-geocode`(카카오 로컬 API)도 `places_router.py`에 구현됨.
+- 다만 이 검색 UI는 `features/location/`이 아니라 `features/auth/FlowApp.jsx`의 `AirconPage`(회원가입 2단계, 장소를 처음 등록하는 화면)에 붙어 있습니다. 여러 위치를 저장해두고 전환하는 `LocationSwitcher`/`LocationListPanel`/`useSelectedLocation.js` 쪽에는 아직 이 검색 UI가 적용되지 않았습니다.
+
+**아직 안 됨**
+- **`useSelectedLocation.js`는 여전히 브라우저 `localStorage`에만 저장됩니다.** 한 번 설정하면 새로고침해도 유지되지만, 다른 기기/브라우저로 로그인하면 초기화됩니다. `loadLocations`/`saveLocations`/`selectLocation` 부분을 `places` API 호출(`GET /places`, `PATCH /places/{place_id}`)로 바꾸면 서버 저장으로 넘어갈 수 있고, 이 훅을 쓰는 `LocationSwitcher.jsx` 등은 그대로 두면 됩니다.
 - **"위치 선택 → 화면 전환"은 지금 App.jsx 라우팅과는 다른 종류의 전환입니다.** 지금 `App.jsx`의 `currentPage`는 "대시보드/마이페이지/뱃지/센서측정값" 같은 큰 화면 전환이고, 위치 선택은 그 안에서 "표시되는 데이터가 바뀌는 것"에 가깝습니다. 새 페이지로 만들지, `LocationListPanel`처럼 패널/모달로 유지할지 먼저 정하고 시작하는 게 좋습니다.
 - 위치가 여러 개면 "각 위치마다 최근 센서 기록이 따로 있어야 하는가"도 정해야 합니다. 지금 `readings` 테이블은 장소 구분 없이 사용자 1명당 최신 기록 1줄만 조회하는 구조라, 위치별로 나누려면 `readings` 테이블에도 `place_id`(또는 `location_id`) 컬럼이 필요할 수 있습니다. 이건 민주(`readings_router.py`)와 같이 상의해야 하는 부분입니다.
 

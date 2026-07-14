@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import Dashboard from "../../App";
 import "../../FlowApp.css";
@@ -6,6 +6,7 @@ import sproutMenuIcon from "../../assets/sprout-menu.svg";
 import {
   clearAuthToken,
   getStoredToken,
+  request, // jh 수정함 - 위치 검색(GET /places/geocode) 호출에 재사용
 } from "../../api";
 import {
   completeSignup,
@@ -856,6 +857,29 @@ function AirconPage({
   const [placeName, setPlaceName] =
     useState("우리 집");
 
+  // jh 수정함 - 위치 검색(선택사항). 검색 안 하면 lat/lon은 null로 유지된다.
+  // 탭: "주소로 찾기" / "현재 위치로 찾기"
+  const [locationMode, setLocationMode] = useState("address");
+  const [addressQuery, setAddressQuery] = useState("");
+  const [addressResults, setAddressResults] = useState([]);
+  const [isAddressSearching, setIsAddressSearching] = useState(false);
+  const [addressSearchError, setAddressSearchError] = useState("");
+  // "현재 위치로 찾기" 탭 전용 표시 문구("현재 위치: {주소}"). 주소 검색 탭은
+  // 선택한 주소를 addressQuery(입력창 값) 자체로 표시하므로 이 상태를 쓰지 않는다.
+  const [currentLocationLabel, setCurrentLocationLabel] = useState("");
+  const [placeLat, setPlaceLat] = useState(null);
+  const [placeLon, setPlaceLon] = useState(null);
+  const [isLocatingCurrentPosition, setIsLocatingCurrentPosition] =
+    useState(false);
+  const [currentLocationError, setCurrentLocationError] = useState("");
+  // 검색 결과를 선택하면 addressQuery를 그 주소로 채우는데, 이때 디바운스
+  // 검색 effect가 곧바로 다시 실행되면서 방금 고른 결과로 또 검색해
+  // 드롭다운이 재등장하는 걸 막기 위한 플래그
+  const skipNextAddressSearchRef = useRef(false);
+  // jh 수정함 - 탭을 전환한 뒤에 이전 현재위치 요청(navigator.geolocation)이
+  // 뒤늦게 응답해서 상태를 덮어쓰는 걸 막기 위한 요청 토큰
+  const currentLocationRequestIdRef = useRef(0);
+
   // 현재 어떤 등록 칸에서 에어컨을 선택 중인지 저장한다.
   const [selectingIndex, setSelectingIndex] =
     useState(null);
@@ -939,6 +963,162 @@ function AirconPage({
       window.clearTimeout(timerId);
     };
   }, [searchTerm, selectingIndex, selectorView]);
+
+  // jh 수정함 - 위치 검색: GET /places/geocode를 300ms 디바운스로 호출.
+  // 검색 결과를 방금 선택해서 addressQuery가 바뀐 경우(skipNextAddressSearchRef)엔
+  // 같은 텍스트로 또 검색해서 드롭다운이 다시 뜨는 걸 막는다.
+  useEffect(() => {
+    if (skipNextAddressSearchRef.current) {
+      skipNextAddressSearchRef.current = false;
+      setAddressResults([]);
+      setAddressSearchError("");
+      return undefined;
+    }
+
+    const trimmedQuery = addressQuery.trim();
+
+    if (!trimmedQuery) {
+      setAddressResults([]);
+      setAddressSearchError("");
+      return undefined;
+    }
+
+    let ignoreResult = false;
+    setIsAddressSearching(true);
+    setAddressSearchError("");
+
+    const timerId = window.setTimeout(async () => {
+      try {
+        // jh 수정함 - 회원가입 도중(로그인 전, 토큰 없음)에도 호출해야 해서
+        // 인증 없이 요청한다(백엔드도 이 엔드포인트는 인증을 요구하지 않음).
+        const results = await request(
+          `/api/places/geocode?query=${encodeURIComponent(trimmedQuery)}`,
+        );
+
+        if (!ignoreResult) {
+          setAddressResults(results);
+        }
+      } catch (error) {
+        if (!ignoreResult) {
+          setAddressResults([]);
+          setAddressSearchError(error.message);
+        }
+      } finally {
+        if (!ignoreResult) {
+          setIsAddressSearching(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      ignoreResult = true;
+      window.clearTimeout(timerId);
+    };
+  }, [addressQuery]);
+
+  // jh 수정함 - 검색 결과 선택: lat/lon 저장 + 입력창 값 자체를 선택한 주소로 채움(자동완성처럼).
+  // 다시 타이핑을 시작하면(=addressQuery가 또 바뀌면) 위 effect가 정상적으로 재검색한다.
+  function selectAddressResult(result) {
+    setPlaceLat(result.lat);
+    setPlaceLon(result.lon);
+    setCurrentLocationLabel("");
+    skipNextAddressSearchRef.current = true;
+    setAddressQuery(result.address);
+    setAddressResults([]);
+  }
+
+  // jh 수정함 - ESC로 검색어/드롭다운만 취소, 이미 확정된 선택(placeLat/placeLon)은 그대로 둔다
+  function handleAddressInputKeyDown(event) {
+    if (event.key === "Escape") {
+      setAddressQuery("");
+      setAddressResults([]);
+    }
+  }
+
+  // jh 수정함 - "위치 선택 취소" 버튼을 눌렀을 때 선택값(양쪽 탭 표시 상태 포함)을 초기화한다
+  function clearSelectedLocation() {
+    // 진행 중이던 현재 위치 요청이 있으면 나중에 응답이 와도 무시하게 만든다
+    currentLocationRequestIdRef.current += 1;
+    setPlaceLat(null);
+    setPlaceLon(null);
+    setAddressQuery("");
+    setAddressResults([]);
+    setAddressSearchError("");
+    setCurrentLocationLabel("");
+    setCurrentLocationError("");
+    setIsLocatingCurrentPosition(false);
+  }
+
+  // jh 수정함 - 탭을 전환하면 이전 탭에서 선택했던 위치(placeLat/placeLon,
+  // 양쪽 탭의 입력창 상태)를 전부 초기화한 뒤 탭을 바꾼다
+  function switchLocationMode(nextMode) {
+    if (nextMode === locationMode) {
+      return;
+    }
+
+    clearSelectedLocation();
+    setLocationMode(nextMode);
+  }
+
+  // jh 수정함 - "현재 위치로 찾기" 탭: navigator.geolocation으로 lat/lon을 받고,
+  // GET /places/reverse-geocode로 그 좌표를 실제 주소 문자열로 바꿔서 같이 보여준다.
+  // 성공하면 버튼 자리가 주소 탭과 같은 place-address-input(selected) 입력창으로 바뀐다.
+  function handleUseCurrentLocation() {
+    if (!navigator.geolocation) {
+      setCurrentLocationError(
+        "이 브라우저는 위치 정보 조회를 지원하지 않습니다. 주소로 찾기를 이용해 주세요.",
+      );
+      return;
+    }
+
+    const requestId = ++currentLocationRequestIdRef.current;
+    setIsLocatingCurrentPosition(true);
+    setCurrentLocationError("");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        // jh 수정함 - 요청 도중 탭이 바뀌었으면(=취소/재요청됨) 이 응답은 버린다
+        if (currentLocationRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        const { latitude, longitude } = position.coords;
+        setPlaceLat(latitude);
+        setPlaceLon(longitude);
+
+        let resolvedLabel = "현재 위치로 설정됨";
+
+        try {
+          const result = await request(
+            `/api/places/reverse-geocode?lat=${latitude}&lon=${longitude}`,
+          );
+
+          if (result.address) {
+            resolvedLabel = `현재 위치: ${result.address}`;
+          }
+        } catch {
+          // jh 수정함 - 주소 변환이 실패해도 좌표는 이미 받았으니 선택 자체는 유지한다
+        }
+
+        if (currentLocationRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setCurrentLocationLabel(resolvedLabel);
+        setIsLocatingCurrentPosition(false);
+      },
+      () => {
+        if (currentLocationRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setCurrentLocationError(
+          "위치 권한이 거부되었거나 위치를 가져오지 못했습니다. 주소로 찾기를 이용해 주세요.",
+        );
+        setIsLocatingCurrentPosition(false);
+      },
+    );
+  }
 
   function resetSelectorForms() {
     setSearchTerm("");
@@ -1213,7 +1393,13 @@ function AirconPage({
     setIsSaving(true);
 
     try {
-      await onComplete(placeName.trim(), registeredAircons);
+      // jh 수정함 - 위치 검색을 안 했으면 placeLat/placeLon은 null 그대로 전달
+      await onComplete(
+        placeName.trim(),
+        registeredAircons,
+        placeLat,
+        placeLon,
+      );
     } catch (error) {
       alert(error.message);
     } finally {
@@ -1261,6 +1447,142 @@ function AirconPage({
             placeholder="예: 우리 집, 자취방, 사무실"
           />
         </label>
+
+        {/* jh 수정함 - 위치 검색(선택). 검색 안 해도 장소 등록은 그대로 진행됨 */}
+        <div className="place-field place-address-field">
+          <span className="place-address-field-label">위치 검색 (선택)</span>
+
+          <div className="place-location-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={locationMode === "address"}
+              className={locationMode === "address" ? "active" : ""}
+              onClick={() => switchLocationMode("address")}
+            >
+              주소로 찾기
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={locationMode === "current"}
+              className={locationMode === "current" ? "active" : ""}
+              onClick={() => switchLocationMode("current")}
+            >
+              현재 위치로 찾기
+            </button>
+          </div>
+
+          {locationMode === "address" ? (
+            <div className="place-location-panel">
+              {/* jh 수정함 - 선택한 주소는 별도 표시 줄 없이 입력창 값 자체로 보여줌(자동완성처럼).
+                  편집은 그대로 가능하고, 다시 타이핑하면 위 디바운스 effect가 재검색한다. */}
+              <input
+                type="text"
+                className={
+                  placeLat !== null && placeLon !== null
+                    ? "place-address-input selected"
+                    : "place-address-input"
+                }
+                value={addressQuery}
+                onChange={(event) => setAddressQuery(event.target.value)}
+                onKeyDown={handleAddressInputKeyDown}
+                placeholder="예: 서울 강남구 테헤란로, 강남역 스타벅스"
+              />
+
+              {isAddressSearching && (
+                <small className="place-address-status">검색 중...</small>
+              )}
+
+              {!isAddressSearching && addressSearchError && (
+                <small className="place-address-status error">
+                  {addressSearchError}
+                </small>
+              )}
+
+              {addressResults.length > 0 && (
+                <ul className="place-address-results">
+                  {addressResults.map((result, index) => (
+                    <li key={`${result.address}-${index}`}>
+                      <button
+                        type="button"
+                        className="place-address-result-card"
+                        onClick={() => selectAddressResult(result)}
+                      >
+                        <span className="place-address-result-icon">📍</span>
+                        <span>{result.address}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* jh 수정함 - "위치 선택 취소"를 탭 안에서 오른쪽 정렬로 배치 */}
+              {placeLat !== null &&
+                placeLon !== null &&
+                addressResults.length === 0 && (
+                  <div className="place-location-clear-row">
+                    <button
+                      type="button"
+                      className="place-address-clear-link"
+                      onClick={clearSelectedLocation}
+                    >
+                      위치 선택 취소
+                    </button>
+                  </div>
+                )}
+            </div>
+          ) : (
+            <div className="place-location-panel">
+              {/* jh 수정함 - 주소 탭과 같은 패턴: 성공하면 버튼 자리가
+                  place-address-input(selected) 스타일의 읽기 전용 입력창으로 바뀐다 */}
+              {currentLocationLabel ? (
+                <input
+                  type="text"
+                  className="place-address-input selected"
+                  value={currentLocationLabel}
+                  readOnly
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="place-current-location-button"
+                  onClick={handleUseCurrentLocation}
+                  disabled={isLocatingCurrentPosition}
+                >
+                  {isLocatingCurrentPosition
+                    ? "위치 확인 중..."
+                    : "📍 현재 위치 가져오기"}
+                </button>
+              )}
+
+              {currentLocationError && (
+                <div className="place-address-status error place-current-location-error">
+                  <p>{currentLocationError}</p>
+                  <button
+                    type="button"
+                    onClick={() => switchLocationMode("address")}
+                  >
+                    주소로 찾기로 전환
+                  </button>
+                </div>
+              )}
+
+              {/* jh 수정함 - "위치 선택 취소"를 탭 안에서 오른쪽 정렬로 배치 */}
+              {placeLat !== null && placeLon !== null && (
+                <div className="place-location-clear-row">
+                  <button
+                    type="button"
+                    className="place-address-clear-link"
+                    onClick={clearSelectedLocation}
+                  >
+                    위치 선택 취소
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="aircon-list">
           {registeredAircons.map((aircon, index) => (
@@ -1963,9 +2285,12 @@ function FlowApp() {
     await handleLogout();
   }
 
-  async function handleAirconComplete(placeName, aircons) {
+  async function handleAirconComplete(placeName, aircons, lat, lon) {
     const payload = {
       place_name: placeName,
+      // jh 수정함 - 위치 검색을 안 했으면 lat/lon은 null로 전달됨
+      lat: lat ?? null,
+      lon: lon ?? null,
       aircons: aircons.map((aircon) => ({
         nickname: aircon.roomName,
         aircon_model_id:
