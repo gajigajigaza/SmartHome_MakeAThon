@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import { useEffect, useState } from "react";
 
 import "./App.css";
@@ -16,6 +17,11 @@ import EnvironmentCard from "./features/location/EnvironmentCard";
 import SavingsSummary from "./features/location/SavingsSummary";
 import LocationSwitcher from "./features/location/LocationSwitcher";
 import SensorReadings from "./features/sensors/SensorReadings";
+
+// 우리가 제작한 설정 컴포넌트 및 자동제어 팝업 컴포넌트
+import CooldownSettings from "./features/places/CooldownSettings";
+import RecommendationPopup from "./features/dashboard/RecommendationPopup";
+
 import {
   ProfileBadgeIcon,
   PROFILE_BADGES,
@@ -50,6 +56,13 @@ function App({
   const [recommendation, setRecommendation] = useState(
     convertRecommendation(null),
   );
+  
+  // 팝업 모달창에 그대로 넘겨줄 백엔드 오리지널 추천 상태
+  const [rawRecommendation, setRawRecommendation] = useState(null);
+
+  // 💡 사용자가 현재 자동제어 팝업을 보고 있는 중인지 판별하는 상태 (리셋 방지용)
+  const [isPopupActive, setIsPopupActive] = useState(false);
+
   const [readingHistory, setReadingHistory] = useState([]);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -64,55 +77,70 @@ function App({
 
   const currentProfileBadge = getProfileBadgeById(profileBadgeId);
 
+  // 사용자 세션의 토큰을 가져오는 장치
+  const currentToken = localStorage.getItem("access_token") || "";
+
   useEffect(() => {
     setProfileBadgeId(getStoredProfileBadgeId(user));
   }, [user?.username]);
 
-  // 대시보드에 필요한 "가장 최근 값 1건"을 불러온다.
-  useEffect(() => {
-    let ignoreResult = false;
+  // 백엔드 API로부터 최신 추천 데이터를 한 번 읽어오는 핵심 함수
+  async function loadLatestReading() {
+    try {
+      const latestBackendReading = await getLatestReading();
+      const latestReading = convertReading(latestBackendReading);
 
-    async function loadLatestReading() {
-      try {
-        const latestBackendReading = await getLatestReading();
+      setSensorData({
+        indoorTemperature: latestReading.indoorTemperature,
+        indoorHumidity: latestReading.indoorHumidity,
+        outdoorTemperature: latestReading.outdoorTemperature,
+        outdoorHumidity: latestReading.outdoorHumidity,
+      });
 
-        if (ignoreResult) return;
-
-        const latestReading = convertReading(latestBackendReading);
-
-        setSensorData({
-          indoorTemperature: latestReading.indoorTemperature,
-          indoorHumidity: latestReading.indoorHumidity,
-          outdoorTemperature: latestReading.outdoorTemperature,
-          outdoorHumidity: latestReading.outdoorHumidity,
-        });
-        setRecommendation(
-          convertRecommendation(latestBackendReading.recommendation),
-        );
-        setUpdatedAt(latestReading.recordedAt);
-        setConnectionStatus("connected");
-      } catch (error) {
-        if (ignoreResult) return;
-
-        // 센서 기록이 없는 것은 서버 연결 실패가 아니므로 초록 점으로 표시한다.
-        if (error.message.includes("저장된 센서 기록이 없습니다")) {
-          setSensorData(null);
-          setRecommendation(convertRecommendation(null));
-          setUpdatedAt(null);
-          setConnectionStatus("connected");
-          return;
-        }
-
-        setConnectionStatus("error");
+      if (latestBackendReading && latestBackendReading.recommendation) {
+        setRawRecommendation(latestBackendReading.recommendation);
       }
-    }
 
+      setRecommendation(
+        convertRecommendation(latestBackendReading.recommendation),
+      );
+      setUpdatedAt(latestReading.recordedAt);
+      setConnectionStatus("connected");
+    } catch (error) {
+      if (error.message.includes("저장된 센서 기록이 없습니다")) {
+        setSensorData(null);
+        setRawRecommendation(null);
+        setRecommendation(convertRecommendation(null));
+        setUpdatedAt(null);
+        setConnectionStatus("connected");
+        return;
+      }
+      setConnectionStatus("error");
+    }
+  }
+
+  // 💡 [개선 완료] 주기적 갱신 타이머 로직
+  useEffect(() => {
+    // 최초 화면 로드 시 한 번 실행
     loadLatestReading();
 
+    // 팝업이 켜져 있는 동안에는 주기적 데이터 로드를 잠시 중단합니다.
+    if (isPopupActive) {
+      console.log("자동 제어 판단 팝업 작동 중: 주기적 추천 데이터 갱신을 잠시 중단합니다.");
+      return undefined;
+    }
+
+    // 1분(60000ms)마다 백엔드에 새로운 날씨 정보가 있는지 요청하는 타이머 작동
+    const updateInterval = setInterval(() => {
+      console.log("60초 도래: 백엔드로부터 최신 환경 추천 정보를 업데이트합니다.");
+      loadLatestReading();
+    }, 60000);
+
+    // 컴포넌트가 꺼지거나 상태가 바뀔 때 작동 중이던 타이머를 깨끗이 청소합니다.
     return () => {
-      ignoreResult = true;
+      clearInterval(updateInterval);
     };
-  }, []);
+  }, [isPopupActive]); // isPopupActive 상태가 변할 때마다 타이머를 켰다 껐다 조절합니다.
 
   useEffect(() => {
     if (!showTutorialOnFirstVisit) {
@@ -183,12 +211,12 @@ function App({
     setCurrentPage("badges");
   }
 
+  // 중략된 핸들러 로직들 유지
   function handleBadgeBack() {
     if (badgeReturnPage === "mypage") {
       setCurrentPage("mypage");
       return;
     }
-
     openDashboard();
   }
 
@@ -201,7 +229,6 @@ function App({
     }
   }
 
-  // 담당: 민주 - 센서 측정값 화면. 처음 열 때만 이력을 불러온다.
   async function openSensorReadings() {
     setIsUserMenuOpen(false);
     setIsTutorialOpen(false);
@@ -319,7 +346,6 @@ function App({
           isTutorialTarget={isIconTutorialStep}
         />
 
-        {/* 담당: 정현(나) - 위치 추가 / 실외 날씨 (좌측 상단) */}
         <LocationSwitcher />
       </header>
 
@@ -330,13 +356,20 @@ function App({
             isTutorialTarget={isTutorialOpen && tutorialStepIndex === 1}
           />
 
-          <EnvironmentCard
-            sensorData={sensorData}
-            updatedAt={updatedAt}
-            isTutorialTarget={isTutorialOpen && tutorialStepIndex === 2}
-          >
-            <SavingsSummary />
-          </EnvironmentCard>
+          <div className="flex-layout-column" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+            <EnvironmentCard
+              sensorData={sensorData}
+              updatedAt={updatedAt}
+              isTutorialTarget={isTutorialOpen && tutorialStepIndex === 2}
+            >
+              <SavingsSummary />
+            </EnvironmentCard>
+
+            <CooldownSettings 
+              placeId={1} 
+              currentToken={currentToken} 
+            />
+          </div>
         </section>
       </main>
 
@@ -356,6 +389,13 @@ function App({
           onClose={closeTutorial}
         />
       )}
+
+      {/* 💡 팝업 활성화 상태 여부를 감지할 수 있도록 콜백(setIsPopupActive)을 함께 전달합니다. */}
+      <RecommendationPopup 
+        recommendation={rawRecommendation} 
+        currentToken={currentToken}
+        setIsPopupActive={setIsPopupActive}
+      />
     </div>
   );
 }

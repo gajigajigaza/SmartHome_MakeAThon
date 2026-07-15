@@ -417,3 +417,40 @@ async def reverse_geocode(
         address_name = lot_address.get("address_name")
 
     return {"address": address_name}
+
+
+"에어컨 가동 시간 설정을 supabase에 저장하는 API"
+class PlaceCooldownUpdate(BaseModel):
+    target_cooldown_minutes: int = Field(default=30, ge=1, le=120)
+
+@router.patch("/places/{place_id}/cooldown")
+def update_place_cooldown(
+    place_id: int,
+    payload: PlaceCooldownUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """사용자가 설정한 에어컨 목표 가동 시간(분)을 업데이트합니다."""
+    place_result = (
+        supabase.table(PLACES_TABLE)
+        .select("id")
+        .eq("id", place_id)
+        .eq("user_id", current_user["id"])
+        .limit(1)
+        .execute()
+    )
+    if not place_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="장소를 찾을 수 없거나 권한이 없습니다.",
+        )
+
+    update_result = (
+        supabase.table(PLACES_TABLE)
+        .update({"target_cooldown_minutes": payload.target_cooldown_minutes})
+        .eq("id", place_id)
+        .execute()
+    )
+    return {
+        "status": "success",
+        "message": f"에어컨 최소 가동 시간이 {payload.target_cooldown_minutes}분으로 설정되었습니다."
+    }
