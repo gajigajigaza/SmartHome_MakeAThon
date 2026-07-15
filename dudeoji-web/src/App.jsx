@@ -15,6 +15,9 @@ import RecommendationCard, {
 import EnvironmentCard from "./features/location/EnvironmentCard";
 import SavingsSummary from "./features/location/SavingsSummary";
 import LocationSwitcher from "./features/location/LocationSwitcher";
+// jh 수정함 - LocationSwitcher/EnvironmentCard가 각자 useSelectedLocation()을
+// 따로 호출해서 서로 다른 위치를 가리키던 문제를 고치려고 Context를 추가했다.
+import { LocationProvider } from "./features/location/LocationContext";
 import SensorReadings from "./features/sensors/SensorReadings";
 import {
   ProfileBadgeIcon,
@@ -291,6 +294,9 @@ function App({
     tutorialStepKey === "menu" || tutorialStepKey === "again";
 
   return (
+    // jh 수정함 - 대시보드 전체를 LocationProvider로 감싸서 LocationSwitcher/
+    // EnvironmentCard/LocationListPanel이 같은 selectedLocation을 공유하게 한다.
+    <LocationProvider>
     <div
       className={`app ${
         isTutorialOpen ? `tutorial-open tutorial-step-${tutorialStepKey}` : ""
@@ -357,6 +363,7 @@ function App({
         />
       )}
     </div>
+    </LocationProvider>
   );
 }
 

@@ -2,14 +2,16 @@
 
 담당: 정현(나)
 
-OpenWeatherMap One Call API 3.0(기온/체감온도/습도/풍속/날씨상태/강수확률) +
-Air Pollution API(PM2.5/PM10/AQI)를 호출해서 실외 환경 정보를 가져옵니다.
-DB나 다른 테이블은 조회하지 않고, 호출하는 쪽이 넘겨준 위경도를 그대로 씁니다.
+OpenWeatherMap Current Weather API 2.5(무료, 카드 등록 불필요 — 기온/체감온도/
+습도/풍속/날씨상태) + Air Pollution API(PM2.5/PM10/AQI)를 호출해서 실외 환경
+정보를 가져옵니다. DB나 다른 테이블은 조회하지 않고, 호출하는 쪽이 넘겨준
+위경도를 그대로 씁니다.
 
 반환 딕셔너리 중 weather_condition / pm25 / wind_speed / outdoor_temperature /
 outdoor_humidity는 routers/readings_router.py의 SensorReadingCreate 필드명과
 그대로 맞춰뒀습니다. 나머지(feels_like, precipitation_probability, pm10, aqi)는
-저장 스키마엔 없지만 참고용으로 함께 반환합니다.
+저장 스키마엔 없지만 참고용으로 함께 반환합니다. precipitation_probability는
+Current Weather API에 없는 값이라 항상 None입니다.
 
 실패(타임아웃, API 에러) 시 예외를 그대로 던집니다 — 기본값 처리는 호출하는
 쪽(예: readings_router.py에서 값을 채워 보내는 코드) 책임입니다.
@@ -23,7 +25,7 @@ import httpx
 
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
-ONE_CALL_URL = "https://api.openweathermap.org/data/3.0/onecall"
+CURRENT_WEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 AIR_POLLUTION_URL = "https://api.openweathermap.org/data/2.5/air_pollution"
 REQUEST_TIMEOUT = 5.0
 
@@ -37,7 +39,8 @@ class OutdoorWeather(TypedDict):
     wind_speed: float
     # 저장 스키마엔 없지만 참고용으로 같이 반환하는 필드
     feels_like: float
-    precipitation_probability: float
+    # Current Weather API(2.5)엔 강수확률이 없어서 항상 None
+    precipitation_probability: Optional[float]
     pm10: Optional[float]
     aqi: Optional[int]
 
@@ -68,34 +71,34 @@ def _map_weather_condition(weather_id: int) -> str:
 
 
 async def fetch_current_weather(latitude: float, longitude: float) -> dict:
-    """One Call API 3.0으로 기온/체감온도/습도/풍속/날씨상태/강수확률을 가져온다."""
+    """Current Weather API(2.5, 무료)로 기온/체감온도/습도/풍속/날씨상태를 가져온다.
+
+    이 API엔 강수확률이 없어서 precipitation_probability는 항상 None이다.
+    """
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         response = await client.get(
-            ONE_CALL_URL,
+            CURRENT_WEATHER_URL,
             params={
                 "lat": latitude,
                 "lon": longitude,
                 "appid": _get_api_key(),
                 "units": "metric",
                 "lang": "kr",
-                "exclude": "minutely,daily,alerts",
             },
         )
         response.raise_for_status()
         data = response.json()
 
-    current = data["current"]
-    weather = current["weather"][0]
-    hourly = data.get("hourly") or []
-    precipitation_probability = hourly[0]["pop"] if hourly else 0.0
+    main = data["main"]
+    weather = data["weather"][0]
 
     return {
-        "outdoor_temperature": current["temp"],
-        "feels_like": current["feels_like"],
-        "outdoor_humidity": current["humidity"],
-        "wind_speed": current["wind_speed"],
+        "outdoor_temperature": main["temp"],
+        "feels_like": main["feels_like"],
+        "outdoor_humidity": main["humidity"],
+        "wind_speed": data["wind"]["speed"],
         "weather_condition": _map_weather_condition(weather["id"]),
-        "precipitation_probability": precipitation_probability,
+        "precipitation_probability": None,
     }
 
 

@@ -3023,66 +3023,120 @@ main {
 }
 
 /* ---------------------------------------------------------
-   위치 스위처 / 위치 목록 패널 (담당: 정현) — 최소 기본 스타일
-   본격적인 디자인은 위치 기능을 실제로 채울 때 다시 다듬어도 됩니다.
+   위치 스위처 / 위치 목록 패널 (담당: 정현)
+   App.css의 --card/--border/--shadow/--green/--green-light/--muted와
+   FlowApp.css의 카드 패턴에 맞춰 다시 정리함. 기능(선택/추가)은 그대로,
+   스타일만 손댔다. 이전 대비 크기 전반 15~20% 축소, font-weight 완화.
 --------------------------------------------------------- */
+/* jh 수정함 - UserMenu.jsx의 아바타 버튼(58px 프레임)이 이 버튼보다 훨씬 커서,
+   .header가 align-items:center로 둘을 정렬해도 아바타 옆 닉네임 텍스트의
+   광학적 중심과 이 버튼의 텍스트 중심이 미세하게 안 맞아 보였다(이 버튼이
+   살짝 위로 들려 보임). margin-top으로 살짝만 눌러서 보정 - 값은 실제
+   화면에서 보면서 조정이 더 필요할 수 있다. */
 .location-switcher {
   position: relative;
   display: inline-block;
+  margin-top: 4px;
 }
 
+/* jh 수정함 - 흰 배경(var(--card))이 대시보드 헤더의 연한 그라디언트 위에서
+   붕 떠 보여서 반투명 흰색으로 바꾸고, 테두리도 진한 회색 대신 아주 옅은
+   초록 톤으로 낮췄다(헤더 배경 위에 자연스럽게 녹아들도록). 크기는 다시 살짝
+   키웠다(padding/font-size/gap) - 점 아이콘을 빼면서 버튼이 너무 작아 보였음.
+   화살표(em)는 비율상 더 크게. */
 .location-switcher-button {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--border, #e2e2e2);
-  background: var(--surface, #fff);
+  gap: 8px;
+  padding: 8px 16px 8px 14px;
+  border-radius: 13px;
+  border: 1px solid rgba(31, 148, 109, 0.14);
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--text, #18312a);
   font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease;
 }
 
-.location-switcher-button em {
-  font-style: normal;
-  opacity: 0.5;
-  font-size: 12px;
+/* jh 수정함 - hover/open 효과를 훨씬 은은하게: 배경은 살짝만 더 진해지고
+   (불투명도 +8%p 정도), 테두리도 톤만 살짝 깊어지는 정도로(색이 초록으로
+   확 바뀌지 않음). 이전의 translateY 리프트는 "튀는" 느낌이라 없앴다. */
+.location-switcher-button:hover,
+.location-switcher-button.open {
+  background: rgba(255, 255, 255, 0.62);
+  border-color: rgba(31, 148, 109, 0.28);
 }
 
+/* jh 수정함 - 폰트 문자(▾)는 글꼴마다 크기/모양이 들쭉날쭉해서, 테두리 트릭으로
+   그린 순수 CSS 삼각형으로 교체(이전 폰트 화살표보다 확실히 크고 또렷하다). */
+.location-switcher-arrow {
+  flex-shrink: 0;
+  width: 0;
+  height: 0;
+  border-top: 6px solid var(--muted, #6c7f78);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  transition: transform 0.15s ease;
+}
+
+/* jh 수정함 - 패널이 열려 있으면(open 클래스, LocationSwitcher.jsx) 화살표를
+   뒤집어서 UserMenu.jsx의 아바타 메뉴 버튼과 같은 열림/닫힘 신호를 준다. */
+.location-switcher-button.open .location-switcher-arrow {
+  transform: rotate(180deg);
+}
+
+/* jh 수정함 - 아이콘을 감싸던 사각 배지(그라디언트 배경)를 완전히 제거하고
+   점 하나만 남겼다. 기본은 회색(--muted) - "선택 안 된/일반" 상태를 뜻하고,
+   .active가 붙으면(=이 장소가 현재 선택됨) 초록(--green)으로 바뀐다.
+   헤더 버튼(LocationSwitcher.jsx)에서는 UserMenu 옆 온라인 상태 점과
+   헷갈려서 이 점 자체를 아예 뺐고, 드롭다운 목록 항목(LocationListPanel.jsx)
+   에서만 쓴다 - "선택됨" 표시는 이제 이 점 색깔 하나로만 나타낸다. */
+.location-pin-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted, #6c7f78);
+  transition: background 0.15s ease;
+}
+
+.location-pin-dot.active {
+  background: var(--green, #1e8f67);
+}
+
+/* jh 수정함 - 카드 폭을 한 번 더 줄였고(235->200px), 좁은 화면에서 헤더/버튼
+   바깥으로 삐져나가지 않도록 max-width로 뷰포트 폭에 안전판을 뒀다.
+   배경은 .location-switcher-button의 색(rgba(255,255,255,0.5), 흰색)에서
+   알파만 1로 만든 완전 불투명 흰색(#ffffff) - "버튼과 같은 색이되 반투명은 아님". */
 .location-panel {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
   z-index: 20;
 
-  width: 240px;
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid var(--border, #e2e2e2);
-  background: var(--surface, #fff);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+  width: 200px;
+  max-width: calc(100vw - 24px);
+  /* jh 수정함 - 아래 여백이 커 보여서 padding-bottom만 따로 줄임(다른 변은 15px 유지) */
+  padding: 15px 15px 10px;
+  border: 1px solid rgba(176, 210, 189, 0.9);
+  border-radius: 17px;
+  background: #ffffff;
+  box-shadow: 0 22px 45px rgba(20, 54, 35, 0.18);
 }
 
-.location-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.location-panel-header button {
-  border: none;
-  background: none;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
+/* jh 수정함 - "내 장소" 헤더(라벨+닫기 버튼)를 통째로 없앴다(LocationListPanel.jsx).
+   목록이 카드 맨 위 여백만 살짝 두고 바로 시작한다. */
+/* jh 수정함 - 맨 위 항목을 hover하면 translateY(-1px)로 위로 뜨는데, 리스트에
+   위쪽 여백이 없어서(padding:0) overflow-y:auto 경계에 그 1px이 잘려 보였다.
+   padding-top을 살짝 줘서 뜰 공간을 마련 - "선택하면 윗부분이 잘린다"는 문제 수정. */
 .location-panel-list {
   list-style: none;
-  margin: 0 0 10px;
-  padding: 0;
-  max-height: 180px;
+  margin: 0 0 8px;
+  padding: 2px 0 0;
+  max-height: 200px;
   overflow-y: auto;
 }
 
@@ -3090,48 +3144,263 @@ main {
   margin-top: 4px;
 }
 
+/* jh 수정함 - 목록 항목을 "카드"처럼 보이게 border(기본은 투명, hover/active에서만
+   색이 붙어서 레이아웃 흔들림 없음) + 살짝의 hover 리프트를 추가. hover 배경은
+   .dashboard-menu-items button:hover(뱃지 드롭다운의 항목 hover, 같은 파일 204번
+   줄)와 같은 색(rgba(232,247,235,0.95))을 재사용 - 흰 계열 패널 배경 위에서도
+   또렷하게 보인다. active(선택됨)는 옅은 초록 워시로 구분. */
 .location-panel-list button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   width: 100%;
   text-align: left;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: none;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
   background: none;
+  color: var(--text, #18312a);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
+  font-weight: 500;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
 }
 
+.location-panel-list button:hover {
+  border-color: rgba(176, 210, 189, 0.9);
+  background: rgba(232, 247, 235, 0.95);
+  transform: translateY(-1px);
+}
+
+/* jh 수정함 - 초록 점만으로는 눈에 잘 안 띄어서, 옅은 초록 배경 하이라이트를
+   다시 넣었다. 이전(var(--green-light) 고정색 + 진한 테두리)보다 훨씬 연하게
+   - rgba 9%짜리 초록 워시라 흰 계열 패널 배경과 자연스럽게 어우러진다. */
 .location-panel-list button.active {
-  background: var(--green-light, #eef7ee);
-  font-weight: 600;
+  background: rgba(30, 143, 103, 0.09);
 }
 
 .location-panel-empty {
-  padding: 8px 10px;
-  font-size: 13px;
-  color: var(--text-muted, #888);
+  padding: 16px 10px;
+  color: var(--muted, #888);
+  font-size: 12px;
+  text-align: center;
 }
 
 .location-panel-add {
-  display: flex;
-  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border, #dce7e2);
 }
 
-.location-panel-add input {
-  flex: 1;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--border, #e2e2e2);
-  font-size: 13px;
-}
-
+/* jh 수정함 - 점선 테두리 + 초록 배경으로 눈에 띄던 CTA 스타일을 걷어내고,
+   목록 항목과 같은 톤의 조용한 "행"으로 바꿨다 - 배경/테두리 없이 은은한
+   회색 텍스트, hover에서만 목록 항목과 같은 연한 초록 워시가 살짝 비친다.
+   width:100%로 목록 항목(.location-panel-list button)과 같은 hover 폭을 갖는다
+   - 아이콘/텍스트는 justify-content:center로 계속 중앙에 온다. */
 .location-panel-add button {
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: none;
-  background: var(--green, #1d9e75);
-  color: #fff;
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted, #6c7f78);
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+/* jh 수정함 - hover 배경 하이라이트를 없애고 글자색만 진해지도록(muted -> green-dark).
+   --green-dark(#126447)로는 부족하다는 피드백이 있어서, 그보다 더 짙은 초록으로
+   낮추고 font-weight도 살짝 굵게 줘서 "진해짐"을 더 확실하게 느끼도록 했다. */
+.location-panel-add button:hover {
+  color: #0d4b35;
+  font-weight: 600;
+}
+
+/* jh 수정함 - 모바일 사이즈(App.css의 .header 반응형과 같은 560px 기준)에서
+   헤더 버튼/드롭다운 카드가 화면 밖으로 삐져나가지 않도록 크기를 한 단계 더
+   줄인다. .location-panel은 이미 max-width로 안전판이 있지만, 기본 width
+   자체도 더 좁혀서 화면을 너무 많이 차지하지 않게 한다. */
+@media (max-width: 560px) {
+  .location-switcher-button {
+    padding: 6px 12px 6px 10px;
+    font-size: 13px;
+  }
+
+  .location-panel {
+    width: 180px;
+    padding: 12px;
+  }
+
+  .location-panel-list button {
+    font-size: 12px;
+  }
+}
+
+/* jh 수정함 - "새 위치 추가"를 화면 전체를 덮는 모달로 열기 위한 오버레이.
+   AirconPage 내부의 .aircon-modal-backdrop/.aircon-modal 패턴과 같은 톤이다.
+   z-index: 80000 - 이 모달은 .location-switcher(스태킹 컨텍스트 없음) 안에 있어서,
+   가장 가까운 스태킹 컨텍스트 조상인 .dashboard-header 안에서 .dashboard-profile-area
+   (UserMenu 아바타/닉네임, DashboardOverrides.css:2368 "v59" 규칙으로 z-index:70000
+   !important + isolation:isolate 고정)와 로컬 z-index로 직접 비교된다. 1000이었을 땐
+   70000에 밀려 아바타/닉네임이 모달 위로 그려졌음 — 70000보다 충분히 크게 잡아서
+   (.dashboard-user-menu의 70030도 포함) 향후 다른 UI가 z-index를 더 올릴 여지도 감안했다.
+   .dashboard-header/.dashboard-profile-area/UserMenu.jsx(류은 담당)는 건드리지 않음. */
+.location-add-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80000;
+  display: grid;
+  place-items: center;
+  /* jh 수정함 - 20px -> 12px: 모달 카드가 쓸 수 있는 세로 공간을 조금 더 확보 */
+  padding: 12px;
+  background: rgba(5, 22, 20, 0.62);
+  backdrop-filter: blur(6px);
+}
+
+/* jh 수정함 - AirconPage(variant="modal" 포함)의 필수 입력 검증 alert()는
+   FlowApp.jsx의 window.alert 오버라이드(showInlineMessage)를 거쳐
+   .dudeoji-screen-message 토스트(FlowApp.css, body에 직접 append, z-index:9999)로
+   뜬다. .app/#root/body엔 별도 stacking context가 없어서 .dashboard-header의
+   z-index:70000(v59 규칙)이 body 레벨까지 그대로 이겨버려, 그 안에 있는 우리 모달
+   (z-index:80000)과 함께 토스트(9999)를 완전히 가려버린다. 토스트 자체를
+   모달보다도 위로 올려서 모달이 열려 있어도 항상 보이게 한다.
+   FlowApp.jsx/FlowApp.css의 원본 정의는 건드리지 않고 이 override만 추가함. */
+.dudeoji-screen-message {
+  z-index: 90000 !important;
+}
+
+/* jh 수정함 - AirconPage 내부의 아이콘 선택 팝업(.aircon-modal-backdrop/.aircon-modal,
+   FlowApp.css)과 같은 폭 제한 + 스크롤 컨테이너 역할만 한다. */
+.location-add-modal {
+  width: min(100%, 720px);
+}
+
+.location-add-modal-scroll {
+  /* jh 수정함 - 760px/100vh-40px -> 860px/100vh-24px: 백드롭 padding을 20->12px로
+     줄인 만큼(24px) 반영하고, 고정 캡도 760->860px로 올려서 스크롤 여유를 넓힘 */
+  max-height: min(860px, calc(100vh - 24px));
+  overflow-y: auto;
+}
+
+/* jh 수정함 - variant="modal"(AirconPage.jsx, location-add-modal-card 클래스)의
+   전체 간격 리듬을 두 값으로 통일한다. variant="signup"(회원가입 화면)에는 이
+   클래스가 안 붙으므로 FlowApp.css의 기존 값(gap:17px, margin-bottom:20/22px 등)이
+   그대로 유지된다.
+
+   - LABEL_TO_CONTENT = 10px: "장소 이름"(라벨→입력창), "위치 검색"(라벨→탭,
+     탭→검색창), "에어컨 등록"(라벨→목록) 전부 이 값 하나로 통일.
+   - SECTION_GAP = 20px: 헤더/에러 배너/장소 이름/위치 검색/에어컨 목록 각각의
+     "다음 섹션까지" 여백을 이 값 하나로 통일 — 마지막 섹션(.aircon-list)과
+     버튼 행 사이도 같은 값이라(에어컨 추가 버튼이 modal에서 숨겨져서 사이에
+     아무것도 없음) 리듬이 자연스럽게 이어진다. */
+.location-add-modal-card .place-field {
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+/* jh 수정함 - "위치 검색" 섹션 내부(탭-검색창) 간격을 다른 섹션의 라벨-콘텐츠
+   리듬과 맞추기 위해, place-field의 gap(10px) 위에 더해지던 자체 margin-top을
+   0으로 없앤다(그리드 gap만 남기면 다른 섹션과 동일한 10px가 된다). */
+.location-add-modal-card .place-location-tabs {
+  margin-top: 0;
+}
+
+.location-add-modal-card .place-location-panel {
+  margin-top: 0;
+}
+
+/* jh 수정함 - "에어컨 등록"은 place-field 라벨처럼 보이지만, 입력창이 같은
+   그리드 안에 없고 aircon-list가 별도 형제 요소라 place-field의 gap을 못 쓴다.
+   그래서 색상/폰트는 place-field 텍스트 스타일을 그대로 복사하고,
+   margin-bottom만 LABEL_TO_CONTENT(10px)로 줘서 "라벨→콘텐츠" 간격을 다른
+   두 섹션과 맞춘다. 섹션과 섹션 사이(SECTION_GAP)는 바로 위 "위치 검색"
+   섹션(.place-field)의 margin-bottom(20px)이 이미 만들어준다. */
+.location-add-modal-section-label {
+  margin: 0 0 10px;
+  color: #506963;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.location-add-modal-card .aircon-list {
+  margin-bottom: 20px;
+}
+
+/* jh 수정함 - 닫기(×) 버튼을 .aircon-modal-close(FlowApp.css)와 동일하게
+   position 없이 둔다. .location-add-modal-heading(아래, flex row)의 평범한
+   자식이라 스크롤 콘텐츠 맨 위에 있고, 카드를 스크롤하면 같이 스크롤되다
+   화면 밖으로 나간다 — 이전의 position:absolute 고정 방식에서 되돌림. */
+.location-add-modal-close {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border, #dce7e2);
+  border-radius: 12px;
+  background: var(--card, #fff);
+  color: #526a64;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.location-add-modal-close:hover {
+  border-color: var(--green, #1e8f67);
+  color: var(--green-dark, #126447);
+}
+
+/* jh 수정함 - AirconPage variant="modal"의 가벼운 헤더("새 장소 추가") 스타일.
+   회원가입 chrome(Progress/eyebrow/h1/Brand 로고) 없이 h2 + 설명 한 줄만 보여준다.
+   .aircon-modal-header와 같은 flex row로 닫기 버튼과 나란히 배치한다.
+   (더 이상 절대배치 버튼이 없으므로 padding-right 보정도 필요 없다.)
+   margin-bottom: 20px는 SECTION_GAP과 같은 값(헤더 다음도 다른 섹션 사이와
+   동일한 간격이 되도록 통일). */
+.location-add-modal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.location-add-modal-heading h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  color: var(--flow-text, #082c2c);
+}
+
+.location-add-modal-heading .flow-description {
+  margin: 0;
+}
+
+/* jh 수정함 - AirconPage variant="modal"의 검증 에러 배너(모달 헤더 바로 아래,
+   position 계산 없이 문서 흐름 그대로). 색상은 FlowApp.css의 기존 에러 톤
+   (.place-address-status.error, .place-address-clear-link의 #d45b45)을 재사용.
+   width:100%로 카드 폭을 그대로 채우고 좌우 padding을 넉넉히 둬서 텍스트가
+   좁은 캡슐 안에 끼어 보이지 않게 한다. margin-bottom도 SECTION_GAP(20px)로
+   통일(기존 16px에서 조정). */
+.location-add-modal-error {
+  width: 100%;
+  margin: 0 0 20px;
+  padding: 14px 20px;
+  border: 1px solid rgba(212, 91, 69, 0.35);
+  border-radius: 14px;
+  background: rgba(212, 91, 69, 0.08);
+  color: #d45b45;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
 }

@@ -269,6 +269,7 @@ body {
 
 /* 실내와 실외의 개별 온습도 카드 */
 .environment-item {
+  position: relative;
   padding: 18px;
 
   border: 1px solid var(--border);
@@ -285,10 +286,100 @@ body {
 
 .environment-title {
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  position: relative;
 
   color: var(--muted);
   font-size: 13px;
+}
+
+/* jh 수정함 - 날씨 이모지를 라벨 텍스트(13px)보다 훨씬 키워서 한눈에
+   현재 날씨를 알아볼 수 있게 하면서도, 실내 🏠 이모지와 같은 크기로 맞춰
+   전체 카드 톤과 어우러지게 했다. line-height:1짜리 큰 이모지가 문서 흐름에
+   그대로 끼면 title 행 높이가 늘어나서 카드 전체(padding 안쪽 콘텐츠) 높이가
+   커지길래, absolute로 빼서 카드 크기는 이모지를 키우기 전과 동일하게 유지한다. */
+.environment-emoji {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+
+  font-size: 26px;
+  line-height: 1;
+}
+
+/* jh 수정함 - 위치 미설정 상태에서 날씨 이모지 자리에 대신 놓는 "+" 버튼.
+   environment-emoji와 같은 크기/위치를 쓰고, 버튼 기본 스타일만 지운다. */
+.environment-add-location-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--green);
+  cursor: pointer;
+}
+
+/* jh 수정함 - 위치 미설정 안내("위치를 설정해 주세요")를 실외 카드 안에서
+   세로/가로 모두 중앙 정렬하기 위한 상태. 실내 카드와 높이는 grid 기본
+   stretch로 이미 맞춰지므로, 남는 공간을 flex로 채워서 중앙에 놓는다. */
+.environment-item.outdoor.is-empty {
+  display: flex;
+  flex-direction: column;
+}
+
+.environment-outdoor-empty {
+  flex: 1;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  margin: 0;
+  text-align: center;
+}
+
+/* jh 수정함 - "+" 버튼을 누르면 뜨는 위치 검색 팝오버(LocationSearchPopover).
+   place-field 등 안쪽 콘텐츠는 FlowApp.css의 place-address-* 클래스를 그대로 쓴다. */
+.location-coord-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+}
+
+.location-coord-popover {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  z-index: 30;
+
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 24px 22px 22px;
+
+  border: 1px solid var(--border);
+  border-radius: 18px;
+
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+/* jh 수정함 - place-address-field(FlowApp.css, position:relative)가 DOM상
+   이 버튼보다 뒤에 있어서, 둘 다 z-index:auto인 상태로는 스태킹 규칙상
+   나중에 오는 place-address-field가 위에 그려져 클릭을 가로챘다(눈엔 버튼이
+   보여도 실제로는 그 뒤 투명한 필드 박스가 클릭을 먹는 상태). z-index를
+   명시해서 항상 위에 오도록 고쳤다. */
+.location-coord-popover-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 1;
+
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  cursor: pointer;
 }
 
 .environment-item strong {
