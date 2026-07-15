@@ -41,3 +41,13 @@ export async function createPlaceWithAircons(payload) {
 export async function fetchMyPlaces() {
   return request("/api/places", { auth: true });
 }
+
+// jh 수정함 - EnvironmentCard의 "+" 위치 검색 팝오버가 기존 장소의 lat/lon만
+// 갱신할 때 쓴다. PATCH /places/{place_id}(places_router.py, 위치만 갱신).
+export async function updatePlaceLocation(placeId, lat, lon) {
+  return request(`/api/places/${placeId}`, {
+    method: "PATCH",
+    auth: true,
+    body: JSON.stringify({ lat, lon }),
+  });
+}

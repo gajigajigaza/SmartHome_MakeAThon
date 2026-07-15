@@ -21,6 +21,7 @@ from routers.auth_router import router as auth_router
 from routers.places_router import router as places_router
 from routers.readings_router import router as readings_router
 from routers.readings_router import save_reading_for_user
+from routers.weather_router import router as weather_router
 
 app = FastAPI(
     title="두더지 API",
@@ -51,6 +52,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(places_router)
 app.include_router(readings_router)
+app.include_router(weather_router)
 
 
 @app.get("/")
