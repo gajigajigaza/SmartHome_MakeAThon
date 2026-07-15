@@ -18,8 +18,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from auth_utils import get_current_user
-from db import READINGS_TABLE, supabase
+from db import READINGS_TABLE, PLACES_TABLE, supabase
 from recommendation_engine import determine_action
+from weather import fetch_outdoor_weather
 
 router = APIRouter(prefix="/api", tags=["readings"])
 
@@ -82,12 +83,12 @@ class SensorReadingResponse(SensorReadingCreate):
     recommendation: Recommendation
 
 
-def calculate_recommendation(sensor_data: SensorReadingCreate) -> Recommendation:
+def calculate_recommendation(sensor_data: SensorReadingCreate, previous_action: str = "MAINTAIN") -> Recommendation:
     """실내외 온습도 + (있다면) 날씨/미세먼지/바람 데이터를 종합해 추천을 만든다.
-
+    
     핵심 판단 로직은 recommendation_engine.determine_action()에 있다(담당: 민주).
-    이 함수는 Recommendation 스키마에 맞게 결과를 감싸는 역할만 한다.
-    """
+    이 함수는 Recommendation 스키마에 맞게 결과를 감싸는 역할만 한다."""
+
     result = determine_action(
         indoor_temperature=sensor_data.indoor_temperature,
         indoor_humidity=sensor_data.indoor_humidity,
@@ -98,8 +99,8 @@ def calculate_recommendation(sensor_data: SensorReadingCreate) -> Recommendation
         wind_speed=sensor_data.wind_speed,
         window_is_open=sensor_data.window_is_open,
         current_mode=sensor_data.current_mode,
+        previous_action=previous_action  # 🧠 히스테리시스 상태값 전달
     )
-
     return Recommendation(
         action=result["action"],
         title=result["title"],
@@ -137,13 +138,50 @@ def get_latest_reading(user_id: int) -> SensorReadingResponse:
     return SensorReadingResponse.model_validate(result.data[0])
 
 
-def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorReadingResponse:
-    """센서 값 dict를 받아 추천을 계산하고 Supabase에 저장한다.
-
-    REST API(/api/readings)와 MQTT 수신 핸들러(담당: 민주)가 이 함수를 공유한다.
-    """
+async def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorReadingResponse:
+    """센서 값 dict를 받아 추천을 계산하고 Supabase에 저장한다."""
     sensor_data = SensorReadingCreate.model_validate(sensor_data_dict)
-    recommendation = calculate_recommendation(sensor_data)
+    
+    # 1. 이전 액션 가져오기 (히스테리시스를 위한 과거 상태 조회)
+    previous_action = "MAINTAIN"
+    try:
+        latest = get_latest_reading(user_id)
+        previous_action = latest.recommendation.action
+    except HTTPException:
+        pass # 기록이 없을 경우 기본값 유지
+        
+    # 2. 사용자 장소에서 위경도(lat, lon) 조회 후 실제 날씨 가져오기 (비동기 처리)
+    try:
+        place_result = (
+            supabase.table(PLACES_TABLE)
+            .select("*")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if place_result.data:
+            place = place_result.data[0]
+            lat = place.get("lat") or place.get("latitude")
+            lon = place.get("lon") or place.get("longitude")
+            
+            if lat is not None and lon is not None:
+                # 진짜 실외 날씨 API 호출 (정현 담당)
+                outdoor_weather = await fetch_outdoor_weather(lat, lon)
+                
+                # 받아온 외부 환경 데이터로 덮어쓰기
+                sensor_data.weather_condition = outdoor_weather.get("weather_condition", "맑음")
+                sensor_data.pm25 = outdoor_weather.get("pm25")
+                sensor_data.wind_speed = outdoor_weather.get("wind_speed")
+                if outdoor_weather.get("outdoor_temperature") is not None:
+                    sensor_data.outdoor_temperature = outdoor_weather["outdoor_temperature"]
+                if outdoor_weather.get("outdoor_humidity") is not None:
+                    sensor_data.outdoor_humidity = outdoor_weather["outdoor_humidity"]
+    except Exception as e:
+        print(f"날씨 데이터 연동 중 오류 발생: {e}")
+
+    # 3. 추천 계산 (과거 상태 포함 전달)
+    recommendation = calculate_recommendation(sensor_data, previous_action)
+    
     reading_data = {
         **sensor_data.model_dump(),
         "user_id": user_id,
@@ -164,7 +202,6 @@ def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorReading
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="저장 결과를 확인하지 못했습니다.",
         )
-
     return SensorReadingResponse.model_validate(result.data[0])
 
 
@@ -173,11 +210,12 @@ def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorReading
     response_model=SensorReadingResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_reading(
+async def create_reading(
     sensor_data: SensorReadingCreate,
     current_user: dict = Depends(get_current_user),
 ):
-    return save_reading_for_user(current_user["id"], sensor_data.model_dump())
+    # save_reading_for_user가 비동기(async)로 변경되었으므로 await로 호출합니다.
+    return await save_reading_for_user(current_user["id"], sensor_data.model_dump())
 
 
 @router.get(
