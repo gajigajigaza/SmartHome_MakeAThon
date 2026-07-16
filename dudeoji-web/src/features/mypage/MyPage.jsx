@@ -1,12 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
+import { request } from "../../api";
 import {
   deleteMyAccount,
   updateMyNickname,
   updateMyPassword,
   updateMyRecovery,
 } from "../auth/authApi";
-import { fetchMyPlaces } from "../places/placesApi";
+import { createPlaceWithAircons, fetchMyPlaces } from "../places/placesApi";
+// jh 수정함 - "위치 정보" 섹션이 LocationSwitcher/EnvironmentCard와 같은
+// 위치 목록(useLocationContext)을 공유해서 쓰도록 연결
+import { useLocationContext } from "../location/LocationContext";
+import LocationSearchPopover from "../location/LocationSearchPopover";
+// jh 수정함 - "장소 추가" 버튼이 대시보드 LocationSwitcher의 "+ 장소 추가"와
+// 똑같은 모달(AirconPage variant="modal")을 재사용하도록, LocationListPanel.jsx가
+// 이미 쓰고 있는 조립 로직(buildPlacePayload)을 그대로 가져다 쓴다.
+import AirconPage, { createInitialAirconSlots } from "../places/AirconPage";
+import { buildPlacePayload } from "../location/buildPlacePayload";
+
+// jh 수정함 - "위치 정보" 목록 접기/더보기 기준 개수
+const LOCATION_PREVIEW_COUNT = 3;
 
 const RECOVERY_ITEMS = [
   { value: "acorn", icon: "🌰" },
@@ -17,22 +31,61 @@ const RECOVERY_ITEMS = [
   { value: "wind", icon: "🌀" },
 ];
 
-function formatDate(value) {
-  if (!value) {
-    return "등록일 확인 중";
+// jh 수정함 - 장소 목록 각 행에 lat/lon 대신 사람이 읽을 주소를 보여주기 위해
+// 카카오 좌표->주소 변환(GET /places/reverse-geocode)을 호출한다. 로그인 없이도
+// 되는 엔드포인트라 LocationSearchPopover.jsx와 같은 패턴으로 placesApi.js를
+// 거치지 않고 request()를 직접 쓴다.
+//
+// jh 수정함 - 마이페이지를 열 때마다 같은 장소를 매번 다시 조회하지 않도록,
+// 결과를 LocationContext의 addressCache(placeId -> 주소)에 캐시해서 재사용한다.
+// 캐시에 이미 있으면(성공/실패 둘 다 캐시됨) API를 다시 부르지 않고,
+// lat/lon이 바뀌면 LocationContext.setLocationCoordinates가 그 장소의
+// 캐시만 지워서 여기서 자연히 다시 조회하게 된다.
+function PlaceLocationStatus({ placeId, lat, lon }) {
+  const { addressCache, setCachedAddress } = useLocationContext();
+  const cachedAddress = addressCache[placeId];
+
+  useEffect(() => {
+    if (lat == null || lon == null) {
+      return undefined;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(addressCache, placeId)) {
+      return undefined;
+    }
+
+    let ignoreResult = false;
+
+    request(`/api/places/reverse-geocode?lat=${lat}&lon=${lon}`)
+      .then((result) => {
+        if (!ignoreResult) {
+          setCachedAddress(placeId, result.address ?? null);
+        }
+      })
+      .catch(() => {
+        if (!ignoreResult) {
+          setCachedAddress(placeId, null);
+        }
+      });
+
+    return () => {
+      ignoreResult = true;
+    };
+    // addressCache/setCachedAddress는 일부러 뺐다. 다른 장소의 캐시가 갱신될
+    // 때마다 이 effect가 다시 도는 걸 막고, placeId/lat/lon이 바뀔 때(= 이
+    // 장소를 새로 그리거나 위치가 바뀌었을 때)만 다시 조회하면 충분하다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeId, lat, lon]);
+
+  if (lat == null || lon == null) {
+    return <p>위치 미설정</p>;
   }
 
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "등록일 확인 중";
+  if (cachedAddress === undefined) {
+    return <p>주소 확인 중...</p>;
   }
 
-  return date.toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  return <p>{cachedAddress || "주소를 확인하지 못했어요"}</p>;
 }
 
 function formatPower(value) {
@@ -41,6 +94,28 @@ function formatPower(value) {
   }
 
   return `${Number(value).toLocaleString("ko-KR")} W`;
+}
+
+// jh 수정함 - 장소 카드의 별표(기본 설정)/연필(이름 수정) 아이콘 버튼 스타일
+// 헬퍼. 네모 테두리/배경 없이 아이콘만 떠 있는 형태로 통일했다. 새 전역 CSS
+// 클래스를 추가하는 대신 인라인 스타일로 처리해서 다른 마이페이지 섹션
+// 스타일에 영향이 없게 했다.
+function locationIconButtonStyle({ active = false, tone = "neutral" } = {}) {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "30px",
+    height: "30px",
+    padding: 0,
+    border: "none",
+    background: "transparent",
+    color:
+      tone === "star" ? (active ? "#f5b301" : "#b7c4bd") : "#5f7269",
+    fontSize: tone === "star" ? "19px" : "15px",
+    lineHeight: 1,
+    cursor: "pointer",
+  };
 }
 
 function MyPageRow({ icon, title, description, danger = false, onClick }) {
@@ -114,6 +189,52 @@ function MyPage({
   const [isLoadingPlaces, setIsLoadingPlaces] = useState(true);
   const [placeError, setPlaceError] = useState("");
 
+  // jh 수정함 - "위치 정보" 섹션은 이제 이 places state 대신 useLocationContext()의
+  // locations를 쓴다(LocationSwitcher/EnvironmentCard와 같은 목록을 공유).
+  // "에어컨 정보" 섹션은 그대로 places를 쓰므로 위 state는 남겨둔다.
+  const {
+    locations,
+    isLoading: isLoadingLocations,
+    loadError: locationLoadError,
+    setDefaultLocation,
+    savePlaceDetails,
+    removeLocation,
+    refreshLocations,
+  } = useLocationContext();
+
+  // jh 수정함 - 목록 표시 순서만 기본 장소가 맨 위로 오도록 정렬한다(id/순회
+  // 순서 등 다른 로직에는 영향 없게, 렌더링에 쓸 파생 배열만 따로 만든다).
+  // locations가 바뀔 때마다(= setDefaultLocation의 낙관적 갱신 포함) 다시
+  // 계산되므로, 기본 장소를 바꾼 그 순간 바로 맨 위로 옮겨간다.
+  const sortedLocations = useMemo(
+    () => [
+      ...locations.filter((location) => location.isDefault),
+      ...locations.filter((location) => !location.isDefault),
+    ],
+    [locations],
+  );
+
+  const [openLocationPopoverId, setOpenLocationPopoverId] = useState(null);
+  // jh 수정함 - "변경" 모달이 "장소 추가"와 같은 디자인(장소 이름 + 위치 검색 ->
+  // 저장하기 버튼)을 쓰도록 바꾸면서, 이름/위치 둘 다 고르는 즉시 저장하지
+  // 않고 여기 담아뒀다가 "저장하기"를 눌러야 실제로 저장한다(바뀐 필드만
+  // savePlaceDetails로 한 번에 보냄). nameDraft는 모달을 열 때 현재 이름으로
+  // 초기화된다.
+  const [nameDraft, setNameDraft] = useState("");
+  const [pendingLocationSelection, setPendingLocationSelection] =
+    useState(null);
+  const [isSavingLocationSelection, setIsSavingLocationSelection] =
+    useState(false);
+  const [isUpdatingDefaultId, setIsUpdatingDefaultId] = useState(null);
+  // jh 수정함 - 장소가 많을 때 목록이 너무 길어지지 않도록 처음엔 3개만 보여준다.
+  const [isLocationListExpanded, setIsLocationListExpanded] = useState(false);
+  // jh 수정함 - "장소 추가" 버튼. LocationListPanel.jsx의 "+ 장소 추가"와 완전히
+  // 같은 모달(AirconPage variant="modal")을 그대로 재사용한다.
+  const [isAddingPlace, setIsAddingPlace] = useState(false);
+  const [registeredAircons, setRegisteredAircons] = useState(
+    createInitialAirconSlots,
+  );
+
   const [activeModal, setActiveModal] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -181,8 +302,6 @@ function MyPage({
     return () => window.clearTimeout(timerId);
   }, [toastMessage]);
 
-  const firstPlace = places[0] || null;
-
   const allAircons = useMemo(
     () =>
       places.flatMap((place) =>
@@ -200,6 +319,119 @@ function MyPage({
 
   function showComingSoon(featureName) {
     showToast(`${featureName} 기능은 다음 단계에서 연결할게요.`);
+  }
+
+  // jh 수정함 - "장소 추가" 모달 열기/닫기 + 완료 처리. LocationListPanel.jsx의
+  // openAddForm/closeAddForm/handleAirconComplete와 동일한 흐름이다.
+  function openAddPlaceForm() {
+    setRegisteredAircons(createInitialAirconSlots());
+    setIsAddingPlace(true);
+  }
+
+  function closeAddPlaceForm() {
+    setIsAddingPlace(false);
+  }
+
+  async function handleAirconComplete(placeName, aircons, lat, lon) {
+    await createPlaceWithAircons(
+      buildPlacePayload(placeName, aircons, lat, lon),
+    );
+    alert("장소가 추가되었습니다.");
+    setIsAddingPlace(false);
+    await refreshLocations();
+  }
+
+  // jh 수정함 - "위치 정보" 섹션의 변경/기본 설정/삭제 버튼 핸들러
+  function closeLocationPopover() {
+    setOpenLocationPopoverId(null);
+    setPendingLocationSelection(null);
+    setNameDraft("");
+  }
+
+  // jh 수정함 - "변경" 버튼을 누르면 이름 입력창을 현재 이름으로 초기화해서 연다
+  // (이름 인라인 편집 대신, 이름도 이 모달에서 같이 편집한다).
+  function openLocationPopoverFor(location) {
+    setPendingLocationSelection(null);
+    setNameDraft(location.name);
+    setOpenLocationPopoverId(location.id);
+  }
+
+  // jh 수정함 - "저장하기" 버튼. 이름/위치 중 실제로 바뀐 것만 모아서
+  // savePlaceDetails 한 번으로 저장한다(AirconPage의 "추가하기"처럼 입력/
+  // 검색과 저장을 분리). 아무것도 안 바뀌었으면 저장 자체를 스킵한다.
+  async function handleSaveLocationDetails() {
+    if (openLocationPopoverId === null) {
+      return;
+    }
+
+    const currentLocation = locations.find(
+      (location) => String(location.id) === String(openLocationPopoverId),
+    );
+    if (!currentLocation) {
+      return;
+    }
+
+    const trimmedName = nameDraft.trim();
+    const updates = {};
+
+    if (trimmedName && trimmedName !== currentLocation.name) {
+      updates.name = trimmedName;
+    }
+    if (pendingLocationSelection) {
+      updates.lat = pendingLocationSelection.lat;
+      updates.lon = pendingLocationSelection.lon;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return;
+    }
+
+    setIsSavingLocationSelection(true);
+
+    try {
+      await savePlaceDetails(openLocationPopoverId, updates);
+      closeLocationPopover();
+      showToast("저장되었습니다.");
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      setIsSavingLocationSelection(false);
+    }
+  }
+
+  async function handleSetDefaultLocation(placeId) {
+    setIsUpdatingDefaultId(placeId);
+
+    try {
+      await setDefaultLocation(placeId);
+      showToast("기본 장소로 설정되었습니다.");
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      setIsUpdatingDefaultId(null);
+    }
+  }
+
+  async function handleDeleteLocation(placeId) {
+    if (locations.length <= 1) {
+      return;
+    }
+
+    const confirmed = window.confirm("이 장소를 삭제하시겠습니까?");
+    if (!confirmed) {
+      return;
+    }
+
+    if (openLocationPopoverId === placeId) {
+      closeLocationPopover();
+    }
+
+    try {
+      await removeLocation(placeId);
+      showToast("장소가 삭제되었습니다.");
+    } catch (error) {
+      showToast(error.message);
+    }
   }
 
   function openNicknameModal() {
@@ -354,6 +586,20 @@ function MyPage({
     }
   }
 
+  // jh 수정함 - "장소 정보 변경하기" 모달의 저장 버튼 활성화 여부. 이름을
+  // 실제로 바꿨거나(원래 이름과 다르고 비어있지 않음) 위치를 새로 골랐을
+  // 때만 저장 가능하다.
+  const editingLocation = locations.find(
+    (location) => String(location.id) === String(openLocationPopoverId),
+  );
+  const trimmedNameDraft = nameDraft.trim();
+  const hasNameChange = Boolean(
+    editingLocation &&
+      trimmedNameDraft &&
+      trimmedNameDraft !== editingLocation.name,
+  );
+  const canSaveLocationDetails = hasNameChange || Boolean(pendingLocationSelection);
+
   return (
     <div className="mypage-screen">
       {toastMessage && (
@@ -477,51 +723,196 @@ function MyPage({
 
           <section className="mypage-section">
             <div className="mypage-section-title">
-              <h3>위치 정보</h3>
+              <h3>장소 정보</h3>
             </div>
 
-            <article className="mypage-info-card location-card">
-              <div className="mypage-info-icon">🏠</div>
+            {isLoadingLocations ? (
+              <article className="mypage-info-card location-card">
+                <div className="mypage-info-icon">🏠</div>
+                <div className="mypage-info-main">
+                  <h4>장소 정보를 불러오는 중</h4>
+                  <p>잠시만 기다려 주세요.</p>
+                </div>
+              </article>
+            ) : locations.length === 0 ? (
+              <article className="mypage-info-card location-card">
+                <div className="mypage-info-icon">🏠</div>
+                <div className="mypage-info-main">
+                  <h4>등록된 장소가 없어요</h4>
+                  <p>장소를 등록하면 공간별로 에어컨을 관리할 수 있어요.</p>
+                </div>
+              </article>
+            ) : (
+              (isLocationListExpanded
+                ? sortedLocations
+                : sortedLocations.slice(0, LOCATION_PREVIEW_COUNT)
+              ).map((location) => {
+                const isOnlyLocation = locations.length <= 1;
 
-              <div className="mypage-info-main">
-                {isLoadingPlaces ? (
-                  <>
-                    <h4>위치 정보를 불러오는 중</h4>
-                    <p>잠시만 기다려 주세요.</p>
-                  </>
-                ) : firstPlace ? (
-                  <>
-                    <div className="mypage-title-with-badge">
-                      <h4>{firstPlace.name}</h4>
-                      <span>현재 장소</span>
+                return (
+                  <article
+                    className="mypage-info-card location-card"
+                    key={location.id}
+                  >
+                    <div className="mypage-info-icon">🏠</div>
+
+                    <div className="mypage-info-main">
+                      <div
+                        className="mypage-title-with-badge"
+                        style={{ rowGap: "6px" }}
+                      >
+                        <h4>{location.name}</h4>
+
+                        {location.isDefault && <span>기본 장소</span>}
+                      </div>
+
+                      <PlaceLocationStatus
+                        placeId={location.id}
+                        lat={location.lat}
+                        lon={location.lon}
+                      />
                     </div>
-                    <p>등록된 에어컨 {firstPlace.aircons?.length || 0}개</p>
-                    <small>등록일 {formatDate(firstPlace.created_at)}</small>
-                  </>
-                ) : (
-                  <>
-                    <h4>등록된 위치가 없어요</h4>
-                    <p>위치를 등록하면 공간별로 에어컨을 관리할 수 있어요.</p>
-                  </>
-                )}
 
-                {placeError && <small className="mypage-error">{placeError}</small>}
-              </div>
+                    <div
+                      className="mypage-location-actions"
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "flex-end",
+                        gap: "8px",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleSetDefaultLocation(location.id)}
+                        disabled={isUpdatingDefaultId === location.id}
+                        aria-pressed={location.isDefault}
+                        aria-label={
+                          location.isDefault
+                            ? "기본 장소로 설정됨"
+                            : "기본 장소로 설정"
+                        }
+                        style={locationIconButtonStyle({
+                          active: location.isDefault,
+                          tone: "star",
+                        })}
+                      >
+                        {location.isDefault ? "★" : "☆"}
+                      </button>
 
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          type="button"
+                          className="mypage-outline-button"
+                          onClick={() => openLocationPopoverFor(location)}
+                        >
+                          변경
+                        </button>
+
+                        <button
+                          type="button"
+                          className="mypage-outline-button"
+                          onClick={() => handleDeleteLocation(location.id)}
+                          disabled={isOnlyLocation}
+                          title={
+                            isOnlyLocation
+                              ? "최소 1개의 장소는 남아있어야 해요"
+                              : undefined
+                          }
+                          style={
+                            isOnlyLocation
+                              ? { opacity: 0.45, cursor: "not-allowed" }
+                              : undefined
+                          }
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+
+                  </article>
+                );
+              })
+            )}
+
+            {/* jh 수정함 - 3개 초과일 때만 더보기/접기 버튼을 보여주고,
+                "+ 장소 추가"는 항상 보여준다. 더보기가 있을 땐 나란히 둔다. */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                gap: "8px",
+              }}
+            >
               <button
                 type="button"
                 className="mypage-outline-button"
-                onClick={() => showComingSoon("위치 변경")}
+                onClick={openAddPlaceForm}
               >
-                변경
+                + 장소 추가
               </button>
-            </article>
+
+              {locations.length > LOCATION_PREVIEW_COUNT && (
+                <button
+                  type="button"
+                  className="mypage-outline-button"
+                  onClick={() =>
+                    setIsLocationListExpanded((previous) => !previous)
+                  }
+                >
+                  {isLocationListExpanded ? "접기" : "더보기"}
+                </button>
+              )}
+            </div>
+
+            {/* jh 수정함 - 이 섹션 안 깊숙이 그대로 렌더링하면(마이페이지 레이아웃
+                조상 어딘가에 의해) position:fixed가 뷰포트가 아니라 스크롤되는
+                조상 기준으로 잡혀서, 스크롤 위치/버튼 위치에 따라 모달이 화면
+                아래쪽에 뜨는 문제가 있었다. createPortal로 document.body에 직접
+                붙여서 별명 변경 모달처럼 항상 뷰포트 정중앙에 뜨게 한다 - 디자인/
+                클래스/로직은 전혀 안 바꾸고 "어디에 마운트되는지"만 바꾼 것이다. */}
+            {isAddingPlace &&
+              createPortal(
+                <div
+                  className="location-add-modal-backdrop"
+                  role="presentation"
+                  onMouseDown={closeAddPlaceForm}
+                >
+                  <div
+                    className="location-add-modal"
+                    role="dialog"
+                    aria-modal="true"
+                    onMouseDown={(event) => event.stopPropagation()}
+                  >
+                    <div className="location-add-modal-scroll">
+                      <AirconPage
+                        variant="modal"
+                        registeredAircons={registeredAircons}
+                        setRegisteredAircons={setRegisteredAircons}
+                        onBack={closeAddPlaceForm}
+                        onComplete={handleAirconComplete}
+                      />
+                    </div>
+                  </div>
+                </div>,
+                document.body,
+              )}
+
+            {locationLoadError && (
+              <small className="mypage-error">{locationLoadError}</small>
+            )}
           </section>
 
           <section className="mypage-section">
             <div className="mypage-section-title">
               <h3>에어컨 정보</h3>
             </div>
+
+            {/* jh 수정함 - "위치 정보" 섹션이 locations(useLocationContext)로
+                옮겨가면서, 같은 fetchMyPlaces() 실패 메시지(placeError)를 보여줄
+                자리가 없어져서 에어컨 정보 쪽으로 옮겼다(에어컨 목록도 이 places
+                상태를 그대로 쓰고 있어서 실패하면 여기도 영향을 받는다). */}
+            {placeError && <small className="mypage-error">{placeError}</small>}
 
             <div className="mypage-aircon-list">
               {isLoadingPlaces ? (
@@ -591,6 +982,96 @@ function MyPage({
           </section>
         </main>
       </div>
+
+      {/* jh 수정함 - "변경" 버튼을 누르면 "장소 추가"와 완전히 같은 모달 디자인
+          (location-add-modal-* 클래스, flow-card 헤더+저장 버튼 행)으로 뜨도록
+          바꿨다. 제목만 "장소 정보 변경하기"로 다르고, "장소 이름" 필드까지
+          같이 넣어서 이름/위치를 이 모달 하나에서 같이 편집한다(이름 인라인
+          편집은 없앰 - 마이페이지의 다른 편집들(별명 등)도 전부 모달 방식이라
+          이게 더 일관적이다). 이름/위치 모두 고르는 즉시 저장하지 않고
+          담아뒀다가 "저장하기"를 눌러야 실제로 저장되고, 바뀐 필드만
+          savePlaceDetails로 한 번에 보낸다. "장소 추가" 모달과 같은 이유로
+          createPortal로 document.body에 직접 마운트해서 스크롤 위치에 따라
+          위치가 밀리는 문제를 피한다. */}
+      {openLocationPopoverId !== null &&
+        createPortal(
+          <div
+            className="location-add-modal-backdrop"
+            role="presentation"
+            onMouseDown={closeLocationPopover}
+          >
+            <div
+              className="location-add-modal"
+              role="dialog"
+              aria-modal="true"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="location-add-modal-scroll">
+                <section className="flow-card wide-card location-add-modal-card">
+                  <div className="location-add-modal-heading">
+                    <div>
+                      {/* jh 수정함 - 설명 문구를 없애서, h2 하나만 남은 이 헤더에서는
+                          h2 자체의 margin-bottom(다음 문단과의 간격용)이 필요 없어
+                          margin:0으로 지웠다(location-add-modal-heading h2 공용
+                          규칙은 "장소 추가" 모달이 아직 설명 문구를 쓰므로 그대로 둠). */}
+                      <h2 style={{ margin: 0 }}>장소 정보 변경</h2>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="location-add-modal-close"
+                      onClick={closeLocationPopover}
+                      aria-label="장소 정보 변경하기 닫기"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <label className="place-field">
+                    장소 이름
+                    <input
+                      type="text"
+                      value={nameDraft}
+                      maxLength={50}
+                      onChange={(event) => setNameDraft(event.target.value)}
+                      placeholder="예: 우리 집, 자취방, 사무실"
+                    />
+                  </label>
+
+                  <LocationSearchPopover
+                    embedded
+                    onSelect={(lat, lon) =>
+                      setPendingLocationSelection({ lat, lon })
+                    }
+                    onClose={closeLocationPopover}
+                  />
+
+                  <div className="flow-button-row aircon-action-row">
+                    <button
+                      className="flow-secondary-button"
+                      type="button"
+                      onClick={closeLocationPopover}
+                    >
+                      취소
+                    </button>
+
+                    <button
+                      className="flow-primary-button"
+                      type="button"
+                      onClick={handleSaveLocationDetails}
+                      disabled={
+                        !canSaveLocationDetails || isSavingLocationSelection
+                      }
+                    >
+                      {isSavingLocationSelection ? "저장 중..." : "저장하기"}
+                    </button>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {activeModal === "nickname" && (
         <MyPageModal

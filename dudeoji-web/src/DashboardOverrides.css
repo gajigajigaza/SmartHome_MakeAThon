@@ -938,6 +938,15 @@
     min-width: 72px;
     height: 36px;
   }
+
+  /* jh 수정함 - 장소 정보 카드의 별표/변경/삭제 묶음(.mypage-location-actions)도
+     위 .mypage-outline-button과 같은 이유로 좁은 화면에서 2열 grid로 바뀔 때
+     2번째 칸으로 옮기고 오른쪽 정렬한다. 안 하면 3번째 칸이 사라져서 버튼이
+     카드 밖으로 밀려났다. */
+  .mypage-location-actions {
+    grid-column: 2;
+    justify-self: end;
+  }
 }
 
 @media (max-width: 480px) {
@@ -3039,21 +3048,19 @@ main {
   margin-top: 4px;
 }
 
-/* jh 수정함 - 흰 배경(var(--card))이 대시보드 헤더의 연한 그라디언트 위에서
-   붕 떠 보여서 반투명 흰색으로 바꾸고, 테두리도 진한 회색 대신 아주 옅은
-   초록 톤으로 낮췄다(헤더 배경 위에 자연스럽게 녹아들도록). 크기는 다시 살짝
-   키웠다(padding/font-size/gap) - 점 아이콘을 빼면서 버튼이 너무 작아 보였음.
-   화살표(em)는 비율상 더 크게. */
+/* jh 수정함 - 드롭다운 전체를 더 컴팩트하게 만드는 김에 버튼 자체도 한 단계
+   줄임(padding/font-size/gap) - 예전엔 점 아이콘을 빼면서 일부러 키웠었는데,
+   패널이 작아지니 버튼도 같이 작아야 균형이 맞는다. */
 .location-switcher-button {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px 8px 14px;
-  border-radius: 13px;
+  gap: 6px;
+  padding: 6px 13px 6px 11px;
+  border-radius: 12px;
   border: 1px solid rgba(31, 148, 109, 0.14);
   background: rgba(255, 255, 255, 0.5);
   color: var(--text, #18312a);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition:
@@ -3107,22 +3114,21 @@ main {
   background: var(--green, #1e8f67);
 }
 
-/* jh 수정함 - 카드 폭을 한 번 더 줄였고(235->200px), 좁은 화면에서 헤더/버튼
-   바깥으로 삐져나가지 않도록 max-width로 뷰포트 폭에 안전판을 뒀다.
+/* jh 수정함 - 카드를 한 번 더 컴팩트하게(200->168px, padding/radius도 축소).
+   좁은 화면에서 헤더/버튼 바깥으로 삐져나가지 않도록 max-width는 그대로 둔다.
    배경은 .location-switcher-button의 색(rgba(255,255,255,0.5), 흰색)에서
    알파만 1로 만든 완전 불투명 흰색(#ffffff) - "버튼과 같은 색이되 반투명은 아님". */
 .location-panel {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 6px);
   left: 0;
   z-index: 20;
 
-  width: 200px;
+  width: 168px;
   max-width: calc(100vw - 24px);
-  /* jh 수정함 - 아래 여백이 커 보여서 padding-bottom만 따로 줄임(다른 변은 15px 유지) */
-  padding: 15px 15px 10px;
+  padding: 10px 10px 8px;
   border: 1px solid rgba(176, 210, 189, 0.9);
-  border-radius: 17px;
+  border-radius: 14px;
   background: #ffffff;
   box-shadow: 0 22px 45px rgba(20, 54, 35, 0.18);
 }
@@ -3131,17 +3137,18 @@ main {
    목록이 카드 맨 위 여백만 살짝 두고 바로 시작한다. */
 /* jh 수정함 - 맨 위 항목을 hover하면 translateY(-1px)로 위로 뜨는데, 리스트에
    위쪽 여백이 없어서(padding:0) overflow-y:auto 경계에 그 1px이 잘려 보였다.
-   padding-top을 살짝 줘서 뜰 공간을 마련 - "선택하면 윗부분이 잘린다"는 문제 수정. */
+   padding-top을 살짝 줘서 뜰 공간을 마련 - "선택하면 윗부분이 잘린다"는 문제 수정.
+   max-height도 컴팩트하게 줄임(200->160px, 목록이 길면 스크롤). */
 .location-panel-list {
   list-style: none;
-  margin: 0 0 8px;
+  margin: 0;
   padding: 2px 0 0;
-  max-height: 200px;
+  max-height: 160px;
   overflow-y: auto;
 }
 
 .location-panel-list li + li {
-  margin-top: 4px;
+  margin-top: 3px;
 }
 
 /* jh 수정함 - 목록 항목을 "카드"처럼 보이게 border(기본은 투명, hover/active에서만
@@ -3152,12 +3159,12 @@ main {
 .location-panel-list button {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   width: 100%;
   text-align: left;
-  padding: 7px 9px;
+  padding: 6px 8px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 8px;
   background: none;
   color: var(--text, #18312a);
   cursor: pointer;
@@ -3183,65 +3190,25 @@ main {
 }
 
 .location-panel-empty {
-  padding: 16px 10px;
+  padding: 12px 8px;
   color: var(--muted, #888);
   font-size: 12px;
   text-align: center;
 }
 
-.location-panel-add {
-  padding-top: 4px;
-  border-top: 1px solid var(--border, #dce7e2);
-}
-
-/* jh 수정함 - 점선 테두리 + 초록 배경으로 눈에 띄던 CTA 스타일을 걷어내고,
-   목록 항목과 같은 톤의 조용한 "행"으로 바꿨다 - 배경/테두리 없이 은은한
-   회색 텍스트, hover에서만 목록 항목과 같은 연한 초록 워시가 살짝 비친다.
-   width:100%로 목록 항목(.location-panel-list button)과 같은 hover 폭을 갖는다
-   - 아이콘/텍스트는 justify-content:center로 계속 중앙에 온다. */
-.location-panel-add button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  width: 100%;
-  min-height: 26px;
-  padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: none;
-  color: var(--muted, #6c7f78);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-/* jh 수정함 - hover 배경 하이라이트를 없애고 글자색만 진해지도록(muted -> green-dark).
-   --green-dark(#126447)로는 부족하다는 피드백이 있어서, 그보다 더 짙은 초록으로
-   낮추고 font-weight도 살짝 굵게 줘서 "진해짐"을 더 확실하게 느끼도록 했다. */
-.location-panel-add button:hover {
-  color: #0d4b35;
-  font-weight: 600;
-}
-
 /* jh 수정함 - 모바일 사이즈(App.css의 .header 반응형과 같은 560px 기준)에서
-   헤더 버튼/드롭다운 카드가 화면 밖으로 삐져나가지 않도록 크기를 한 단계 더
-   줄인다. .location-panel은 이미 max-width로 안전판이 있지만, 기본 width
-   자체도 더 좁혀서 화면을 너무 많이 차지하지 않게 한다. */
+   헤더 버튼/드롭다운 카드가 화면 밖으로 삐져나가지 않도록 기본(컴팩트) 크기보다
+   한 단계 더 줄인다. .location-panel은 이미 max-width로 안전판이 있지만, 기본
+   width 자체도 더 좁혀서 화면을 너무 많이 차지하지 않게 한다. */
 @media (max-width: 560px) {
   .location-switcher-button {
-    padding: 6px 12px 6px 10px;
-    font-size: 13px;
+    padding: 5px 11px 5px 9px;
+    font-size: 12px;
   }
 
   .location-panel {
-    width: 180px;
-    padding: 12px;
-  }
-
-  .location-panel-list button {
-    font-size: 12px;
+    width: 152px;
+    padding: 9px;
   }
 }
 
@@ -3278,18 +3245,29 @@ main {
   z-index: 90000 !important;
 }
 
-/* jh 수정함 - AirconPage 내부의 아이콘 선택 팝업(.aircon-modal-backdrop/.aircon-modal,
-   FlowApp.css)과 같은 폭 제한 + 스크롤 컨테이너 역할만 한다. */
+/* jh 수정함 - max-height/overflow를 grid(.location-add-modal-backdrop)가
+   실제로 중앙 정렬하는 요소인 이 자신에게 직접 건다 - .mypage-modal-card와
+   같은 원리(정렬 대상 = 실제로 잘린/클램프된 박스). 이전엔 이 두 속성이 자식인
+   .location-add-modal-scroll에만 있어서, grid 아이템의 기본 min-height:auto
+   때문에 정렬 기준 박스 높이가 스크롤로 잘린 높이가 아니라 안쪽 콘텐츠의
+   원래(안 잘린) 높이에 가깝게 커져 화면 위쪽으로 치우쳐 보이는 문제가 있었다. */
 .location-add-modal {
   width: min(100%, 720px);
-}
-
-.location-add-modal-scroll {
   /* jh 수정함 - 760px/100vh-40px -> 860px/100vh-24px: 백드롭 padding을 20->12px로
      줄인 만큼(24px) 반영하고, 고정 캡도 760->860px로 올려서 스크롤 여유를 넓힘 */
   max-height: min(860px, calc(100vh - 24px));
   overflow-y: auto;
+  /* jh 수정함 - "장소 추가"(내용 많아서 보통 스크롤 생김)와 "장소 정보 변경하기"
+     (내용 짧아서 보통 스크롤 안 생김)가 같은 폭(720px)인데도, 스크롤바가 오른쪽
+     공간을 차지하는 경우와 아닌 경우가 섞여서 좌우 여백이 다르게 보였다.
+     scrollbar-gutter:stable로 스크롤바 유무와 상관없이 항상 같은 공간을
+     예약해서 두 모달의 좌우 간격을 통일한다. */
+  scrollbar-gutter: stable;
 }
+
+/* jh 수정함 - .location-add-modal-scroll(JSX엔 그대로 있음)은 이제 스타일이
+   전혀 없는 단순 컨테이너다. 높이 제한/스크롤은 모두 위 .location-add-modal이
+   맡는다 - 그래서 여기 이 이름의 CSS 규칙이 따로 없는 게 의도된 상태다. */
 
 /* jh 수정함 - variant="modal"(AirconPage.jsx, location-add-modal-card 클래스)의
    전체 간격 리듬을 두 값으로 통일한다. variant="signup"(회원가입 화면)에는 이

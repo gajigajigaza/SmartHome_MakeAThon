@@ -51,3 +51,24 @@ export async function updatePlaceLocation(placeId, lat, lon) {
     body: JSON.stringify({ lat, lon }),
   });
 }
+
+// jh 수정함 - MyPage.jsx의 "변경" 모달(이름+위치를 한 폼에서 같이 편집)이 바뀐
+// 필드만(이름만/위치만/둘 다) 한 번에 저장할 때 쓴다. updatePlaceLocation과
+// 같은 PATCH /places/{place_id}를 쓰지만, payload에 넣은 필드만 보낸다
+// (places_router.py가 name/lat/lon을 각각 선택 필드로 받는다).
+export async function updatePlaceDetails(placeId, payload) {
+  return request(`/api/places/${placeId}`, {
+    method: "PATCH",
+    auth: true,
+    body: JSON.stringify(payload),
+  });
+}
+
+// jh 수정함 - MyPage.jsx의 장소 삭제 버튼에 쓴다. DELETE /places/{place_id}
+// (places_router.py, user_aircons는 DB cascade로 자동 정리됨).
+export async function deletePlaceItem(placeId) {
+  return request(`/api/places/${placeId}`, {
+    method: "DELETE",
+    auth: true,
+  });
+}

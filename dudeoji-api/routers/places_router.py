@@ -56,10 +56,13 @@ class PlaceCreate(BaseModel):
     aircons: list[UserAirconCreate] = Field(min_length=1, max_length=20)
 
 
-# jh 수정함 - PATCH /places/{place_id}에서 lat/lon만 갱신할 때 쓰는 스키마
+# jh 수정함 - PATCH /places/{place_id}에서 lat/lon 그리고/또는 name을 갱신할 때 쓰는
+# 스키마. 전부 선택 필드라 이름만, 위치만, 둘 다 보내는 것 다 가능하다
+# (lat/lon은 좌표쌍이라 둘 중 하나만 오면 핸들러에서 400으로 막는다).
 class PlaceLocationUpdate(BaseModel):
-    lat: float
-    lon: float
+    name: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    lat: Optional[float] = None
+    lon: Optional[float] = None
 
 
 def create_place_with_aircons_for_user(
@@ -70,6 +73,15 @@ def create_place_with_aircons_for_user(
     place = None
 
     try:
+        # jh 수정함 - 사용자가 처음 만드는 장소(기존 장소 0개)면 자동으로 기본 장소로 지정
+        existing_place_count_result = (
+            supabase.table(PLACES_TABLE)
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        is_first_place = (existing_place_count_result.count or 0) == 0
+
         place_result = (
             supabase.table(PLACES_TABLE)
             .insert(
@@ -79,6 +91,8 @@ def create_place_with_aircons_for_user(
                     # jh 수정함 - 회원가입 시 lat/lon 없으면 None으로 저장됨
                     "lat": payload.lat,
                     "lon": payload.lon,
+                    # jh 수정함 - 첫 장소면 기본 장소로 설정
+                    "is_default": is_first_place,
                 }
             )
             .execute()
@@ -235,8 +249,8 @@ def create_place(
 def read_my_places(current_user: dict = Depends(get_current_user)):
     place_result = (
         supabase.table(PLACES_TABLE)
-        # jh 수정함 - 위치 기능에 필요한 lat/lon도 응답에 포함
-        .select("id,name,lat,lon,created_at")
+        # jh 수정함 - 위치 기능에 필요한 lat/lon, 기본 장소 여부(is_default)도 응답에 포함
+        .select("id,name,lat,lon,is_default,created_at")
         .eq("user_id", current_user["id"])
         .order("created_at")
         .execute()
@@ -256,7 +270,8 @@ def read_my_places(current_user: dict = Depends(get_current_user)):
     return places
 
 
-# jh 수정함 - 로그인 후 위치(lat/lon)를 별도로 설정/수정하는 엔드포인트
+# jh 수정함 - 로그인 후 위치(lat/lon) 그리고/또는 이름을 수정하는 엔드포인트.
+# 셋 다 선택 필드라 이름만, 위치만, 둘 다 보내는 요청을 모두 받는다.
 @router.patch("/places/{place_id}")
 def update_place_location(
     place_id: int,
@@ -277,13 +292,78 @@ def update_place_location(
             detail="장소를 찾을 수 없습니다.",
         )
 
+    # jh 수정함 - lat/lon은 좌표쌍이라 하나만 오면 400, 둘 다 없으면 위치는 건드리지 않는다
+    update_data = {}
+
+    if payload.name is not None:
+        update_data["name"] = payload.name.strip()
+
+    if payload.lat is not None or payload.lon is not None:
+        if payload.lat is None or payload.lon is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="lat와 lon은 함께 보내야 합니다.",
+            )
+        update_data["lat"] = payload.lat
+        update_data["lon"] = payload.lon
+
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="수정할 값(name 또는 lat/lon)이 없습니다.",
+        )
+
     update_result = (
         supabase.table(PLACES_TABLE)
-        .update({"lat": payload.lat, "lon": payload.lon})
+        .update(update_data)
         .eq("id", place_id)
         .execute()
     )
     return update_result.data[0]
+
+
+# jh 수정함 - 장소 삭제 엔드포인트. user_aircons는 DB의 ON DELETE CASCADE로
+# 자동 정리되므로(place_id FK, 실제 Supabase에서 확인함) 여기서 따로 지우지
+# 않는다. 삭제한 장소가 기본 장소였다면, 남은 장소 중 가장 오래된 것을
+# 새 기본 장소로 지정한다(기본 장소는 항상 하나만 존재해야 하므로).
+@router.delete("/places/{place_id}")
+def delete_place(
+    place_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    place_result = (
+        supabase.table(PLACES_TABLE)
+        .select("id,is_default")
+        .eq("id", place_id)
+        .eq("user_id", current_user["id"])
+        .limit(1)
+        .execute()
+    )
+    if not place_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="장소를 찾을 수 없거나 권한이 없습니다.",
+        )
+
+    was_default = place_result.data[0]["is_default"]
+
+    supabase.table(PLACES_TABLE).delete().eq("id", place_id).execute()
+
+    if was_default:
+        remaining_result = (
+            supabase.table(PLACES_TABLE)
+            .select("id")
+            .eq("user_id", current_user["id"])
+            .order("created_at")
+            .limit(1)
+            .execute()
+        )
+        if remaining_result.data:
+            supabase.table(PLACES_TABLE).update({"is_default": True}).eq(
+                "id", remaining_result.data[0]["id"]
+            ).execute()
+
+    return {"status": "success", "message": "장소가 삭제되었습니다."}
 
 
 # jh 수정함 - 카카오 로컬 API(주소/키워드/좌표->주소 검색)를 호출하는 공용 헬퍼.
@@ -454,3 +534,40 @@ def update_place_cooldown(
         "status": "success",
         "message": f"에어컨 최소 가동 시간이 {payload.target_cooldown_minutes}분으로 설정되었습니다."
     }
+
+
+# jh 수정함 - 여러 장소 중 하나를 기본 장소로 지정하는 엔드포인트.
+# 기본 장소는 항상 하나만 존재해야 하므로, 대상 장소를 true로 켜기 전에
+# 같은 사용자의 다른 장소를 먼저 전부 false로 초기화한다.
+@router.patch("/places/{place_id}/default")
+def update_place_default(
+    place_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """place_id를 기본 장소(is_default=true)로 설정하고 나머지는 해제합니다."""
+    place_result = (
+        supabase.table(PLACES_TABLE)
+        .select("id")
+        .eq("id", place_id)
+        .eq("user_id", current_user["id"])
+        .limit(1)
+        .execute()
+    )
+    if not place_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="장소를 찾을 수 없거나 권한이 없습니다.",
+        )
+
+    # jh 수정함 - 기본 장소는 하나만 존재해야 하므로 같은 사용자의 다른 장소를 먼저 초기화
+    supabase.table(PLACES_TABLE).update({"is_default": False}).eq(
+        "user_id", current_user["id"]
+    ).neq("id", place_id).execute()
+
+    update_result = (
+        supabase.table(PLACES_TABLE)
+        .update({"is_default": True})
+        .eq("id", place_id)
+        .execute()
+    )
+    return update_result.data[0]
