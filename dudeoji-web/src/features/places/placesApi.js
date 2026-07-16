@@ -42,6 +42,15 @@ export async function fetchMyPlaces() {
   return request("/api/places", { auth: true });
 }
 
+// 마이페이지의 에어컨 카드에서 자동 제어 사용 여부와 목표 가동 시간을 저장한다.
+export async function updatePlaceCooldown(placeId, payload) {
+  return request(`/api/places/${placeId}/cooldown`, {
+    method: "PATCH",
+    auth: true,
+    body: JSON.stringify(payload),
+  });
+}
+
 // jh 수정함 - EnvironmentCard의 "+" 위치 검색 팝오버가 기존 장소의 lat/lon만
 // 갱신할 때 쓴다. PATCH /places/{place_id}(places_router.py, 위치만 갱신).
 export async function updatePlaceLocation(placeId, lat, lon) {

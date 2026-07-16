@@ -235,3 +235,25 @@
     white-space: normal;
   }
 }
+
+/* 에어컨 정보와 자동 제어 설정을 하나의 카드로 묶는다. */
+.mypage-nested-aircon-shell {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(207, 225, 214, 0.95);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(21, 70, 53, 0.045);
+}
+
+.mypage-nested-aircon-shell .mypage-nested-aircon-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+@media (max-width: 560px) {
+  .mypage-nested-aircon-shell {
+    border-radius: 16px;
+  }
+}

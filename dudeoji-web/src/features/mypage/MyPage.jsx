@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { request } from "../../api";
@@ -12,6 +12,7 @@ import { useLocationContext } from "../location/LocationContext";
 import LocationSearchPopover from "../location/LocationSearchPopover";
 import { buildPlacePayload } from "../location/buildPlacePayload";
 import AirconPage, { createInitialAirconSlots } from "../places/AirconPage";
+import AutoControlSettings from "../places/AutoControlSettings";
 import { createPlaceWithAircons, fetchMyPlaces } from "../places/placesApi";
 
 import "./MyPageNestedAircon.css";
@@ -802,7 +803,6 @@ function MyPage({
                     >
                       <div className="mypage-location-aircons-heading">
                         <strong>에어컨 정보</strong>
-                      
                       </div>
 
                       {isLoadingPlaces ? (
@@ -825,36 +825,58 @@ function MyPage({
                         <div className="mypage-nested-aircon-list">
                           {locationAircons.map((aircon) => (
                             <article
-                              className="mypage-nested-aircon-card"
+                              className="mypage-nested-aircon-shell"
                               key={
                                 aircon.id ||
                                 `${location.id}-${aircon.nickname}-${aircon.model_number}`
                               }
                             >
-                              <div className="mypage-nested-aircon-icon">❄️</div>
+                              <div className="mypage-nested-aircon-card">
+                                <div className="mypage-nested-aircon-icon">❄️</div>
 
-                              <div className="mypage-nested-aircon-info">
-                                <h5>{aircon.nickname || "이름 없는 에어컨"}</h5>
-                                <p>
-                                  {[aircon.manufacturer, aircon.product_name]
-                                    .filter(Boolean)
-                                    .join(" ") || "제품명 미입력"}
-                                </p>
-                                <small>
-                                  {aircon.model_number || "모델명 미입력"} ·{" "}
-                                  {formatPower(aircon.rated_cooling_power_w)}
-                                </small>
+                                <div className="mypage-nested-aircon-info">
+                                  <h5>{aircon.nickname || "이름 없는 에어컨"}</h5>
+                                  <p>
+                                    {[aircon.manufacturer, aircon.product_name]
+                                      .filter(Boolean)
+                                      .join(" ") || "제품명 미입력"}
+                                  </p>
+                                  <small>
+                                    {aircon.model_number || "모델명 미입력"} ·{" "}
+                                    {formatPower(aircon.rated_cooling_power_w)}
+                                  </small>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  className="mypage-outline-button mypage-nested-aircon-button"
+                                  onClick={() =>
+                                    showComingSoon("에어컨 정보 변경")
+                                  }
+                                >
+                                  변경
+                                </button>
                               </div>
 
-                              <button
-                                type="button"
-                                className="mypage-outline-button mypage-nested-aircon-button"
-                                onClick={() =>
-                                  showComingSoon("에어컨 정보 변경")
+                              <AutoControlSettings
+                                placeId={location.id}
+                                airconName={aircon.nickname || "에어컨"}
+                                initialMinutes={
+                                  matchedPlace?.target_cooldown_minutes ?? 30
                                 }
-                              >
-                                변경
-                              </button>
+                                initialEnabled={
+                                  matchedPlace?.auto_control_enabled ?? false
+                                }
+                                onSaved={(savedSettings) => {
+                                  setPlaces((previousPlaces) =>
+                                    previousPlaces.map((place) =>
+                                      String(place.id) === String(location.id)
+                                        ? { ...place, ...savedSettings }
+                                        : place,
+                                    ),
+                                  );
+                                }}
+                              />
                             </article>
                           ))}
                         </div>
