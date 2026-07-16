@@ -250,7 +250,7 @@ def read_my_places(current_user: dict = Depends(get_current_user)):
     place_result = (
         supabase.table(PLACES_TABLE)
         # jh 수정함 - 위치 기능에 필요한 lat/lon, 기본 장소 여부(is_default)도 응답에 포함
-        .select("id,name,lat,lon,is_default,created_at")
+        .select("id,name,lat,lon,is_default,target_cooldown_minutes,auto_control_enabled,created_at")
         .eq("user_id", current_user["id"])
         .order("created_at")
         .execute()
@@ -502,6 +502,8 @@ async def reverse_geocode(
 "에어컨 가동 시간 설정을 supabase에 저장하는 API"
 class PlaceCooldownUpdate(BaseModel):
     target_cooldown_minutes: int = Field(default=30, ge=1, le=120)
+    auto_control_enabled: Optional[bool] = None
+
 
 @router.patch("/places/{place_id}/cooldown")
 def update_place_cooldown(
@@ -509,10 +511,10 @@ def update_place_cooldown(
     payload: PlaceCooldownUpdate,
     current_user: dict = Depends(get_current_user),
 ):
-    """사용자가 설정한 에어컨 목표 가동 시간(분)을 업데이트합니다."""
+    """자동 제어 사용 여부와 목표 가동 시간(분)을 장소별로 저장합니다."""
     place_result = (
         supabase.table(PLACES_TABLE)
-        .select("id")
+        .select("id,auto_control_enabled")
         .eq("id", place_id)
         .eq("user_id", current_user["id"])
         .limit(1)
@@ -524,15 +526,31 @@ def update_place_cooldown(
             detail="장소를 찾을 수 없거나 권한이 없습니다.",
         )
 
+    update_data = {
+        "target_cooldown_minutes": payload.target_cooldown_minutes,
+    }
+
+    if payload.auto_control_enabled is not None:
+        update_data["auto_control_enabled"] = payload.auto_control_enabled
+
     update_result = (
         supabase.table(PLACES_TABLE)
-        .update({"target_cooldown_minutes": payload.target_cooldown_minutes})
+        .update(update_data)
         .eq("id", place_id)
         .execute()
     )
+
+    saved_row = update_result.data[0] if update_result.data else update_data
+    saved_enabled = saved_row.get(
+        "auto_control_enabled",
+        place_result.data[0].get("auto_control_enabled", False),
+    )
+
     return {
         "status": "success",
-        "message": f"에어컨 최소 가동 시간이 {payload.target_cooldown_minutes}분으로 설정되었습니다."
+        "message": "에어컨 자동 제어 설정이 저장되었습니다.",
+        "target_cooldown_minutes": payload.target_cooldown_minutes,
+        "auto_control_enabled": bool(saved_enabled),
     }
 
 

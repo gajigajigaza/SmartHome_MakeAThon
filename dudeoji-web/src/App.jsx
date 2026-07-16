@@ -22,7 +22,6 @@ import { LocationProvider } from "./features/location/LocationContext";
 import SensorReadings from "./features/sensors/SensorReadings";
 
 // 우리가 제작한 설정 컴포넌트 및 자동제어 팝업 컴포넌트
-import CooldownSettings from "./features/places/CooldownSettings";
 import RecommendationPopup from "./features/dashboard/RecommendationPopup";
 
 import {
@@ -375,10 +374,6 @@ function App({
               <SavingsSummary />
             </EnvironmentCard>
 
-            <CooldownSettings 
-              placeId={1} 
-              currentToken={currentToken} 
-            />
           </div>
         </section>
       </main>
