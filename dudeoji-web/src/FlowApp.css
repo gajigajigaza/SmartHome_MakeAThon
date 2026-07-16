@@ -631,7 +631,7 @@
 
 .aircon-option {
   display: grid;
-  grid-template-columns: 52px 1fr 30px;
+  grid-template-columns: minmax(0, 1fr) 42px;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -640,7 +640,7 @@
   border-radius: 15px;
   background: white;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
 }
 
 .aircon-option.selected {
@@ -1212,9 +1212,9 @@
 }
 
 
-/* v21: 에어컨 등록 항목, 추가 버튼, 선택 팝업 */
+/* v21: 에어컨 등록 항목 및 선택 팝업 */
 .aircon-option {
-  grid-template-columns: 52px 1fr 30px;
+  grid-template-columns: minmax(0, 1fr) 42px;
 }
 
 .aircon-option:hover {
@@ -1231,34 +1231,6 @@
   font-size: 26px;
   font-weight: 900;
   line-height: 1;
-}
-
-.add-aircon-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  width: 100%;
-  min-height: 50px;
-  margin: 2px 0 22px;
-  border: 1px dashed rgba(31, 148, 109, 0.55);
-  border-radius: 14px;
-  background: #f5fbf8;
-  color: var(--flow-primary-dark);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.add-aircon-button span {
-  font-size: 22px;
-  line-height: 1;
-}
-
-.add-aircon-button:hover {
-  border-color: var(--flow-primary);
-  background: var(--flow-primary-soft);
 }
 
 .aircon-action-row {
@@ -1377,7 +1349,6 @@
     padding: 21px;
   }
 
-  .aircon-option,
   .aircon-selector-option {
     grid-template-columns: 46px 1fr 26px;
     gap: 10px;
@@ -1391,10 +1362,10 @@
 }
 
 
-/* v22: 에어컨 삭제·이름 수정·화살표 전용 선택 동작 */
+/* v22: 에어컨 이름 수정·화살표 전용 선택 동작 */
 .aircon-option {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) 42px;
+  grid-template-columns: minmax(0, 1fr) 42px;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -1408,50 +1379,6 @@
 .aircon-option:hover {
   border-color: var(--flow-primary);
   background: #f8fcfa;
-}
-
-.aircon-delete-button {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  padding: 0;
-  border: 0;
-  border-radius: 13px;
-  background: #edf6fa;
-  cursor: pointer;
-}
-
-.aircon-default-icon,
-.aircon-trash-icon {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  inset: 0;
-  font-size: 25px;
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
-}
-
-.aircon-trash-icon {
-  opacity: 0;
-  transform: scale(0.82);
-}
-
-.aircon-delete-button:hover {
-  background: #fff0ee;
-}
-
-.aircon-delete-button:hover .aircon-default-icon {
-  opacity: 0;
-  transform: scale(0.82);
-}
-
-.aircon-delete-button:hover .aircon-trash-icon {
-  opacity: 1;
-  transform: scale(1);
 }
 
 .aircon-info {
@@ -1534,14 +1461,9 @@
 
 @media (max-width: 560px) {
   .aircon-option {
-    grid-template-columns: 46px minmax(0, 1fr) 36px;
+    grid-template-columns: minmax(0, 1fr) 36px;
     gap: 10px;
     padding: 12px;
-  }
-
-  .aircon-delete-button {
-    width: 44px;
-    height: 44px;
   }
 
   .aircon-arrow-button {
@@ -1922,7 +1844,6 @@
 /* v30: 실제 API 연결 상태 */
 .flow-primary-button:disabled,
 .flow-secondary-button:disabled,
-.add-aircon-button:disabled,
 .aircon-arrow-button:disabled {
   cursor: not-allowed;
   opacity: 0.62;

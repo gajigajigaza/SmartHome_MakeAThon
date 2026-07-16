@@ -1,4 +1,4 @@
-// src/features/places/AirconPage.jsx
+﻿// src/features/places/AirconPage.jsx
 // jh 수정함 - features/auth/FlowApp.jsx에 있던 AirconPage를 이 파일로 분리함.
 // 회원가입 2단계 '에어컨 등록' 화면이었던 컴포넌트를 로그인 후(예: 새 위치 추가)에도 재사용할 수
 // 있도록, pendingSignup 등 회원가입 전용 로직 없이 순수하게 "이름+위치+에어컨 입력을 받아서
@@ -158,7 +158,7 @@ function AirconPage({
   // 어느 필드(field) 때문인지 보고 "그 필드"에 해당하는 조건만 다시 확인해서 지운다.
   // 두 검증을 getPlaceValidationError() 하나로 뭉뚱그려 재확인하지 않는다 - 예를 들어
   // 에어컨 에러가 떠 있는데 placeName만 채운 경우, 에어컨 문제는 그대로 안 지워진다.
-  // hasValidAircons()는 handleComplete가 쓰는 getPlaceValidationError()와 같은
+  // hasValidAircon()는 handleComplete가 쓰는 getPlaceValidationError()와 같은
   // 판정 기준을 공유한다(아래, 함수 선언이라 정의보다 먼저 참조해도 문제없다).
   useEffect(() => {
     if (!isModalVariant || !modalError) {
@@ -170,7 +170,7 @@ function AirconPage({
       return;
     }
 
-    if (modalError.field === "aircon" && hasValidAircons()) {
+    if (modalError.field === "aircon" && hasValidAircon()) {
       setModalError(null);
     }
   }, [placeName, registeredAircons, isModalVariant, modalError]);
@@ -603,60 +603,16 @@ function AirconPage({
     }
   }
 
-  function deleteAircon(index) {
-    setRegisteredAircons((previous) =>
-      previous.filter(
-        (_, airconIndex) => airconIndex !== index,
-      ),
-    );
+  // 장소마다 에어컨은 정확히 한 대만 등록할 수 있다.
+  function hasValidAircon() {
+    const aircon = registeredAircons[0];
 
-    if (selectingIndex === index) {
-      closeAirconSelector();
-    }
-
-    if (editingIndex === index) {
-      setEditingIndex(null);
-      setEditingTitle("");
-    }
-  }
-
-  function addAirconSlot() {
-    const newIndex = registeredAircons.length;
-
-    setRegisteredAircons((previous) => [
-      ...previous,
-      {
-        slotId: `aircon-slot-${Date.now()}`,
-        roomName: `에어컨 ${previous.length + 1}`,
-        airconId: "",
-        name: "에어컨을 선택해 주세요",
-        model: "등록된 에어컨 목록에서 선택",
-        icon: "❄️",
-        ratedCoolingPowerW: null,
-        powerSource: "",
-      },
-    ]);
-
-    // 새 항목을 추가하면 바로 에어컨 선택창을 연다.
-    setEditingIndex(null);
-    resetSelectorForms();
-    setSelectingIndex(newIndex);
-  }
-
-  // jh 수정함 - "에어컨" 필드가 유효한지("한 대 이상 있고, 전부 등록됨")만 따로 뽑아둔다.
-  // getPlaceValidationError()의 메시지 선택과, 위 useEffect의 "aircon 필드 해소 여부"
-  // 판정이 같은 기준을 공유하게 하기 위함 - 여기서만 한 번 정의한다.
-  function hasValidAircons() {
     return (
-      registeredAircons.length > 0 &&
-      !registeredAircons.some(
-        (aircon) =>
-          !aircon.airconId ||
-          !aircon.ratedCoolingPowerW,
-      )
+      registeredAircons.length === 1 &&
+      Boolean(aircon?.airconId) &&
+      Boolean(aircon?.ratedCoolingPowerW)
     );
   }
-
   // jh 수정함 - handleComplete의 검증 규칙을 함수로 뽑아서, 위 useEffect(자동 해제)도
   // 같은 규칙을 재사용하게 한다 - 문구/조건이 두 곳에서 따로 놀며 어긋나는 걸 막는다.
   // 통과하면 null, 아니면 어떤 필드(field) 때문인지와 메시지를 함께 반환한다.
@@ -665,21 +621,10 @@ function AirconPage({
       return { field: "name", message: "장소 이름을 입력해 주세요." };
     }
 
-    if (registeredAircons.length === 0) {
+    if (!hasValidAircon()) {
       return {
         field: "aircon",
-        message: "에어컨을 한 대 이상 추가해 주세요.",
-      };
-    }
-
-    if (!hasValidAircons()) {
-      // jh 수정함 - variant="modal"에서만 문구를 짧게("에어컨을 등록해 주세요.")
-      // 바꾸고, variant="signup"(회원가입 화면)은 기존 문구를 그대로 유지한다.
-      return {
-        field: "aircon",
-        message: isModalVariant
-          ? "에어컨을 등록해 주세요."
-          : "추가한 에어컨을 모두 등록해 주세요.",
+        message: "에어컨을 등록해 주세요.",
       };
     }
 
@@ -961,22 +906,6 @@ function AirconPage({
               className="aircon-option"
               key={aircon.slotId}
             >
-              <button
-                className="aircon-delete-button"
-                type="button"
-                onClick={() => deleteAircon(index)}
-                aria-label={`${aircon.roomName} 삭제`}
-                title="에어컨 삭제"
-              >
-                <span className="aircon-default-icon">
-                  ❄️
-                </span>
-
-                <span className="aircon-trash-icon">
-                  🗑️
-                </span>
-              </button>
-
               <div className="aircon-info">
                 {editingIndex === index ? (
                   <input
@@ -1040,20 +969,6 @@ function AirconPage({
             </div>
           ))}
         </div>
-
-        {/* jh 수정함 - variant="modal"은 장소당 에어컨 1개 정책이라 슬롯 추가
-            버튼을 숨긴다(기존 슬롯 삭제 기능은 그대로 둠). variant="signup"은
-            지금처럼 여러 개 추가할 수 있다. */}
-        {!isModalVariant && (
-          <button
-            className="add-aircon-button"
-            type="button"
-            onClick={addAirconSlot}
-          >
-            <span>＋</span>
-            에어컨 추가
-          </button>
-        )}
 
         <div className="flow-button-row aircon-action-row">
           <button
