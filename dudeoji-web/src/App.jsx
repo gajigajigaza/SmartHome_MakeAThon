@@ -267,21 +267,25 @@ function App({
   }
 
   if (currentPage === "mypage") {
+    // jh 수정함 - MyPage의 "위치 정보" 섹션이 useLocationContext()를 쓰므로,
+    // 대시보드 return과 마찬가지로 LocationProvider로 감싼다.
     return (
-      <MyPage
-        user={user}
-        nickname={nickname}
-        profileBadge={currentProfileBadge}
-        renderProfileBadge={(className) => (
-          <ProfileBadgeIcon badge={currentProfileBadge} className={className} />
-        )}
-        onBack={openDashboard}
-        onOpenBadgePage={() => openBadgePage("mypage")}
-        onStartTutorial={startTutorial}
-        onLogout={onLogout}
-        onUserUpdated={onUserUpdated}
-        onAccountDeleted={onAccountDeleted}
-      />
+      <LocationProvider>
+        <MyPage
+          user={user}
+          nickname={nickname}
+          profileBadge={currentProfileBadge}
+          renderProfileBadge={(className) => (
+            <ProfileBadgeIcon badge={currentProfileBadge} className={className} />
+          )}
+          onBack={openDashboard}
+          onOpenBadgePage={() => openBadgePage("mypage")}
+          onStartTutorial={startTutorial}
+          onLogout={onLogout}
+          onUserUpdated={onUserUpdated}
+          onAccountDeleted={onAccountDeleted}
+        />
+      </LocationProvider>
     );
   }
 

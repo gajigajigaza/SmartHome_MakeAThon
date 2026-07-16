@@ -760,8 +760,9 @@ function AirconPage({
           <div className="location-add-modal-heading">
             <div>
               <h2>새 장소 추가</h2>
+              {/* jh 수정함(류은 승인) - 문구만 캐릭터 톤으로 교체 */}
               <p className="flow-description">
-                장소 이름과 위치를 입력해 주세요.
+                새로운 공간을 등록하고 두더지의 추천을 받아보세요.
               </p>
             </div>
 

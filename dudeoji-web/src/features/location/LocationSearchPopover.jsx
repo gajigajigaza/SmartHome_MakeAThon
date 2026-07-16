@@ -10,7 +10,11 @@ import { useEffect, useRef, useState } from "react";
 
 import { request } from "../../api";
 
-export default function LocationSearchPopover({ onSelect, onClose }) {
+// jh 수정함 - embedded=true면 자체 팝오버 껍데기(위치 고정 박스 + 자체 닫기
+// 버튼)를 생략하고 안쪽 검색 UI만 반환한다. MyPage.jsx가 이걸 MyPageModal
+// 안에 넣어서 "별명 변경" 같은 가운데 정렬 모달로 쓴다 - 검색/선택 로직은
+// EnvironmentCard.jsx가 쓰는 기본(팝오버) 모드와 완전히 동일하다.
+export default function LocationSearchPopover({ onSelect, onClose, embedded = false }) {
   const [locationMode, setLocationMode] = useState("address");
   const [addressQuery, setAddressQuery] = useState("");
   const [addressResults, setAddressResults] = useState([]);
@@ -158,24 +162,11 @@ export default function LocationSearchPopover({ onSelect, onClose }) {
     );
   }
 
-  return (
-    <div
-      className="location-coord-popover"
-      role="dialog"
-      aria-label="위치 검색"
-      onMouseDown={(event) => event.stopPropagation()}
-    >
-      <button
-        type="button"
-        className="location-coord-popover-close"
-        onClick={onClose}
-        aria-label="닫기"
-      >
-        ✕
-      </button>
-
-      <div className="place-field place-address-field">
-        <span className="place-address-field-label">위치 검색</span>
+  // jh 수정함 - embedded/기본(팝오버) 모드가 공유하는 안쪽 검색 UI. 탭/입력/결과
+  // 목록 로직은 완전히 동일하고, 바깥 껍데기(위치 고정 박스 vs 모달)만 다르다.
+  const searchContent = (
+    <div className="place-field place-address-field">
+      <span className="place-address-field-label">위치 검색</span>
 
         <div className="place-location-tabs" role="tablist">
           <button
@@ -272,7 +263,30 @@ export default function LocationSearchPopover({ onSelect, onClose }) {
             )}
           </div>
         )}
-      </div>
+    </div>
+  );
+
+  if (embedded) {
+    return searchContent;
+  }
+
+  return (
+    <div
+      className="location-coord-popover"
+      role="dialog"
+      aria-label="위치 검색"
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="location-coord-popover-close"
+        onClick={onClose}
+        aria-label="닫기"
+      >
+        ✕
+      </button>
+
+      {searchContent}
     </div>
   );
 }

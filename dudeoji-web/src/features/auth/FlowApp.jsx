@@ -807,6 +807,12 @@ function FlowApp() {
     const authResult = await loginAccount(credentials);
     const places = await fetchMyPlaces();
 
+    // jh 수정함 - 로그인할 때마다 이전 브라우저 세션에 남아있던 위치 선택을
+    // 지워서, useSelectedLocation.js의 폴백 로직이 기본 장소(is_default)를
+    // 우선 선택하도록 한다(안 지우면 localStorage 값이 항상 우선이라 기본
+    // 장소를 바꿔도 반영이 안 됨).
+    localStorage.removeItem("dudeoji-selected-location-id");
+
     setCurrentUser(authResult.user);
     setShouldShowInitialTutorial(false);
     setRegisteredAircons(createInitialAirconSlots());
