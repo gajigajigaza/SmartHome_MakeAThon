@@ -9,6 +9,8 @@ from db import READINGS_TABLE, PLACES_TABLE, supabase
 # 원래 약속된 이름인 determine_action
 from recommendation_engine import determine_action
 from weather import fetch_outdoor_weather
+# jh 수정함 - savings.py 연동(정격전력/누적kWh/절감·소비 추정치 계산)
+from savings import get_rated_power, get_cumulative_kwh, estimate_savings
 
 router = APIRouter(prefix="/api", tags=["readings"])
 
@@ -182,13 +184,21 @@ async def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorR
     
     previous_action = "MAINTAIN"
     target_cooldown = 30
-    
+    # jh 수정함 - savings.py 연동에 쓸 변수(장소id/정격전력/지속시간)
+    place_id = None
+    rated_power_w = None
+    duration_hours = 0.0
+
     try:
         latest = get_latest_reading(user_id)
         previous_action = latest.recommendation.action
+        # jh 수정함 - 직전 reading이 지금까지 유지된 시간을 절감/소비 계산의 지속시간으로 사용
+        elapsed = datetime.now(timezone.utc) - latest.measured_at
+        duration_hours = max(0.0, elapsed.total_seconds() / 3600)
+        duration_hours = min(duration_hours, 2.0)  # jh 수정함 - 통신 공백 시 과다 계산 방지
     except HTTPException:
-        pass 
-        
+        pass
+
     try:
         place_result = (
             supabase.table(PLACES_TABLE)
@@ -199,8 +209,10 @@ async def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorR
         )
         if place_result.data:
             place = place_result.data[0]
+            place_id = place["id"]  # jh 수정함 - readings insert 시 함께 저장할 장소 id
             target_cooldown = place.get("target_cooldown_minutes") or 30
-            
+            rated_power_w = get_rated_power(place_id)  # jh 수정함 - 절감량 계산용 정격전력 조회
+
             lat = place.get("lat") or place.get("latitude")
             lon = place.get("lon") or place.get("longitude")
             
@@ -219,19 +231,32 @@ async def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorR
 
     # 💡 [개선]: 누적 에어컨 작동 상태 및 분 단위를 연산해 옵니다.
     is_ac_on, ac_run_time_minutes = calculate_ac_run_time(user_id)
+    # jh 수정함 - 이번 달 누적 전력 사용량(요금 누진구간 판단용)
+    cumulative_kwh_this_month = get_cumulative_kwh(user_id)
 
     # 💡 [개선]: 보완된 파라미터들을 calculate_recommendation 호출 시 정확하게 흘려보냅니다.
     recommendation = calculate_recommendation(
-        sensor_data=sensor_data, 
-        previous_action=previous_action, 
+        sensor_data=sensor_data,
+        previous_action=previous_action,
         target_cooldown_minutes=target_cooldown,
         is_ac_on=is_ac_on,
         ac_run_time_minutes=ac_run_time_minutes
     )
-    
+
+    # jh 수정함 - determine_action()이 아직 savings를 채우지 않아(recommendation_engine.py
+    # 미변경 전제) savings.py를 별도로 호출해 recommendation.savings를 덮어씀
+    savings_result = estimate_savings(
+        action=recommendation.action,
+        rated_power_w=rated_power_w,
+        duration_hours=duration_hours,
+        cumulative_kwh_this_month=cumulative_kwh_this_month,
+    )
+    recommendation.savings = SavingsEstimate(**savings_result)
+
     reading_data = {
         **sensor_data.model_dump(),
         "user_id": user_id,
+        "place_id": place_id,  # jh 수정함 - 007_add_reading_place.sql 마이그레이션 적용 전제
         "recommendation": recommendation.model_dump(),
     }
 
