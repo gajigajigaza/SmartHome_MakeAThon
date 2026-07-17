@@ -24,3 +24,9 @@ export async function getRecommendation() {
 export async function getSavingsSummary(period) {
   return request(`/api/savings/summary?period=${period}`, { auth: true });
 }
+
+// jh 수정함 - POST /api/dev/mock-reading 대응(민주 승인받음). EnvironmentCard.jsx의
+// "테스트 모드" 버튼이 가짜 센서값 하나를 만들어 저장할 때 호출한다.
+export async function createMockReading() {
+  return request("/api/dev/mock-reading", { method: "POST", auth: true });
+}

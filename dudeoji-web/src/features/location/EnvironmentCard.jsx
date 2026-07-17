@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 
 import { request } from "../../api";
+import { createMockReading } from "../sensors/readingsApi";
 import { useLocationContext } from "./LocationContext";
 import LocationSearchPopover from "./LocationSearchPopover";
 
@@ -43,6 +44,7 @@ export default function EnvironmentCard({
   updatedAt,
   isTutorialTarget,
   children,
+  onMockReadingCreated,
 }) {
   // jh 수정함 - useSelectedLocation()을 직접 호출하던 것을 useLocationContext()로
   // 바꿔서, LocationSwitcher(헤더 위치 버튼)가 선택한 위치를 그대로 공유한다
@@ -59,6 +61,12 @@ export default function EnvironmentCard({
   // 알아서 날씨를 다시 불러오므로 별도 재조회 로직은 필요 없다.
   const [isLocationPopoverOpen, setIsLocationPopoverOpen] = useState(false);
 
+  // jh 수정함 - 개발/데모용 "테스트 모드" 토글. 서버에 저장하지 않는 로컬 state라
+  // 새로고침하면 꺼진 상태로 돌아가도 무방하다(기본값 OFF).
+  const [isTestModeOn, setIsTestModeOn] = useState(false);
+  const [isMockReadingLoading, setIsMockReadingLoading] = useState(false);
+  const [mockReadingError, setMockReadingError] = useState("");
+
   async function handleLocationSelect(lat, lon) {
     if (!selectedLocation) {
       return;
@@ -66,6 +74,22 @@ export default function EnvironmentCard({
 
     await setLocationCoordinates(selectedLocation.id, lat, lon);
     setIsLocationPopoverOpen(false);
+  }
+
+  // jh 수정함 - POST /api/dev/mock-reading으로 가짜 reading을 하나 저장한 뒤,
+  // App.jsx의 기존 loadLatestReading() 갱신 패턴을 그대로 재사용해서 화면을 새로고침한다.
+  async function handleMockReadingClick() {
+    setIsMockReadingLoading(true);
+    setMockReadingError("");
+
+    try {
+      await createMockReading();
+      await onMockReadingCreated?.();
+    } catch (error) {
+      setMockReadingError(error.message);
+    } finally {
+      setIsMockReadingLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -106,7 +130,37 @@ export default function EnvironmentCard({
     <article
       className={`card environment-card ${isTutorialTarget ? "tutorial-target" : ""}`}
     >
-      <h3>실시간 실내외 환경</h3>
+      {/* jh 수정함 - 제목 + 테스트 모드 토글/버튼을 한 줄에 배치(SavingsSummary.jsx의
+          .saving-summary-header와 동일한 패턴) */}
+      <div className="environment-card-header">
+        <h3>실시간 실내외 환경</h3>
+
+        <div className="environment-test-mode">
+          <label className="environment-test-mode-toggle">
+            <input
+              type="checkbox"
+              checked={isTestModeOn}
+              onChange={(event) => setIsTestModeOn(event.target.checked)}
+            />
+            테스트 모드
+          </label>
+
+          {isTestModeOn && (
+            <button
+              type="button"
+              className="environment-mock-button"
+              onClick={handleMockReadingClick}
+              disabled={isMockReadingLoading}
+            >
+              {isMockReadingLoading ? "생성 중..." : "가짜 데이터 받기"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {mockReadingError && (
+        <p className="environment-mock-error">{mockReadingError}</p>
+      )}
 
       <div className="environment-grid">
         <div className="environment-item indoor">
@@ -181,9 +235,14 @@ export default function EnvironmentCard({
       {/* 예상 절감(SavingsSummary)이나 위치 표시줄을 붙일 자리 */}
       {children}
 
+      {/* jh 수정함 - 시간만 있으면 며칠 지난 기록인지 알 수 없어서 날짜(N월 N일)도 같이 표시 */}
       {updatedAt && (
         <p className="dashboard-updated-at">
           마지막 측정{" "}
+          {updatedAt.toLocaleDateString("ko-KR", {
+            month: "long",
+            day: "numeric",
+          })}{" "}
           {updatedAt.toLocaleTimeString("ko-KR", {
             hour: "2-digit",
             minute: "2-digit",

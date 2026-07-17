@@ -59,25 +59,29 @@ export default function SavingsSummary() {
 
   return (
     <div className="saving-summary">
-      <div
-        className="saving-period-tabs"
-        role="tablist"
-        aria-label="예상 절감 기간"
-      >
-        {PERIOD_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="tab"
-            aria-selected={period === option.value}
-            className={`saving-period-tab ${
-              period === option.value ? "is-active" : ""
-            }`}
-            onClick={() => setPeriod(option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
+      <div className="saving-summary-header">
+        <h3>절감 리포트</h3>
+
+        <div
+          className="saving-period-tabs"
+          role="tablist"
+          aria-label="예상 절감 기간"
+        >
+          {PERIOD_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="tab"
+              aria-selected={period === option.value}
+              className={`saving-period-tab ${
+                period === option.value ? "is-active" : ""
+              }`}
+              onClick={() => setPeriod(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {isLoading ? (

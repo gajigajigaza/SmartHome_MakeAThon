@@ -1,3 +1,4 @@
+import random
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
@@ -226,8 +227,14 @@ async def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorR
                 outdoor_weather = await fetch_outdoor_weather(lat, lon)
                 
                 sensor_data.weather_condition = outdoor_weather.get("weather_condition", "맑음")
-                sensor_data.pm25 = outdoor_weather.get("pm25")
-                sensor_data.wind_speed = outdoor_weather.get("wind_speed")
+                # jh 수정함 - pm25/wind_speed도 outdoor_temperature/outdoor_humidity와
+                # 같은 "dict에 없으면(None이면) 기존 센서값 유지" 가드 적용. weather.py가
+                # 비정상 값을 결과에서 제외하는 경우, 여기서 무조건 덮어쓰면 정상이던
+                # 센서값까지 None으로 지워지는 문제가 있었음.
+                if outdoor_weather.get("pm25") is not None:
+                    sensor_data.pm25 = outdoor_weather["pm25"]
+                if outdoor_weather.get("wind_speed") is not None:
+                    sensor_data.wind_speed = outdoor_weather["wind_speed"]
                 if outdoor_weather.get("outdoor_temperature") is not None:
                     sensor_data.outdoor_temperature = outdoor_weather["outdoor_temperature"]
                 if outdoor_weather.get("outdoor_humidity") is not None:
@@ -277,12 +284,34 @@ async def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorR
     return SensorReadingResponse.model_validate(result.data[0])
 
 
+# jh 수정함 - 프론트 "테스트 모드" 버튼용 가짜 센서값 생성. dev_tools/mock_generator.py의
+# generate_mock_history()는 온도 변화 그래프용 시계열(temp_in/humidity_in만 있고 실외값이
+# 없는 다른 스키마)이라 여기서 그대로 못 쓴다. 대신 dev_tools/mock_simulator.py가
+# run_simulator() 안에서 매번 인라인으로 만들던 랜덤 센서값 패턴을 그대로 가져와
+# 단일 reading 생성 헬퍼로 뺐다(mock_generator.py/mock_simulator.py 둘 다 안 건드림).
+def generate_mock_sensor_reading() -> dict:
+    base_temp = 26.0
+    return {
+        "indoor_temperature": round(base_temp + random.uniform(-0.5, 0.5), 1),
+        "indoor_humidity": random.randint(40, 60),
+        "outdoor_temperature": round(base_temp + random.uniform(-2.0, 2.0), 1),
+        "outdoor_humidity": random.randint(40, 70),
+    }
+
+
 # ---------------------------------------------------------
 # API 라우터 (Endpoints)
 # ---------------------------------------------------------
 @router.post("/readings", response_model=SensorReadingResponse, status_code=status.HTTP_201_CREATED)
 async def create_reading(sensor_data: SensorReadingCreate, current_user: dict = Depends(get_current_user)):
     return await save_reading_for_user(current_user["id"], sensor_data.model_dump())
+
+# jh 수정함 - 테스트 모드 전용. 로그인한 사용자로 가짜 센서값 하나를 생성해
+# 기존 save_reading_for_user()로 그대로 저장한다(추천/절감 계산까지 동일 경로).
+@router.post("/dev/mock-reading", response_model=SensorReadingResponse, status_code=status.HTTP_201_CREATED)
+async def create_mock_reading(current_user: dict = Depends(get_current_user)):
+    mock_data = generate_mock_sensor_reading()
+    return await save_reading_for_user(current_user["id"], mock_data)
 
 @router.get("/readings/latest", response_model=SensorReadingResponse)
 def read_latest(current_user: dict = Depends(get_current_user)):

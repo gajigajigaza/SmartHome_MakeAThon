@@ -370,6 +370,9 @@ function App({
               sensorData={sensorData}
               updatedAt={updatedAt}
               isTutorialTarget={isTutorialOpen && tutorialStepIndex === 2}
+              // jh 수정함 - 테스트 모드 "가짜 데이터 받기" 버튼이 저장 후 화면을
+              // 갱신할 때 기존 loadLatestReading()을 그대로 재사용하도록 전달
+              onMockReadingCreated={loadLatestReading}
             >
               <SavingsSummary />
             </EnvironmentCard>
