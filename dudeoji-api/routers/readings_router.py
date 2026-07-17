@@ -1,3 +1,4 @@
+import random
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
@@ -9,6 +10,8 @@ from db import READINGS_TABLE, PLACES_TABLE, supabase
 # 원래 약속된 이름인 determine_action
 from recommendation_engine import determine_action
 from weather import fetch_outdoor_weather
+# jh 수정함 - savings.py 연동(정격전력/누적kWh/절감·소비 추정치 계산/기간별 절감 요약)
+from savings import get_rated_power, get_cumulative_kwh, estimate_savings, get_savings_summary
 
 router = APIRouter(prefix="/api", tags=["readings"])
 
@@ -60,6 +63,12 @@ class SensorReadingResponse(SensorReadingCreate):
 class DeviceControl(BaseModel):
     place_id: int
     action: str
+
+# jh 수정함 - GET /savings/summary 응답 모델
+class SavingsSummaryResponse(BaseModel):
+    period: str
+    power_saved_kwh: float
+    cost_won: int
 
 # ---------------------------------------------------------
 # 💡 [새로 추가된 헬퍼 함수]: 에어컨 누적 가동 시간(분) 연산 장치
@@ -182,13 +191,21 @@ async def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorR
     
     previous_action = "MAINTAIN"
     target_cooldown = 30
-    
+    # jh 수정함 - savings.py 연동에 쓸 변수(장소id/정격전력/지속시간)
+    place_id = None
+    rated_power_w = None
+    duration_hours = 0.0
+
     try:
         latest = get_latest_reading(user_id)
         previous_action = latest.recommendation.action
+        # jh 수정함 - 직전 reading이 지금까지 유지된 시간을 절감/소비 계산의 지속시간으로 사용
+        elapsed = datetime.now(timezone.utc) - latest.measured_at
+        duration_hours = max(0.0, elapsed.total_seconds() / 3600)
+        duration_hours = min(duration_hours, 2.0)  # jh 수정함 - 통신 공백 시 과다 계산 방지
     except HTTPException:
-        pass 
-        
+        pass
+
     try:
         place_result = (
             supabase.table(PLACES_TABLE)
@@ -199,8 +216,10 @@ async def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorR
         )
         if place_result.data:
             place = place_result.data[0]
+            place_id = place["id"]  # jh 수정함 - readings insert 시 함께 저장할 장소 id
             target_cooldown = place.get("target_cooldown_minutes") or 30
-            
+            rated_power_w = get_rated_power(place_id)  # jh 수정함 - 절감량 계산용 정격전력 조회
+
             lat = place.get("lat") or place.get("latitude")
             lon = place.get("lon") or place.get("longitude")
             
@@ -208,8 +227,14 @@ async def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorR
                 outdoor_weather = await fetch_outdoor_weather(lat, lon)
                 
                 sensor_data.weather_condition = outdoor_weather.get("weather_condition", "맑음")
-                sensor_data.pm25 = outdoor_weather.get("pm25")
-                sensor_data.wind_speed = outdoor_weather.get("wind_speed")
+                # jh 수정함 - pm25/wind_speed도 outdoor_temperature/outdoor_humidity와
+                # 같은 "dict에 없으면(None이면) 기존 센서값 유지" 가드 적용. weather.py가
+                # 비정상 값을 결과에서 제외하는 경우, 여기서 무조건 덮어쓰면 정상이던
+                # 센서값까지 None으로 지워지는 문제가 있었음.
+                if outdoor_weather.get("pm25") is not None:
+                    sensor_data.pm25 = outdoor_weather["pm25"]
+                if outdoor_weather.get("wind_speed") is not None:
+                    sensor_data.wind_speed = outdoor_weather["wind_speed"]
                 if outdoor_weather.get("outdoor_temperature") is not None:
                     sensor_data.outdoor_temperature = outdoor_weather["outdoor_temperature"]
                 if outdoor_weather.get("outdoor_humidity") is not None:
@@ -219,19 +244,32 @@ async def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorR
 
     # 💡 [개선]: 누적 에어컨 작동 상태 및 분 단위를 연산해 옵니다.
     is_ac_on, ac_run_time_minutes = calculate_ac_run_time(user_id)
+    # jh 수정함 - 이번 달 누적 전력 사용량(요금 누진구간 판단용)
+    cumulative_kwh_this_month = get_cumulative_kwh(user_id)
 
     # 💡 [개선]: 보완된 파라미터들을 calculate_recommendation 호출 시 정확하게 흘려보냅니다.
     recommendation = calculate_recommendation(
-        sensor_data=sensor_data, 
-        previous_action=previous_action, 
+        sensor_data=sensor_data,
+        previous_action=previous_action,
         target_cooldown_minutes=target_cooldown,
         is_ac_on=is_ac_on,
         ac_run_time_minutes=ac_run_time_minutes
     )
-    
+
+    # jh 수정함 - determine_action()이 아직 savings를 채우지 않아(recommendation_engine.py
+    # 미변경 전제) savings.py를 별도로 호출해 recommendation.savings를 덮어씀
+    savings_result = estimate_savings(
+        action=recommendation.action,
+        rated_power_w=rated_power_w,
+        duration_hours=duration_hours,
+        cumulative_kwh_this_month=cumulative_kwh_this_month,
+    )
+    recommendation.savings = SavingsEstimate(**savings_result)
+
     reading_data = {
         **sensor_data.model_dump(),
         "user_id": user_id,
+        "place_id": place_id,  # jh 수정함 - 007_add_reading_place.sql 마이그레이션 적용 전제
         "recommendation": recommendation.model_dump(),
     }
 
@@ -246,12 +284,34 @@ async def save_reading_for_user(user_id: int, sensor_data_dict: dict) -> SensorR
     return SensorReadingResponse.model_validate(result.data[0])
 
 
+# jh 수정함 - 프론트 "테스트 모드" 버튼용 가짜 센서값 생성. dev_tools/mock_generator.py의
+# generate_mock_history()는 온도 변화 그래프용 시계열(temp_in/humidity_in만 있고 실외값이
+# 없는 다른 스키마)이라 여기서 그대로 못 쓴다. 대신 dev_tools/mock_simulator.py가
+# run_simulator() 안에서 매번 인라인으로 만들던 랜덤 센서값 패턴을 그대로 가져와
+# 단일 reading 생성 헬퍼로 뺐다(mock_generator.py/mock_simulator.py 둘 다 안 건드림).
+def generate_mock_sensor_reading() -> dict:
+    base_temp = 26.0
+    return {
+        "indoor_temperature": round(base_temp + random.uniform(-0.5, 0.5), 1),
+        "indoor_humidity": random.randint(40, 60),
+        "outdoor_temperature": round(base_temp + random.uniform(-2.0, 2.0), 1),
+        "outdoor_humidity": random.randint(40, 70),
+    }
+
+
 # ---------------------------------------------------------
 # API 라우터 (Endpoints)
 # ---------------------------------------------------------
 @router.post("/readings", response_model=SensorReadingResponse, status_code=status.HTTP_201_CREATED)
 async def create_reading(sensor_data: SensorReadingCreate, current_user: dict = Depends(get_current_user)):
     return await save_reading_for_user(current_user["id"], sensor_data.model_dump())
+
+# jh 수정함 - 테스트 모드 전용. 로그인한 사용자로 가짜 센서값 하나를 생성해
+# 기존 save_reading_for_user()로 그대로 저장한다(추천/절감 계산까지 동일 경로).
+@router.post("/dev/mock-reading", response_model=SensorReadingResponse, status_code=status.HTTP_201_CREATED)
+async def create_mock_reading(current_user: dict = Depends(get_current_user)):
+    mock_data = generate_mock_sensor_reading()
+    return await save_reading_for_user(current_user["id"], mock_data)
 
 @router.get("/readings/latest", response_model=SensorReadingResponse)
 def read_latest(current_user: dict = Depends(get_current_user)):
@@ -277,6 +337,26 @@ def read_history(limit: int = Query(default=8, ge=1, le=100), current_user: dict
 def read_recommendation(current_user: dict = Depends(get_current_user)):
     latest_reading = get_latest_reading(current_user["id"])
     return latest_reading.recommendation
+
+# jh 수정함 - 기간별(하루/이번 주/이번 달) 절감 요약. savings.py의 get_savings_summary 연동
+@router.get("/savings/summary", response_model=SavingsSummaryResponse)
+def read_savings_summary(
+    period: str = Query(default="day"),
+    current_user: dict = Depends(get_current_user),
+):
+    if period not in ("day", "week", "month"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="period는 day, week, month 중 하나여야 합니다.",
+        )
+
+    try:
+        return get_savings_summary(current_user["id"], period)
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="절감 요약을 계산하지 못했습니다.",
+        ) from error
 
 @router.post("/devices/control")
 def control_device(command: DeviceControl, current_user: dict = Depends(get_current_user)):

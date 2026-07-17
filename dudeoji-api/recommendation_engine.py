@@ -30,10 +30,14 @@ def calculate_thi(temp: float, humidity: float) -> float:
 
 
 def determine_action(
-    indoor_temp: float, 
-    outdoor_temp: float, 
+    indoor_temp: float,
+    outdoor_temp: float,
     indoor_humidity: float = 50.0,
-    pm25: float = 0.0, 
+    # jh 수정함 - readings_router.py의 calculate_recommendation()이 이 인자를
+    # 넘기는데 시그니처에 없어서 TypeError가 나던 것을 고침. 지금은 판단 로직에
+    # 쓰이진 않고 받기만 함(호출부와 시그니처 불일치 해소 목적).
+    outdoor_humidity: float = 50.0,
+    pm25: float = 0.0,
     wind_speed: float = 0.0, 
     weather_condition: str = "맑음",
     window_is_open: bool = False,

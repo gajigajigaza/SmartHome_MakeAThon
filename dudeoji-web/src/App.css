@@ -319,6 +319,72 @@ body {
   cursor: pointer;
 }
 
+/* jh 수정함 - 제목 + 테스트 모드 토글/버튼을 한 줄에 좌우로 배치. 제목은
+   .card h3를 그대로 재사용해서 폰트 크기/굵기를 맞추고(SavingsSummary.jsx의
+   .saving-summary-header와 동일한 패턴), margin만 이 가로 배치에 맞게 초기화한다. */
+.environment-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* jh 수정함 - 좁은 화면(560px 이하)에서만 줄바꿈되도록 기본은 nowrap,
+     wrap은 아래 모바일 미디어쿼리에서만 켠다. */
+  flex-wrap: nowrap;
+  gap: 8px;
+
+  margin-bottom: 18px;
+}
+
+.environment-card-header h3 {
+  margin: 0;
+}
+
+/* jh 수정함 - 개발/데모용 "테스트 모드" 토글 + "가짜 데이터 받기" 버튼.
+   제목과 같은 줄에 줄바꿈 없이 들어가도록 최대한 컴팩트하게 조정. */
+.environment-test-mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.environment-test-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.environment-mock-button {
+  /* jh 수정함 - 상하 padding을 1px 줄여서 버튼 높이가 제목(h3)보다 커지지
+     않게 맞췄다(안 그러면 테스트 모드 ON일 때 카드 높이가 1px 더 커짐). */
+  padding: 3px 10px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  background: var(--green-light);
+  color: var(--green-dark);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.environment-mock-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.environment-mock-error {
+  margin: 6px 0 0;
+
+  color: var(--muted);
+  font-size: 13px;
+}
+
 /* jh 수정함 - 위치 미설정 안내("위치를 설정해 주세요")를 실외 카드 안에서
    세로/가로 모두 중앙 정렬하기 위한 상태. 실내 카드와 높이는 grid 기본
    stretch로 이미 맞춰지므로, 남는 공간을 flex로 채워서 중앙에 놓는다. */
@@ -432,6 +498,86 @@ body {
 
 .saving-icon {
   font-size: 25px;
+}
+
+/* jh 수정함 - 예상 절감(SavingsSummary) 제목 + 기간 탭을 한 줄에 좌우로 배치.
+   제목은 .card h3(EnvironmentCard의 "실시간 실내외 환경"과 동일한 태그)을 그대로
+   재사용해서 폰트 크기/굵기를 맞추고, margin만 이 가로 배치에 맞게 초기화한다. */
+.saving-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  margin-top: 16px;
+}
+
+.saving-summary-header h3 {
+  margin: 0;
+}
+
+.saving-period-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.saving-period-tab {
+  padding: 6px 14px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  background: var(--card);
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.saving-period-tab.is-active {
+  border-color: var(--green);
+  background: var(--green-light);
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+/* jh 수정함 - 절감 요약 조회 실패 시 표시하는 에러 상태 */
+.saving-box.saving-box-error {
+  background: #fdece7;
+  color: var(--text);
+}
+
+/* jh 수정함 - 절감 요약 로딩 중 스켈레톤(펄스 애니메이션) */
+.saving-box.saving-box-skeleton {
+  opacity: 0.75;
+}
+
+.saving-skeleton-bar {
+  display: block;
+
+  width: 90px;
+  height: 22px;
+  margin: 7px 0 4px;
+
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.35);
+
+  animation: saving-skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.saving-skeleton-bar-small {
+  width: 60px;
+  height: 14px;
+  margin: 0;
+}
+
+@keyframes saving-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 0.85;
+  }
 }
 
 /* ================================
@@ -638,6 +784,12 @@ body {
 
   .recommendation-main {
     align-items: flex-start;
+  }
+
+  /* jh 수정함 - 좁은 화면(560px 이하)에서만 제목+테스트 모드 줄이 줄바꿈되게
+     허용한다. 그 위 폭(데스크톱)에서는 기본 nowrap으로 한 줄 유지. */
+  .environment-card-header {
+    flex-wrap: wrap;
   }
 
   .recommendation-icon {
