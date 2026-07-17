@@ -434,6 +434,74 @@ body {
   font-size: 25px;
 }
 
+/* jh 수정함 - 예상 절감(SavingsSummary) 기간 탭(day/week/month) */
+.saving-period-tabs {
+  display: flex;
+  gap: 8px;
+
+  margin-top: 16px;
+}
+
+.saving-period-tab {
+  padding: 6px 14px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  background: var(--card);
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.saving-period-tab.is-active {
+  border-color: var(--green);
+  background: var(--green-light);
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+/* jh 수정함 - 절감 요약 조회 실패 시 표시하는 에러 상태 */
+.saving-box.saving-box-error {
+  background: #fdece7;
+  color: var(--text);
+}
+
+/* jh 수정함 - 절감 요약 로딩 중 스켈레톤(펄스 애니메이션) */
+.saving-box.saving-box-skeleton {
+  opacity: 0.75;
+}
+
+.saving-skeleton-bar {
+  display: block;
+
+  width: 90px;
+  height: 22px;
+  margin: 7px 0 4px;
+
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.35);
+
+  animation: saving-skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.saving-skeleton-bar-small {
+  width: 60px;
+  height: 14px;
+  margin: 0;
+}
+
+@keyframes saving-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 0.85;
+  }
+}
+
 /* ================================
    온도 변화 그래프
 ================================ */

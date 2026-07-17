@@ -9,8 +9,8 @@ from db import READINGS_TABLE, PLACES_TABLE, supabase
 # 원래 약속된 이름인 determine_action
 from recommendation_engine import determine_action
 from weather import fetch_outdoor_weather
-# jh 수정함 - savings.py 연동(정격전력/누적kWh/절감·소비 추정치 계산)
-from savings import get_rated_power, get_cumulative_kwh, estimate_savings
+# jh 수정함 - savings.py 연동(정격전력/누적kWh/절감·소비 추정치 계산/기간별 절감 요약)
+from savings import get_rated_power, get_cumulative_kwh, estimate_savings, get_savings_summary
 
 router = APIRouter(prefix="/api", tags=["readings"])
 
@@ -62,6 +62,12 @@ class SensorReadingResponse(SensorReadingCreate):
 class DeviceControl(BaseModel):
     place_id: int
     action: str
+
+# jh 수정함 - GET /savings/summary 응답 모델
+class SavingsSummaryResponse(BaseModel):
+    period: str
+    power_saved_kwh: float
+    cost_won: int
 
 # ---------------------------------------------------------
 # 💡 [새로 추가된 헬퍼 함수]: 에어컨 누적 가동 시간(분) 연산 장치
@@ -302,6 +308,26 @@ def read_history(limit: int = Query(default=8, ge=1, le=100), current_user: dict
 def read_recommendation(current_user: dict = Depends(get_current_user)):
     latest_reading = get_latest_reading(current_user["id"])
     return latest_reading.recommendation
+
+# jh 수정함 - 기간별(하루/이번 주/이번 달) 절감 요약. savings.py의 get_savings_summary 연동
+@router.get("/savings/summary", response_model=SavingsSummaryResponse)
+def read_savings_summary(
+    period: str = Query(default="day"),
+    current_user: dict = Depends(get_current_user),
+):
+    if period not in ("day", "week", "month"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="period는 day, week, month 중 하나여야 합니다.",
+        )
+
+    try:
+        return get_savings_summary(current_user["id"], period)
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="절감 요약을 계산하지 못했습니다.",
+        ) from error
 
 @router.post("/devices/control")
 def control_device(command: DeviceControl, current_user: dict = Depends(get_current_user)):

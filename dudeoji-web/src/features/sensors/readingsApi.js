@@ -18,3 +18,9 @@ export async function getReadingHistory(limit = 8) {
 export async function getRecommendation() {
   return request("/api/recommendation", { auth: true });
 }
+
+// jh 수정함 - GET /api/savings/summary 대응. SavingsSummary.jsx(예상
+// 절감 카드)가 period="day"|"week"|"month"로 호출한다.
+export async function getSavingsSummary(period) {
+  return request(`/api/savings/summary?period=${period}`, { auth: true });
+}

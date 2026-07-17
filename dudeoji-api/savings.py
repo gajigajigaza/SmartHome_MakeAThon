@@ -11,7 +11,7 @@ recommendation_engine.py의 determine_action()이 액션을 정하면,
 
 TODO(정현): 일/주/월 누적 합산 함수(estimate_daily_savings 등)는 아직 없음.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from db import PLACES_TABLE, READINGS_TABLE, USER_AIRCONS_TABLE, supabase
@@ -173,6 +173,56 @@ def get_cumulative_kwh(user_id: str) -> float:
         total_kwh += hours * power_kw
 
     return total_kwh
+
+
+def get_savings_summary(user_id: str, period: str) -> dict:
+    """기간(day/week/month) 동안 저장된 reading들의 recommendation.savings 값을 그대로 합산한다.
+
+    get_cumulative_kwh()와 달리 새로 계산하지 않고, save_reading_for_user()가
+    각 reading에 저장해둔 savings 스냅샷(power_saved_kwh, cost_won)을 그대로 더한다.
+    savings가 없는 기존 데이터(마이그레이션 이전 등)는 건너뛴다.
+    action이 OPEN_WINDOW인 reading만 "절감"으로 집계하고, USE_AIRCON(소비) 등
+    나머지 action은 제외한다 — 그래서 합계는 항상 0 이상이다.
+    """
+    now = datetime.now(timezone.utc)
+
+    if period == "day":
+        period_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == "week":
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        period_start = today_start - timedelta(days=today_start.weekday())
+    elif period == "month":
+        period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        raise ValueError(f"알 수 없는 period입니다: {period}")
+
+    readings_result = (
+        supabase.table(READINGS_TABLE)
+        .select("recommendation")
+        .eq("user_id", user_id)
+        .gte("measured_at", period_start.isoformat())
+        .execute()
+    )
+
+    total_power_saved_kwh = 0.0
+    total_cost_won = 0
+
+    for reading in readings_result.data or []:
+        recommendation = reading.get("recommendation") or {}
+        if recommendation.get("action") != "OPEN_WINDOW":
+            continue
+
+        savings = recommendation.get("savings")
+        if not savings:
+            continue
+        total_power_saved_kwh += savings.get("power_saved_kwh") or 0.0
+        total_cost_won += savings.get("cost_won") or 0
+
+    return {
+        "period": period,
+        "power_saved_kwh": round(total_power_saved_kwh, 3),
+        "cost_won": round(total_cost_won),
+    }
 
 
 if __name__ == "__main__":
