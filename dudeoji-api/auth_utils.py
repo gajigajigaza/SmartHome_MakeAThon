@@ -11,9 +11,11 @@ import base64
 import hashlib
 import hmac
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import httpx
 from fastapi import Header, HTTPException, status
 
 from db import SESSIONS_TABLE, USERS_TABLE, supabase
@@ -97,17 +99,37 @@ def get_bearer_token(authorization: Optional[str]) -> str:
     return authorization.removeprefix("Bearer ").strip()
 
 
+def execute_supabase_with_retry(operation, attempts: int = 3):
+    """Windows 소켓/Supabase의 순간적인 연결 오류만 짧게 재시도합니다."""
+    for attempt in range(attempts):
+        try:
+            return operation()
+        except httpx.TransportError as error:
+            if attempt >= attempts - 1:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=(
+                        "데이터베이스 연결이 일시적으로 불안정합니다. "
+                        "잠시 후 다시 시도해 주세요."
+                    ),
+                ) from error
+            time.sleep(0.15 * (2 ** attempt))
+
+
 def get_current_user(
     authorization: Optional[str] = Header(default=None),
 ) -> dict:
     raw_token = get_bearer_token(authorization)
+    hashed_token = token_hash(raw_token)
 
-    session_result = (
-        supabase.table(SESSIONS_TABLE)
-        .select("id,user_id,expires_at")
-        .eq("token_hash", token_hash(raw_token))
-        .limit(1)
-        .execute()
+    session_result = execute_supabase_with_retry(
+        lambda: (
+            supabase.table(SESSIONS_TABLE)
+            .select("id,user_id,expires_at")
+            .eq("token_hash", hashed_token)
+            .limit(1)
+            .execute()
+        )
     )
 
     if not session_result.data:
@@ -118,18 +140,27 @@ def get_current_user(
 
     session = session_result.data[0]
     if parse_supabase_datetime(session["expires_at"]) <= utc_now():
-        supabase.table(SESSIONS_TABLE).delete().eq("id", session["id"]).execute()
+        execute_supabase_with_retry(
+            lambda: (
+                supabase.table(SESSIONS_TABLE)
+                .delete()
+                .eq("id", session["id"])
+                .execute()
+            )
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="로그인이 만료되었습니다. 다시 로그인해 주세요.",
         )
 
-    user_result = (
-        supabase.table(USERS_TABLE)
-        .select("id,username,nickname")
-        .eq("id", session["user_id"])
-        .limit(1)
-        .execute()
+    user_result = execute_supabase_with_retry(
+        lambda: (
+            supabase.table(USERS_TABLE)
+            .select("id,username,nickname")
+            .eq("id", session["user_id"])
+            .limit(1)
+            .execute()
+        )
     )
 
     if not user_result.data:

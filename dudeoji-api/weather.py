@@ -58,6 +58,8 @@ class OutdoorWeather(TypedDict):
     aqi: Optional[int]
     # 기상청 관측 시각(base_date + base_time), "YYYY-MM-DD HH:MM" 형식
     observed_at: str
+    # OpenWeather Air Pollution API 관측 시각(ISO-8601, KST)
+    air_quality_observed_at: str
 
 
 def _get_api_key() -> str:
@@ -244,11 +246,16 @@ async def fetch_air_pollution(latitude: float, longitude: float) -> dict:
 
     entry = data["list"][0]
     components = entry["components"]
+    observed_at = datetime.fromtimestamp(
+        float(entry["dt"]),
+        tz=timezone.utc,
+    ).astimezone(KST).isoformat()
 
     return {
         "pm25": components["pm2_5"],
         "pm10": components["pm10"],
         "aqi": entry["main"]["aqi"],
+        "air_quality_observed_at": observed_at,
     }
 
 

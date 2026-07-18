@@ -9,12 +9,19 @@ import {
   updateMyRecovery,
 } from "../auth/authApi";
 import { useLocationContext } from "../location/LocationContext";
+import SharedAppSidebar from "../navigation/SharedAppSidebar";
 import LocationSearchPopover from "../location/LocationSearchPopover";
 import { buildPlacePayload } from "../location/buildPlacePayload";
 import AirconPage, { createInitialAirconSlots } from "../places/AirconPage";
+import AirconSelectorModal from "../places/AirconSelectorModal";
 import AutoControlSettings from "../places/AutoControlSettings";
-import { createPlaceWithAircons, fetchMyPlaces } from "../places/placesApi";
-
+// 류은 수정 0718 - 에어컨 이름 변경과 제품 변경 API를 분리해서 사용합니다.
+import {
+  createPlaceWithAircons,
+  fetchMyPlaces,
+  updateUserAirconNickname,
+  updateUserAirconProduct,
+} from "../places/placesApi";
 import "./MyPageNestedAircon.css";
 
 const LOCATION_PREVIEW_COUNT = 3;
@@ -137,19 +144,6 @@ function MyPageRow({ icon, title, description, danger = false, onClick }) {
   );
 }
 
-function SidebarButton({ icon, label, active = false, danger = false, onClick }) {
-  return (
-    <button
-      type="button"
-      className={`mypage-sidebar-link ${active ? "active" : ""} ${danger ? "danger" : ""}`}
-      onClick={onClick}
-    >
-      <span>{icon}</span>
-      <strong>{label}</strong>
-    </button>
-  );
-}
-
 function MyPageModal({ title, description, children, onClose }) {
   return (
     <div className="mypage-modal-backdrop" role="presentation">
@@ -182,6 +176,7 @@ function MyPage({
   renderProfileBadge,
   onBack,
   onOpenBadgePage,
+  onOpenSensorReadings,
   onStartTutorial,
   onLogout,
   onUserUpdated,
@@ -224,6 +219,19 @@ function MyPage({
   // jh 수정함 - window.confirm() 대신 커스텀 모달로 삭제 여부를 물어보기 위한 state.
   // null이면 모달이 닫혀 있고, 값이 있으면 그 place id의 삭제 확인 모달이 열려 있음.
   const [deleteTargetPlaceId, setDeleteTargetPlaceId] = useState(null);
+
+  // 류은 수정 0718 - 장소마다 에어컨·자동 제어 영역을 독립적으로 접고 펼칩니다.
+  // 객체가 비어 있는 최초 상태에서는 모든 장소의 에어컨 정보가 접혀 있습니다.
+  const [expandedAirconPlaces, setExpandedAirconPlaces] = useState({});
+
+  // 류은 수정 0718 - 카드에서 이름을 바로 수정하기 위한 상태입니다.
+  const [editingAirconName, setEditingAirconName] = useState(null);
+  const [airconNameDraft, setAirconNameDraft] = useState("");
+  const [isSavingAirconName, setIsSavingAirconName] = useState(false);
+
+  // 변경 버튼으로 선택할 제품과 제품 저장 상태입니다.
+  const [airconProductTarget, setAirconProductTarget] = useState(null);
+  const [isSavingAirconProduct, setIsSavingAirconProduct] = useState(false);
 
   const [activeModal, setActiveModal] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -296,8 +304,14 @@ function MyPage({
     setToastMessage(message);
   }
 
-  function showComingSoon(featureName) {
-    showToast(`${featureName} 기능은 다음 단계에서 연결할게요.`);
+  // 선택한 장소의 에어컨 정보와 자동 제어 설정을 함께 열거나 닫습니다.
+  function toggleAirconSection(placeId) {
+    const placeKey = String(placeId);
+
+    setExpandedAirconPlaces((previous) => ({
+      ...previous,
+      [placeKey]: !previous[placeKey],
+    }));
   }
 
   async function refreshPlaceAircons() {
@@ -310,6 +324,115 @@ function MyPage({
       setPlaceError(error.message);
     } finally {
       setIsLoadingPlaces(false);
+    }
+  }
+
+  // 류은 수정 0718 - 밑줄 친 이름을 클릭하면 입력창으로 전환합니다.
+  function startEditingAirconName(placeId, aircon) {
+    setEditingAirconName({
+      placeId,
+      airconId: aircon.id,
+      originalNickname: aircon.nickname || "에어컨",
+    });
+    setAirconNameDraft(aircon.nickname || "에어컨");
+  }
+
+  function cancelEditingAirconName() {
+    if (isSavingAirconName) {
+      return;
+    }
+
+    setEditingAirconName(null);
+    setAirconNameDraft("");
+  }
+
+  async function saveAirconName() {
+    if (!editingAirconName || isSavingAirconName) {
+      return;
+    }
+
+    const nextNickname = airconNameDraft.trim();
+
+    if (!nextNickname) {
+      showToast("에어컨 이름을 입력해 주세요.");
+      cancelEditingAirconName();
+      return;
+    }
+
+    if (nextNickname === editingAirconName.originalNickname) {
+      cancelEditingAirconName();
+      return;
+    }
+
+    const target = editingAirconName;
+    setIsSavingAirconName(true);
+
+    try {
+      await updateUserAirconNickname(
+        target.placeId,
+        target.airconId,
+        nextNickname,
+      );
+      await refreshPlaceAircons();
+      setEditingAirconName(null);
+      setAirconNameDraft("");
+      showToast("에어컨 이름이 변경되었습니다.");
+    } catch (error) {
+      showToast(error.message || "에어컨 이름을 변경하지 못했습니다.");
+    } finally {
+      setIsSavingAirconName(false);
+    }
+  }
+
+  function handleAirconNameKeyDown(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.currentTarget.blur();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelEditingAirconName();
+    }
+  }
+
+  function openAirconProductSelector(placeId, aircon) {
+    setAirconProductTarget({
+      placeId,
+      aircon,
+    });
+  }
+
+  function closeAirconProductSelector() {
+    if (isSavingAirconProduct) {
+      return;
+    }
+
+    setAirconProductTarget(null);
+  }
+
+  async function handleAirconProductChange(payload) {
+    if (!airconProductTarget || isSavingAirconProduct) {
+      return;
+    }
+
+    setIsSavingAirconProduct(true);
+
+    try {
+      await updateUserAirconProduct(
+        airconProductTarget.placeId,
+        airconProductTarget.aircon.id,
+        payload,
+      );
+      await refreshPlaceAircons();
+      setAirconProductTarget(null);
+      showToast("에어컨 제품이 변경되었습니다.");
+    } catch (error) {
+      showToast(error.message || "에어컨 제품을 변경하지 못했습니다.");
+      throw error;
+    } finally {
+      setIsSavingAirconProduct(false);
     }
   }
 
@@ -629,51 +752,17 @@ function MyPage({
       </header>
 
       <div className="mypage-desktop-shell">
-        <aside className="mypage-sidebar" aria-label="마이페이지 메뉴">
-          <div className="mypage-sidebar-profile">
-            <button
-              type="button"
-              className="mypage-sidebar-home-icon-button"
-              onClick={onBack}
-              aria-label="대시보드로 이동"
-            >
-              {renderProfileBadge?.("mypage-sidebar-badge-image")}
-            </button>
-
-            <div>
-              <strong>{nickname}</strong>
-              <span>●</span>
-            </div>
-          </div>
-
-          <nav className="mypage-sidebar-nav">
-            <SidebarButton icon="👤" label="마이페이지" active onClick={() => {}} />
-            <SidebarButton
-              icon="🌡️"
-              label="센서 측정값"
-              onClick={() => showComingSoon("센서 측정값")}
-            />
-            <SidebarButton
-              icon="🏅"
-              label="뱃지"
-              onClick={onOpenBadgePage}
-            />
-            <SidebarButton
-              icon="📖"
-              label="튜토리얼 다시 보기"
-              onClick={onStartTutorial}
-            />
-          </nav>
-
-          <div className="mypage-sidebar-divider" />
-
-          <SidebarButton
-            icon="🚪"
-            label="로그아웃"
-            danger
-            onClick={onLogout}
-          />
-        </aside>
+        <SharedAppSidebar
+          nickname={nickname}
+          renderProfileBadge={renderProfileBadge}
+          activePage="mypage"
+          onOpenDashboard={onBack}
+          onOpenMyPage={() => {}}
+          onOpenSensorReadings={onOpenSensorReadings}
+          onOpenBadgePage={onOpenBadgePage}
+          onStartTutorial={onStartTutorial}
+          onLogout={onLogout}
+        />
 
         <main className="mypage-main-panel">
           <div className="mypage-page-heading">
@@ -764,6 +853,11 @@ function MyPage({
                   (place) => String(place.id) === String(location.id),
                 );
                 const locationAircons = matchedPlace?.aircons || [];
+                const airconSectionKey = String(location.id);
+                const isAirconExpanded = Boolean(
+                  expandedAirconPlaces[airconSectionKey],
+                );
+                const airconSectionId = `mypage-aircon-section-${location.id}`;
 
                 return (
                   <article
@@ -845,9 +939,37 @@ function MyPage({
                     >
                       <div className="mypage-location-aircons-heading">
                         <strong>에어컨 정보</strong>
+
+                        <button
+                          type="button"
+                          className={`mypage-aircon-toggle-button ${
+                            isAirconExpanded ? "expanded" : ""
+                          }`}
+                          onClick={() => toggleAirconSection(location.id)}
+                          aria-expanded={isAirconExpanded}
+                          aria-controls={airconSectionId}
+                          aria-label={
+                            isAirconExpanded
+                              ? "에어컨 정보와 자동 제어 설정 접기"
+                              : "에어컨 정보와 자동 제어 설정 펼치기"
+                          }
+                        >
+                          <svg
+                            className="mypage-aircon-toggle-icon"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path d="m7 10 5 5 5-5" />
+                          </svg>
+                        </button>
                       </div>
 
-                      {isLoadingPlaces ? (
+                      <div
+                        id={airconSectionId}
+                        className="mypage-aircon-collapsible-content"
+                        hidden={!isAirconExpanded}
+                      >
+                        {isLoadingPlaces ? (
                         <div className="mypage-nested-aircon-state">
                           <span className="mypage-nested-aircon-state-icon">❄️</span>
                           <div>
@@ -877,7 +999,34 @@ function MyPage({
                                 <div className="mypage-nested-aircon-icon">❄️</div>
 
                                 <div className="mypage-nested-aircon-info">
-                                  <h5>{aircon.nickname || "이름 없는 에어컨"}</h5>
+                                  {editingAirconName?.placeId === location.id &&
+                                  editingAirconName?.airconId === aircon.id ? (
+                                    <input
+                                      className="mypage-aircon-name-input"
+                                      type="text"
+                                      maxLength={30}
+                                      value={airconNameDraft}
+                                      onChange={(event) =>
+                                        setAirconNameDraft(event.target.value)
+                                      }
+                                      onKeyDown={handleAirconNameKeyDown}
+                                      onBlur={saveAirconName}
+                                      disabled={isSavingAirconName}
+                                      autoFocus
+                                      aria-label="에어컨 이름 수정"
+                                    />
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="mypage-aircon-name-button"
+                                      onClick={() =>
+                                        startEditingAirconName(location.id, aircon)
+                                      }
+                                      title="에어컨 이름 수정"
+                                    >
+                                      {aircon.nickname || "이름 없는 에어컨"}
+                                    </button>
+                                  )}
                                   <p>
                                     {[aircon.manufacturer, aircon.product_name]
                                       .filter(Boolean)
@@ -893,7 +1042,7 @@ function MyPage({
                                   type="button"
                                   className="mypage-outline-button mypage-nested-aircon-button"
                                   onClick={() =>
-                                    showComingSoon("에어컨 정보 변경")
+                                    openAirconProductSelector(location.id, aircon)
                                   }
                                 >
                                   변경
@@ -930,7 +1079,8 @@ function MyPage({
                             <p>에어컨을 등록하면 더 정확한 추천을 받을 수 있어요.</p>
                           </div>
                         </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </article>
                 );
@@ -1134,6 +1284,15 @@ function MyPage({
           </div>,
           document.body,
         )}
+
+      {airconProductTarget && (
+        <AirconSelectorModal
+          currentAircon={airconProductTarget.aircon}
+          isSaving={isSavingAirconProduct}
+          onClose={closeAirconProductSelector}
+          onSelect={handleAirconProductChange}
+        />
+      )}
 
       {activeModal === "nickname" && (
         <MyPageModal

@@ -7,6 +7,37 @@
 // 가져다 씁니다 — 장소 관련 화면이 따로 생기면 여기에 추가하세요.
 import { request } from "../../api";
 
+function waitForPlaceRetry(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function fetchPlacesWithRetry(attempts = 3) {
+  let lastError;
+
+  for (let index = 0; index < attempts; index += 1) {
+    try {
+      return await request("/api/places", { auth: true });
+    } catch (error) {
+      lastError = error;
+      const message = String(error?.message || "").toLowerCase();
+      const retryable =
+        message.includes("failed to fetch") ||
+        message.includes("network") ||
+        message.includes("500") ||
+        message.includes("503") ||
+        message.includes("일시적으로");
+
+      if (!retryable || index === attempts - 1) {
+        throw error;
+      }
+
+      await waitForPlaceRetry(300 * 2 ** index);
+    }
+  }
+
+  throw lastError;
+}
+
 export async function fetchAirconModels(search = "") {
   const query = new URLSearchParams();
   const normalizedSearch = search.trim();
@@ -39,7 +70,39 @@ export async function createPlaceWithAircons(payload) {
 }
 
 export async function fetchMyPlaces() {
-  return request("/api/places", { auth: true });
+  return fetchPlacesWithRetry();
+}
+
+// 류은 수정 0718 - 에어컨 카드의 밑줄 친 이름만 변경합니다.
+export async function updateUserAirconNickname(
+  placeId,
+  airconId,
+  nickname,
+) {
+  return request(
+    `/api/places/${placeId}/aircons/${airconId}/nickname`,
+    {
+      method: "PATCH",
+      auth: true,
+      body: JSON.stringify({ nickname }),
+    },
+  );
+}
+
+// 류은 수정 0718 - 목록 선택 또는 직접 입력으로 제품 정보만 변경합니다.
+export async function updateUserAirconProduct(
+  placeId,
+  airconId,
+  payload,
+) {
+  return request(
+    `/api/places/${placeId}/aircons/${airconId}/product`,
+    {
+      method: "PATCH",
+      auth: true,
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 // 마이페이지의 에어컨 카드에서 자동 제어 사용 여부와 목표 가동 시간을 저장한다.

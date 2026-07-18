@@ -48,7 +48,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
 }
 
 .mypage-location-aircons-heading strong {
@@ -62,6 +61,60 @@
   color: #6e837a;
   font-size: 12px;
   font-weight: 700;
+}
+
+/* 장소별 에어컨 정보와 자동 제어 설정을 접고 펼치는 버튼입니다. */
+.mypage-aircon-toggle-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #587268;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.mypage-aircon-toggle-button:hover {
+  border-color: rgba(174, 216, 190, 0.72);
+  background: rgba(226, 244, 233, 0.78);
+  color: #2f7656;
+}
+
+.mypage-aircon-toggle-button:focus-visible {
+  outline: 2px solid rgba(63, 143, 103, 0.28);
+  outline-offset: 2px;
+}
+
+.mypage-aircon-toggle-icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.2s ease;
+}
+
+.mypage-aircon-toggle-button.expanded .mypage-aircon-toggle-icon {
+  transform: rotate(180deg);
+}
+
+.mypage-aircon-collapsible-content {
+  margin-top: 10px;
+}
+
+.mypage-aircon-collapsible-content[hidden] {
+  display: none;
 }
 
 .mypage-nested-aircon-list {
@@ -127,6 +180,55 @@
   font-size: 15px;
   font-weight: 830;
   letter-spacing: -0.025em;
+}
+
+/* 류은 수정 0718 - 밑줄 친 이름을 클릭하면 카드 안에서 바로 수정할 수 있다. */
+.mypage-aircon-name-button {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  color: #173b31;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 830;
+  letter-spacing: -0.025em;
+  cursor: pointer;
+}
+
+.mypage-aircon-name-button:hover {
+  color: #2f7d5d;
+}
+
+.mypage-aircon-name-button:focus-visible {
+  outline: 2px solid rgba(63, 143, 103, 0.32);
+  outline-offset: 3px;
+}
+
+.mypage-aircon-name-input {
+  width: min(100%, 240px);
+  min-width: 0;
+  padding: 1px 0 2px;
+  border: 0;
+  border-bottom: 2px solid #3f8f67;
+  border-radius: 0;
+  background: transparent;
+  color: #173b31;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 830;
+  letter-spacing: -0.025em;
+  outline: none;
+}
+
+.mypage-aircon-name-input:disabled {
+  opacity: 0.65;
 }
 
 .mypage-nested-aircon-info p,
@@ -227,6 +329,10 @@
   .mypage-nested-aircon-button {
     grid-column: 2;
     justify-self: end;
+  }
+
+  .mypage-aircon-name-input {
+    width: 100%;
   }
 
   .mypage-nested-aircon-info p,

@@ -72,6 +72,24 @@ class PlaceLocationUpdate(BaseModel):
     lat: Optional[float] = None
     lon: Optional[float] = None
 
+# 류은 수정 0718
+# 마이페이지 카드에서 에어컨 이름만 변경할 때 받는 값입니다.
+class UserAirconNicknameUpdate(BaseModel):
+    nickname: str = Field(min_length=1, max_length=30)
+
+
+# 류은 수정 0718
+# 마이페이지에서 에어컨 제품을 목록 선택 또는 직접 입력으로 변경할 때 받는 값입니다.
+class UserAirconProductUpdate(BaseModel):
+    power_source: Literal["database", "user_input"]
+    aircon_model_id: Optional[int] = Field(default=None, ge=1)
+    manufacturer: Optional[str] = Field(default=None, max_length=100)
+    model_number: Optional[str] = Field(default=None, max_length=100)
+    rated_cooling_power_w: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=20_000,
+    )
 
 def create_place_with_aircons_for_user(
     user_id: int,
@@ -276,6 +294,186 @@ def read_my_places(current_user: dict = Depends(get_current_user)):
         places.append({**place, "aircons": aircon_result.data or []})
 
     return places
+
+# 류은 수정 0718
+def _ensure_owned_aircon(
+    place_id: int,
+    aircon_id: int,
+    user_id: int,
+) -> None:
+    """장소와 에어컨이 현재 로그인 사용자의 소유인지 확인합니다."""
+
+    place_result = (
+        supabase.table(PLACES_TABLE)
+        .select("id")
+        .eq("id", place_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if not place_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="장소를 찾을 수 없거나 수정 권한이 없습니다.",
+        )
+
+    aircon_result = (
+        supabase.table(USER_AIRCONS_TABLE)
+        .select("id")
+        .eq("id", aircon_id)
+        .eq("place_id", place_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if not aircon_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="에어컨을 찾을 수 없거나 수정 권한이 없습니다.",
+        )
+
+
+# 류은 수정 0718
+@router.patch("/places/{place_id}/aircons/{aircon_id}/nickname")
+def update_user_aircon_nickname(
+    place_id: int,
+    aircon_id: int,
+    payload: UserAirconNicknameUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """제품 정보는 유지하고 에어컨 이름만 변경합니다."""
+
+    nickname = payload.nickname.strip()
+    if not nickname:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="에어컨 이름을 입력해 주세요.",
+        )
+
+    _ensure_owned_aircon(
+        place_id=place_id,
+        aircon_id=aircon_id,
+        user_id=current_user["id"],
+    )
+
+    update_result = (
+        supabase.table(USER_AIRCONS_TABLE)
+        .update({"nickname": nickname})
+        .eq("id", aircon_id)
+        .eq("place_id", place_id)
+        .eq("user_id", current_user["id"])
+        .execute()
+    )
+    if not update_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="에어컨 이름을 변경하지 못했습니다.",
+        )
+
+    return update_result.data[0]
+
+
+# 류은 수정 0718
+@router.patch("/places/{place_id}/aircons/{aircon_id}/product")
+def update_user_aircon_product(
+    place_id: int,
+    aircon_id: int,
+    payload: UserAirconProductUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """목록 선택 또는 직접 입력으로 에어컨 제품 정보만 변경합니다."""
+
+    _ensure_owned_aircon(
+        place_id=place_id,
+        aircon_id=aircon_id,
+        user_id=current_user["id"],
+    )
+
+    if payload.power_source == "database":
+        if payload.aircon_model_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="변경할 에어컨 제품을 선택해 주세요.",
+            )
+
+        model_result = (
+            supabase.table(AIRCON_MODELS_TABLE)
+            .select(
+                "id,manufacturer,product_name,model_number,"
+                "aircon_type,rated_cooling_power_w,verification_status"
+            )
+            .eq("id", payload.aircon_model_id)
+            .limit(1)
+            .execute()
+        )
+        if not model_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="선택한 에어컨 제품을 찾을 수 없습니다.",
+            )
+
+        model = model_result.data[0]
+        update_data = {
+            "aircon_model_id": model["id"],
+            "manufacturer": model["manufacturer"],
+            "product_name": model.get("product_name"),
+            "model_number": model["model_number"],
+            "aircon_type": model.get("aircon_type"),
+            "rated_cooling_power_w": model["rated_cooling_power_w"],
+            "power_source": "database",
+            "verification_status": model.get("verification_status"),
+            "estimated_min_power_w": None,
+            "estimated_max_power_w": None,
+        }
+    else:
+        manufacturer = (payload.manufacturer or "").strip()
+        model_number = (
+            payload.model_number.strip()
+            if payload.model_number and payload.model_number.strip()
+            else None
+        )
+
+        if not manufacturer:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="제조사를 입력해 주세요.",
+            )
+
+        if payload.rated_cooling_power_w is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="정격 냉방 소비전력을 입력해 주세요.",
+            )
+
+        update_data = {
+            "aircon_model_id": None,
+            "manufacturer": manufacturer,
+            "product_name": None,
+            "model_number": model_number,
+            "aircon_type": None,
+            "rated_cooling_power_w": payload.rated_cooling_power_w,
+            "power_source": "user_input",
+            "verification_status": "미확인",
+            "estimated_min_power_w": None,
+            "estimated_max_power_w": None,
+        }
+
+    # nickname은 update_data에 넣지 않으므로 기존 에어컨 이름이 유지됩니다.
+    update_result = (
+        supabase.table(USER_AIRCONS_TABLE)
+        .update(update_data)
+        .eq("id", aircon_id)
+        .eq("place_id", place_id)
+        .eq("user_id", current_user["id"])
+        .execute()
+    )
+    if not update_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="에어컨 제품을 변경하지 못했습니다.",
+        )
+
+    return update_result.data[0]
 
 
 # jh 수정함 - 로그인 후 위치(lat/lon) 그리고/또는 이름을 수정하는 엔드포인트.

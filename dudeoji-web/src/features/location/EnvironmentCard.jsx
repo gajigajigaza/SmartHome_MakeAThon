@@ -83,7 +83,7 @@ export default function EnvironmentCard({
     setMockReadingError("");
 
     try {
-      await createMockReading();
+      await createMockReading(selectedLocation?.id ?? null, "manual");
       await onMockReadingCreated?.();
     } catch (error) {
       setMockReadingError(error.message);
