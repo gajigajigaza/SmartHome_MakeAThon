@@ -1,19 +1,7 @@
 import { useEffect, useState } from "react";
 
 import sproutMenuIcon from "../../assets/sprout-menu.svg";
-
-function SidebarButton({ icon, label, active = false, danger = false, onClick }) {
-  return (
-    <button
-      type="button"
-      className={`mypage-sidebar-link ${active ? "active" : ""} ${danger ? "danger" : ""}`}
-      onClick={onClick}
-    >
-      <span>{icon}</span>
-      <strong>{label}</strong>
-    </button>
-  );
-}
+import SharedAppSidebar from "../navigation/SharedAppSidebar";
 
 function BadgePage({
   nickname = "두더지",
@@ -22,6 +10,7 @@ function BadgePage({
   onSelectBadge,
   onBack,
   onOpenMyPage,
+  onOpenSensorReadings,
   onOpenDashboard,
   onStartTutorial,
   onLogout,
@@ -44,10 +33,6 @@ function BadgePage({
 
   function showToast(message) {
     setToastMessage(message);
-  }
-
-  function showComingSoon(featureName) {
-    showToast(`${featureName} 화면은 다음 단계에서 연결할게요.`);
   }
 
   const selectedBadge = badges.find((badge) => badge.id === selectedBadgeId) || badges[0];
@@ -73,47 +58,18 @@ function BadgePage({
       </header>
 
       <div className="badge-desktop-shell">
-        <aside className="mypage-sidebar badge-sidebar" aria-label="뱃지 메뉴">
-          <div className="mypage-sidebar-profile">
-            <button
-              type="button"
-              className="mypage-sidebar-home-icon-button"
-              onClick={onOpenDashboard || onBack}
-              aria-label="대시보드로 이동"
-            >
-              {renderProfileBadge?.("mypage-sidebar-badge-image")}
-            </button>
-
-            <div>
-              <strong>{nickname}</strong>
-              <span>●</span>
-            </div>
-          </div>
-
-          <nav className="mypage-sidebar-nav">
-            <SidebarButton icon="👤" label="마이페이지" onClick={onOpenMyPage} />
-            <SidebarButton
-              icon="🌡️"
-              label="센서 측정값"
-              onClick={() => showComingSoon("센서 측정값")}
-            />
-            <SidebarButton icon="🏅" label="뱃지" active onClick={() => {}} />
-            <SidebarButton
-              icon="📖"
-              label="튜토리얼 다시 보기"
-              onClick={onStartTutorial}
-            />
-          </nav>
-
-          <div className="mypage-sidebar-divider" />
-
-          <SidebarButton
-            icon="🚪"
-            label="로그아웃"
-            danger
-            onClick={onLogout}
-          />
-        </aside>
+        <SharedAppSidebar
+          nickname={nickname}
+          renderProfileBadge={renderProfileBadge}
+          activePage="badges"
+          onOpenDashboard={onOpenDashboard || onBack}
+          onOpenMyPage={onOpenMyPage}
+          onOpenSensorReadings={onOpenSensorReadings}
+          onOpenBadgePage={() => {}}
+          onStartTutorial={onStartTutorial}
+          onLogout={onLogout}
+          className="badge-sidebar"
+        />
 
         <main className="badge-main-panel">
           <header className="badge-page-header">

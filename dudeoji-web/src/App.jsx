@@ -219,6 +219,10 @@ function App({
       setCurrentPage("mypage");
       return;
     }
+    if (badgeReturnPage === "sensors") {
+      setCurrentPage("sensors");
+      return;
+    }
     openDashboard();
   }
 
@@ -235,13 +239,6 @@ function App({
     setIsUserMenuOpen(false);
     setIsTutorialOpen(false);
     setCurrentPage("sensors");
-
-    try {
-      const history = await getReadingHistory(24);
-      setReadingHistory(history.map(convertReading));
-    } catch (error) {
-      setDashboardToast(`센서 기록을 불러오지 못했어요: ${error.message}`);
-    }
   }
 
   function startTutorial() {
@@ -279,6 +276,7 @@ function App({
           )}
           onBack={openDashboard}
           onOpenBadgePage={() => openBadgePage("mypage")}
+          onOpenSensorReadings={openSensorReadings}
           onStartTutorial={startTutorial}
           onLogout={onLogout}
           onUserUpdated={onUserUpdated}
@@ -298,6 +296,7 @@ function App({
         onSelectBadge={handleBadgeSelect}
         onBack={handleBadgeBack}
         onOpenMyPage={openMyPage}
+        onOpenSensorReadings={openSensorReadings}
         onOpenDashboard={openDashboard}
         onStartTutorial={startTutorial}
         onLogout={onLogout}
@@ -313,7 +312,20 @@ function App({
 
   if (currentPage === "sensors") {
     return (
-      <SensorReadings history={readingHistory} onBack={openDashboard} />
+      <LocationProvider>
+        <SensorReadings
+          history={readingHistory}
+          nickname={nickname}
+          renderProfileBadge={(className) => (
+            <ProfileBadgeIcon badge={currentProfileBadge} className={className} />
+          )}
+          onBack={openDashboard}
+          onOpenMyPage={openMyPage}
+          onOpenBadgePage={() => openBadgePage("sensors")}
+          onStartTutorial={startTutorial}
+          onLogout={handleLogoutClick}
+        />
+      </LocationProvider>
     );
   }
 

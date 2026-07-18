@@ -1,32 +1,139 @@
 // src/features/sensors/readingsApi.js
-// 담당: 민주
-//
-// 백엔드 routers/readings_router.py(/api/readings/*, /api/recommendation)에
-// 1:1로 대응합니다. App.jsx(대시보드)와 SensorReadings.jsx가 여기서
-// 가져다 씁니다.
+// 장소별 센서 기록, 추천 기준, 테스트 기록 API
+
 import { request } from "../../api";
 
-export async function getLatestReading() {
-  return request("/api/readings/latest", { auth: true });
+function appendQuery(endpoint, key, value) {
+  if (value === undefined || value === null || value === "") {
+    return endpoint;
+  }
+
+  const separator = endpoint.includes("?") ? "&" : "?";
+  return `${endpoint}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
 }
 
-// minzoo 브랜치에서 이식: 최근 센서 기록 여러 개 조회 (센서 측정값 화면)
-export async function getReadingHistory(limit = 8) {
-  return request(`/api/readings/history?limit=${limit}`, { auth: true });
+function appendPlaceId(endpoint, placeId) {
+  return appendQuery(endpoint, "place_id", placeId);
 }
 
-export async function getRecommendation() {
-  return request("/api/recommendation", { auth: true });
+function wait(milliseconds, signal) {
+  return new Promise((resolve, reject) => {
+    const timerId = window.setTimeout(resolve, milliseconds);
+
+    if (signal) {
+      signal.addEventListener(
+        "abort",
+        () => {
+          window.clearTimeout(timerId);
+          reject(new DOMException("요청이 취소되었습니다.", "AbortError"));
+        },
+        { once: true },
+      );
+    }
+  });
 }
 
-// jh 수정함 - GET /api/savings/summary 대응. SavingsSummary.jsx(예상
-// 절감 카드)가 period="day"|"week"|"month"로 호출한다.
+function isRetryableReadError(error) {
+  if (error?.name === "AbortError") {
+    return false;
+  }
+
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("network") ||
+    message.includes("temporarily") ||
+    message.includes("일시적으로") ||
+    message.includes("503") ||
+    message.includes("500")
+  );
+}
+
+async function requestReadWithRetry(endpoint, options = {}, attempts = 3) {
+  let lastError;
+
+  for (let index = 0; index < attempts; index += 1) {
+    try {
+      return await request(endpoint, options);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableReadError(error) || index === attempts - 1) {
+        throw error;
+      }
+      await wait(250 * 2 ** index, options.signal);
+    }
+  }
+
+  throw lastError;
+}
+
+export async function getLatestReading(placeId = null, options = {}) {
+  return requestReadWithRetry(appendPlaceId("/api/readings/latest", placeId), {
+    auth: true,
+    ...options,
+  });
+}
+
+export async function getReadingHistory(
+  limit = 8,
+  placeId = null,
+  after = null,
+  options = {},
+) {
+  let endpoint = `/api/readings/history?limit=${encodeURIComponent(limit)}`;
+  endpoint = appendPlaceId(endpoint, placeId);
+  endpoint = appendQuery(endpoint, "after", after);
+
+  return requestReadWithRetry(endpoint, { auth: true, ...options });
+}
+
+export async function getLogicThresholds(options = {}) {
+  return requestReadWithRetry("/api/readings/logic-thresholds", {
+    auth: true,
+    ...options,
+  });
+}
+
+export async function getWeatherStatus(
+  placeId = null,
+  forceRefresh = false,
+  options = {},
+) {
+  let endpoint = appendPlaceId("/api/weather/status", placeId);
+  endpoint = appendQuery(
+    endpoint,
+    "force_refresh",
+    forceRefresh ? "true" : "false",
+  );
+  return requestReadWithRetry(endpoint, { auth: true, ...options });
+}
+
+export async function getRecommendation(placeId = null, options = {}) {
+  return requestReadWithRetry(appendPlaceId("/api/recommendation", placeId), {
+    auth: true,
+    ...options,
+  });
+}
+
 export async function getSavingsSummary(period) {
-  return request(`/api/savings/summary?period=${period}`, { auth: true });
+  return requestReadWithRetry(`/api/savings/summary?period=${period}`, {
+    auth: true,
+  });
 }
 
-// jh 수정함 - POST /api/dev/mock-reading 대응(민주 승인받음). EnvironmentCard.jsx의
-// "테스트 모드" 버튼이 가짜 센서값 하나를 만들어 저장할 때 호출한다.
-export async function createMockReading() {
-  return request("/api/dev/mock-reading", { method: "POST", auth: true });
+// testMode는 manual 또는 auto입니다. 백엔드가 recommendation JSON에
+// TEST_MANUAL/TEST_AUTO 출처를 저장해 실제 센서 기록과 구분합니다.
+export async function createMockReading(
+  placeId = null,
+  testMode = "manual",
+  options = {},
+) {
+  let endpoint = appendPlaceId("/api/dev/mock-reading", placeId);
+  endpoint = appendQuery(endpoint, "test_mode", testMode);
+
+  return request(endpoint, {
+    method: "POST",
+    auth: true,
+    ...options,
+  });
 }

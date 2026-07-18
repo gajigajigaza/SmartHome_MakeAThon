@@ -1,0 +1,2423 @@
+:root {
+  --sensor-ink: #15352c;
+  --sensor-muted: #6d7f79;
+  --sensor-line: #dce9e2;
+  --sensor-surface: rgba(255, 255, 255, 0.94);
+  --sensor-soft: #f3f9f5;
+  --sensor-green: #2f9c62;
+  --sensor-green-dark: #207849;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sensor-page-shell {
+  min-height: 100vh;
+  color: var(--sensor-ink);
+  background:
+    radial-gradient(
+      circle at 3% 0%,
+      rgba(169, 226, 190, 0.28),
+      transparent 25rem
+    ),
+    radial-gradient(
+      circle at 100% 18%,
+      rgba(183, 218, 255, 0.22),
+      transparent 30rem
+    ),
+    #f6faf7;
+}
+
+.sensor-page-header {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 94px;
+  padding: 18px clamp(20px, 4vw, 58px);
+  border-bottom: 1px solid rgba(189, 211, 200, 0.75);
+  background: rgba(250, 253, 251, 0.9);
+  box-shadow: 0 8px 24px rgba(35, 78, 57, 0.04);
+  backdrop-filter: blur(18px);
+}
+
+.sensor-page-header__title-group,
+.sensor-page-title-row,
+.sensor-page-controls,
+.sensor-page-header__title-group > div {
+  display: flex;
+  align-items: center;
+}
+
+.sensor-page-header__title-group {
+  min-width: 0;
+  gap: 14px;
+}
+
+.sensor-page-header__title-group > div {
+  min-width: 0;
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.sensor-page-title-row {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sensor-page-title-row h1 {
+  margin: 0;
+  color: #102f26;
+  font-size: clamp(24px, 2.4vw, 34px);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+}
+
+.sensor-page-header__title-group p {
+  margin: 5px 0 0;
+  color: var(--sensor-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sensor-back-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #cfe0d7;
+  border-radius: 14px;
+  background: #fff;
+  color: #285b46;
+  font-size: 24px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.sensor-back-button:hover {
+  transform: translateX(-2px);
+  border-color: #80c39d;
+  box-shadow: 0 8px 18px rgba(38, 108, 70, 0.12);
+}
+
+.sensor-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: #e8f7ed;
+  color: #24824d;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.sensor-live-badge i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px rgba(47, 156, 98, 0.12);
+}
+
+.sensor-live-badge.is-delay {
+  background: #fff4db;
+  color: #a96a09;
+}
+
+.sensor-live-badge.is-stale,
+.sensor-live-badge.is-empty {
+  background: #f0f2f1;
+  color: #74817c;
+}
+
+.sensor-live-badge.is-pulsing i {
+  animation: sensor-live-pulse 750ms ease-in-out 2;
+}
+
+@keyframes sensor-live-pulse {
+  50% {
+    transform: scale(1.55);
+    box-shadow: 0 0 0 8px rgba(47, 156, 98, 0.08);
+  }
+}
+
+.sensor-page-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.sensor-last-update {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  padding-right: 4px;
+}
+
+.sensor-last-update span {
+  color: #82908b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sensor-last-update strong {
+  margin-top: 2px;
+  color: #405c52;
+  font-size: 12px;
+}
+
+.sensor-auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #d7e4dd;
+  border-radius: 12px;
+  background: #fff;
+  color: #345348;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.sensor-auto-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sensor-auto-toggle__track {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: #cfd8d4;
+  transition: background 160ms ease;
+}
+
+.sensor-auto-toggle__track i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(35, 64, 51, 0.18);
+  transition: transform 160ms ease;
+}
+
+.sensor-auto-toggle input:checked + .sensor-auto-toggle__track {
+  background: var(--sensor-green);
+}
+
+.sensor-auto-toggle input:checked + .sensor-auto-toggle__track i {
+  transform: translateX(14px);
+}
+
+.sensor-refresh-select select,
+.sensor-refresh-button,
+.sensor-export-button {
+  min-height: 42px;
+  border: 1px solid #d7e4dd;
+  border-radius: 12px;
+  background: #fff;
+  color: #345348;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sensor-refresh-select select {
+  padding: 0 30px 0 12px;
+}
+
+.sensor-refresh-select select:disabled {
+  opacity: 0.5;
+}
+
+.sensor-refresh-button,
+.sensor-export-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.sensor-refresh-button:hover:not(:disabled),
+.sensor-export-button:hover {
+  transform: translateY(-1px);
+  border-color: #87c6a1;
+  background: #f8fcf9;
+}
+
+.sensor-refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.sensor-refresh-button .is-spinning {
+  display: inline-block;
+  animation: sensor-spin 850ms linear infinite;
+}
+
+@keyframes sensor-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sensor-page-main {
+  width: min(1680px, calc(100% - clamp(24px, 4vw, 72px)));
+  margin: 0 auto;
+  padding: 26px 0 48px;
+}
+
+.sensor-error-banner,
+.sensor-info-note,
+.sensor-loading-state,
+.sensor-empty-state {
+  border: 1px solid var(--sensor-line);
+  border-radius: 18px;
+  background: var(--sensor-surface);
+}
+
+.sensor-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  border-color: #f0c6c2;
+  background: #fff8f7;
+}
+
+.sensor-error-banner strong {
+  color: #983d34;
+}
+
+.sensor-error-banner p {
+  margin: 4px 0 0;
+  color: #8b625d;
+  font-size: 13px;
+}
+
+.sensor-error-banner button,
+.sensor-empty-state button,
+.sensor-info-note button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #8ec7a7;
+  border-radius: 11px;
+  background: #fff;
+  color: #237849;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.sensor-loading-state,
+.sensor-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  min-height: 430px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.sensor-loading-state strong,
+.sensor-empty-state h2 {
+  margin: 14px 0 0;
+  font-size: 21px;
+  font-weight: 900;
+}
+
+.sensor-loading-state p,
+.sensor-empty-state p {
+  max-width: 580px;
+  margin: 8px 0 22px;
+  color: var(--sensor-muted);
+  line-height: 1.7;
+}
+
+.sensor-empty-state > span {
+  font-size: 54px;
+}
+
+.sensor-loading-spinner {
+  width: 38px;
+  height: 38px;
+  border: 4px solid #dcebe3;
+  border-top-color: var(--sensor-green);
+  border-radius: 50%;
+  animation: sensor-spin 850ms linear infinite;
+}
+
+.sensor-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.sensor-environment-panel,
+.sensor-history-section,
+.sensor-table-card,
+.sensor-status-card,
+.sensor-alert-card {
+  border: 1px solid rgba(202, 220, 211, 0.9);
+  border-radius: 20px;
+  background: var(--sensor-surface);
+  box-shadow: 0 12px 34px rgba(35, 75, 54, 0.045);
+}
+
+.sensor-environment-panel {
+  padding: 20px;
+}
+
+.sensor-section-heading,
+.sensor-section-heading > div,
+.sensor-history-title-row,
+.sensor-card-heading,
+.sensor-chart-card__header,
+.sensor-state-timeline-card__header {
+  display: flex;
+  align-items: center;
+}
+
+.sensor-section-heading,
+.sensor-card-heading,
+.sensor-chart-card__header,
+.sensor-state-timeline-card__header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sensor-section-heading > div,
+.sensor-history-title-row {
+  gap: 10px;
+}
+
+.sensor-section-heading h2,
+.sensor-history-title-row h2,
+.sensor-card-heading h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.025em;
+}
+
+.sensor-section-heading p,
+.sensor-history-title-row p,
+.sensor-card-heading p {
+  margin: 3px 0 0;
+  color: #7b8c86;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sensor-section-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.sensor-section-number.is-indoor {
+  background: #3da96d;
+}
+
+.sensor-section-number.is-outdoor {
+  background: #4f8df3;
+}
+
+.sensor-section-number.is-history {
+  background: #f0a12b;
+}
+
+.sensor-panel-source {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.sensor-panel-source.is-sensor {
+  background: #e6f5eb;
+  color: #2b8b54;
+}
+
+.sensor-panel-source.is-api {
+  background: #e9f1ff;
+  color: #4277ca;
+}
+
+.sensor-value-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+  margin-top: 17px;
+}
+
+.sensor-value-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #e1ebe6;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fff 0%, #fbfdfc 100%);
+}
+
+.sensor-value-card__top,
+.sensor-value-card__bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sensor-value-card__label {
+  overflow: hidden;
+  color: #435c52;
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sensor-value-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: #f2f6f4;
+  font-size: 17px;
+}
+
+.sensor-value-card__value {
+  display: block;
+  margin: 17px 0 15px;
+  color: #102f26;
+  font-size: clamp(25px, 2.1vw, 34px);
+  font-weight: 950;
+  letter-spacing: -0.045em;
+  white-space: nowrap;
+}
+
+.sensor-value-card__value.is-text {
+  font-size: 28px;
+}
+
+.sensor-value-card__value small,
+.sensor-chart-card__header strong small {
+  margin-left: 3px;
+  color: #50665d;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.sensor-value-card__bottom {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+  color: #87938f;
+  font-size: 10px;
+}
+
+.sensor-value-card__bottom > span:last-child {
+  display: block;
+  width: 100%;
+  overflow: visible;
+  color: #7f9089;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.sensor-status-chip,
+.sensor-action-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.sensor-status-chip {
+  min-height: 23px;
+  padding: 0 8px;
+  font-size: 10px;
+}
+
+.sensor-status-chip.is-good {
+  background: #e8f7ed;
+  color: #25834d;
+}
+
+.sensor-status-chip.is-warning {
+  background: #fff3dc;
+  color: #aa6d0c;
+}
+
+.sensor-status-chip.is-danger {
+  background: #fff0ee;
+  color: #c65549;
+}
+
+.sensor-status-chip.is-neutral {
+  background: #eef3f1;
+  color: #667a72;
+}
+
+.sensor-status-chip.is-muted {
+  background: #f2f3f3;
+  color: #8a9490;
+}
+
+.sensor-system-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid #dce8e1;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.sensor-system-strip > div {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 0 10px;
+  min-width: 0;
+  padding: 13px 18px;
+  border-right: 1px solid #e3ece7;
+}
+
+.sensor-system-strip > div:last-child {
+  border-right: 0;
+}
+
+.sensor-system-strip > div > span {
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-size: 20px;
+}
+
+.sensor-system-strip small {
+  color: #82918b;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.sensor-system-strip strong {
+  overflow: hidden;
+  margin-top: 2px;
+  color: #2b4a3e;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sensor-history-section {
+  margin-top: 18px;
+  padding: 20px;
+}
+
+.sensor-history-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.sensor-history-actions,
+.sensor-range-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sensor-range-tabs {
+  overflow: hidden;
+  gap: 0;
+  border: 1px solid #d9e5de;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.sensor-range-tabs button {
+  min-width: 62px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-right: 1px solid #e2eae6;
+  background: transparent;
+  color: #677a72;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.sensor-range-tabs button:last-child {
+  border-right: 0;
+}
+
+.sensor-range-tabs button.is-active {
+  background: var(--sensor-green);
+  color: #fff;
+}
+
+.sensor-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.sensor-summary-grid > div {
+  min-width: 0;
+  padding: 13px 15px;
+  border: 1px solid #e1ebe6;
+  border-radius: 13px;
+  background: #f9fcfa;
+}
+
+.sensor-summary-grid span,
+.sensor-summary-grid small {
+  display: block;
+  color: #7e8e87;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.sensor-summary-grid strong {
+  display: block;
+  margin-top: 5px;
+  color: #244b3a;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.sensor-summary-grid small {
+  margin-top: 3px;
+}
+
+.sensor-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.sensor-chart-card,
+.sensor-state-timeline-card {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid #e0eae5;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.sensor-chart-card__header {
+  align-items: flex-end;
+}
+
+.sensor-chart-card__eyebrow {
+  display: block;
+  margin-bottom: 3px;
+  color: #8a9893;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.sensor-chart-card h3,
+.sensor-state-timeline-card h3 {
+  margin: 0;
+  color: #284a3d;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.sensor-chart-card__header strong {
+  color: #1c5a3c;
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.sensor-chart-wrap {
+  width: 100%;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.sensor-metric-chart {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  color: #2f9c62;
+}
+
+.sensor-metric-chart.tone-coral {
+  color: #ef685d;
+}
+
+.sensor-metric-chart.tone-blue {
+  color: #438bf0;
+}
+
+.sensor-metric-chart.tone-purple {
+  color: #9568db;
+}
+
+.sensor-metric-chart.tone-orange {
+  color: #ef8d26;
+}
+
+.sensor-metric-chart.tone-indigo {
+  color: #546fe5;
+}
+
+.sensor-metric-chart.tone-cyan {
+  color: #18a5af;
+}
+
+.sensor-metric-chart.tone-green {
+  color: #289a58;
+}
+
+.sensor-chart-guide {
+  stroke: #e7eeea;
+  stroke-width: 1;
+  stroke-dasharray: 4 5;
+}
+
+.sensor-chart-y-label,
+.sensor-chart-x-label {
+  fill: #87948f;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.sensor-chart-point {
+  fill: #fff;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.sensor-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  color: #8a9993;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sensor-state-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.sensor-state-timeline-card__header > span {
+  color: #8b9893;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.sensor-state-timeline {
+  display: flex;
+  gap: 3px;
+  height: 24px;
+  margin-top: 15px;
+}
+
+.sensor-state-segment {
+  flex: 1 1 0;
+  min-width: 3px;
+  border-radius: 4px;
+  background: #d5ddd9;
+}
+
+.sensor-state-segment.is-open,
+.sensor-state-segment.is-ventilation {
+  background: #51b97a;
+}
+
+.sensor-state-segment.is-closed,
+.sensor-state-segment.is-maintain {
+  background: #aab8b1;
+}
+
+.sensor-state-segment.is-aircon {
+  background: #4f8de8;
+}
+
+.sensor-state-segment.is-enjoy {
+  background: #8a6ed7;
+}
+
+.sensor-state-segment.is-danger {
+  background: #e4645a;
+}
+
+.sensor-state-timeline-card__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 10px;
+  color: #6e8078;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.sensor-state-timeline-card__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sensor-state-timeline-card__legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: #aab8b1;
+}
+
+.sensor-state-timeline-card__legend i.is-open,
+.sensor-state-timeline-card__legend i.is-ventilation {
+  background: #51b97a;
+}
+
+.sensor-state-timeline-card__legend i.is-closed,
+.sensor-state-timeline-card__legend i.is-maintain {
+  background: #aab8b1;
+}
+
+.sensor-state-timeline-card__legend i.is-aircon {
+  background: #4f8de8;
+}
+
+.sensor-state-timeline-card__legend i.is-enjoy {
+  background: #8a6ed7;
+}
+
+.sensor-state-timeline-card__legend i.is-danger {
+  background: #e4645a;
+}
+
+.sensor-bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.15fr) minmax(310px, 0.85fr);
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.sensor-table-card,
+.sensor-status-card,
+.sensor-alert-card {
+  padding: 18px;
+}
+
+.sensor-card-heading > span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #eef6f1;
+  color: #46715f;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.sensor-table-scroll {
+  margin-top: 14px;
+  overflow-x: auto;
+  border: 1px solid #e1ebe6;
+  border-radius: 13px;
+}
+
+.sensor-history-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+  background: #fff;
+  font-size: 10px;
+}
+
+.sensor-history-table th,
+.sensor-history-table td {
+  padding: 10px 9px;
+  border-right: 1px solid #ebf0ed;
+  border-bottom: 1px solid #ebf0ed;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.sensor-history-table th:last-child,
+.sensor-history-table td:last-child {
+  border-right: 0;
+}
+
+.sensor-history-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.sensor-history-table th {
+  position: sticky;
+  top: 0;
+  background: #f4f9f6;
+  color: #52685f;
+  font-weight: 900;
+}
+
+.sensor-history-table td {
+  color: #354f45;
+  font-weight: 650;
+}
+
+.sensor-history-table tbody tr:hover {
+  background: #fbfdfc;
+}
+
+.sensor-action-chip {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 9px;
+}
+
+.sensor-action-chip.is-ventilation {
+  background: #e5f6eb;
+  color: #278451;
+}
+
+.sensor-action-chip.is-aircon {
+  background: #e8f0ff;
+  color: #3d70c3;
+}
+
+.sensor-action-chip.is-enjoy {
+  background: #f0ebff;
+  color: #7157bb;
+}
+
+.sensor-action-chip.is-danger {
+  background: #fff0ee;
+  color: #b95047;
+}
+
+.sensor-action-chip.is-maintain {
+  background: #eef2f0;
+  color: #657870;
+}
+
+.sensor-side-column {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.sensor-source-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid #e8efeb;
+}
+
+.sensor-source-row:last-child {
+  border-bottom: 0;
+}
+
+.sensor-source-row__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: #f0f7f3;
+  font-size: 17px;
+}
+
+.sensor-source-row div {
+  min-width: 0;
+}
+
+.sensor-source-row strong,
+.sensor-source-row span:not(.sensor-source-row__icon):not(.sensor-status-chip) {
+  display: block;
+}
+
+.sensor-source-row strong {
+  overflow: hidden;
+  color: #2b493e;
+  font-size: 11px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sensor-source-row div span {
+  margin-top: 3px;
+  color: #87948f;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.sensor-source-row time {
+  color: #60736b;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.sensor-alert-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.sensor-alert-item {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid #e5ece8;
+  border-radius: 12px;
+  background: #fbfdfc;
+}
+
+.sensor-alert-item > i {
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #8ba198;
+}
+
+.sensor-alert-item strong {
+  color: #344e44;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.sensor-alert-item p {
+  margin: 3px 0 0;
+  color: #74857e;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.sensor-alert-item.is-good > i {
+  background: #38a764;
+}
+
+.sensor-alert-item.is-warning > i {
+  background: #e39a26;
+}
+
+.sensor-alert-item.is-danger > i {
+  background: #e15f55;
+}
+
+.sensor-info-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 13px 16px;
+}
+
+.sensor-info-note > span {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 23px;
+  border-radius: 999px;
+  background: #dff2e6;
+  color: #277b4b;
+  font-size: 9px;
+  font-weight: 950;
+}
+
+.sensor-info-note p {
+  flex: 1 1 auto;
+  margin: 0;
+  color: #64776f;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.sensor-toast {
+  position: fixed;
+  z-index: 100;
+  right: 24px;
+  bottom: 24px;
+  max-width: min(420px, calc(100vw - 40px));
+  padding: 13px 16px;
+  border: 1px solid #bbdcca;
+  border-radius: 13px;
+  background: #fff;
+  color: #2b5944;
+  box-shadow: 0 18px 45px rgba(35, 75, 54, 0.17);
+  font-size: 12px;
+  font-weight: 850;
+  animation: sensor-toast-in 180ms ease-out;
+}
+
+@keyframes sensor-toast-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 1280px) {
+  .sensor-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sensor-page-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .sensor-value-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sensor-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .sensor-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sensor-side-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 920px) {
+  .sensor-overview-grid,
+  .sensor-chart-grid,
+  .sensor-state-grid,
+  .sensor-side-column {
+    grid-template-columns: 1fr;
+  }
+
+  .sensor-system-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sensor-system-strip > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .sensor-system-strip > div:nth-child(-n + 2) {
+    border-bottom: 1px solid #e3ece7;
+  }
+
+  .sensor-history-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sensor-history-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sensor-range-tabs {
+    width: 100%;
+  }
+
+  .sensor-range-tabs button {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .sensor-export-button {
+    align-self: flex-end;
+  }
+}
+
+@media (max-width: 640px) {
+  .sensor-page-header {
+    position: static;
+    min-height: 0;
+    padding: 16px;
+  }
+
+  .sensor-page-title-row h1 {
+    font-size: 23px;
+  }
+
+  .sensor-page-header__title-group p,
+  .sensor-last-update {
+    display: none;
+  }
+
+  .sensor-page-controls {
+    display: grid;
+    grid-template-columns: 1fr auto;
+  }
+
+  .sensor-auto-toggle,
+  .sensor-refresh-button {
+    width: 100%;
+  }
+
+  .sensor-page-main {
+    width: calc(100% - 24px);
+    padding-top: 14px;
+  }
+
+  .sensor-environment-panel,
+  .sensor-history-section,
+  .sensor-table-card,
+  .sensor-status-card,
+  .sensor-alert-card {
+    border-radius: 16px;
+  }
+
+  .sensor-environment-panel,
+  .sensor-history-section {
+    padding: 14px;
+  }
+
+  .sensor-value-grid,
+  .sensor-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sensor-value-card {
+    padding: 12px;
+  }
+
+  .sensor-value-card__value {
+    font-size: 25px;
+  }
+
+  .sensor-system-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .sensor-system-strip > div,
+  .sensor-system-strip > div:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid #e3ece7;
+  }
+
+  .sensor-system-strip > div:last-child {
+    border-bottom: 0;
+  }
+
+  .sensor-range-tabs {
+    overflow-x: auto;
+  }
+
+  .sensor-range-tabs button {
+    flex: 0 0 auto;
+    min-width: 68px;
+  }
+
+  .sensor-summary-grid > div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .sensor-info-note {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .sensor-info-note p {
+    flex-basis: calc(100% - 50px);
+  }
+
+  .sensor-info-note button {
+    width: 100%;
+  }
+}
+
+.sensor-state-segment.is-weather-good,
+.sensor-state-timeline-card__legend i.is-weather-good {
+  background: #f2b843;
+}
+
+.sensor-state-segment.is-weather-bad,
+.sensor-state-timeline-card__legend i.is-weather-bad {
+  background: #657dc6;
+}
+
+.sensor-state-segment.is-auto,
+.sensor-state-timeline-card__legend i.is-auto {
+  background: #2f9c62;
+}
+
+.sensor-state-segment.is-manual,
+.sensor-state-timeline-card__legend i.is-manual {
+  background: #87958f;
+}
+
+/* =========================================================
+   장소별 센서 대시보드 레이아웃
+   - 첨부 시안처럼 데스크톱에서는 왼쪽 메뉴 + 오른쪽 대시보드
+   - 태블릿/모바일에서는 왼쪽 메뉴를 숨기고 상단 장소 선택 유지
+   ========================================================= */
+
+.sensor-page-shell {
+  display: flex;
+  align-items: stretch;
+}
+
+.sensor-page-workspace {
+  min-width: 0;
+  flex: 1 1 auto;
+  margin-left: 214px;
+}
+
+.sensor-side-nav {
+  position: fixed;
+  z-index: 40;
+  inset: 0 auto 0 0;
+  display: flex;
+  width: 214px;
+  padding: 24px 16px 18px;
+  border-right: 1px solid rgba(197, 218, 207, 0.82);
+  background: linear-gradient(
+    180deg,
+    rgba(250, 253, 251, 0.98),
+    rgba(244, 250, 246, 0.98)
+  );
+  box-shadow: 10px 0 30px rgba(42, 83, 62, 0.035);
+  flex-direction: column;
+}
+
+.sensor-side-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 9px 24px;
+}
+
+.sensor-side-brand__character {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid #d8e9df;
+  border-radius: 16px;
+  background: #edf8f1;
+  font-size: 25px;
+}
+
+.sensor-side-brand > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.sensor-side-brand strong {
+  color: #14382d;
+  font-size: 24px;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.sensor-side-brand small {
+  margin-top: 6px;
+  color: #72837d;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.sensor-side-menu {
+  display: grid;
+  gap: 7px;
+}
+
+.sensor-side-menu button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 46px;
+  gap: 12px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: #36534a;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.sensor-side-menu button span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  color: #54736a;
+  font-size: 18px;
+}
+
+.sensor-side-menu button:hover {
+  transform: translateX(2px);
+  border-color: #d7e9df;
+  background: #f5faf7;
+  color: #226f49;
+}
+
+.sensor-side-menu button.is-active {
+  border-color: #d5eadc;
+  background: linear-gradient(135deg, #eaf7ee, #def1e5);
+  color: #207849;
+  box-shadow: inset 3px 0 0 #35a368;
+}
+
+.sensor-side-menu button.is-active span {
+  color: #249058;
+}
+
+.sensor-side-spacer {
+  flex: 1 1 auto;
+  min-height: 32px;
+}
+
+.sensor-side-location-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid #d8e6df;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 22px rgba(35, 79, 57, 0.045);
+}
+
+.sensor-side-location-card > span {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: #edf8f1;
+}
+
+.sensor-side-location-card > div {
+  min-width: 0;
+}
+
+.sensor-side-location-card small,
+.sensor-side-location-card strong,
+.sensor-side-location-card p {
+  display: block;
+}
+
+.sensor-side-location-card small {
+  color: #81918b;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.sensor-side-location-card strong {
+  overflow: hidden;
+  margin-top: 3px;
+  color: #173b30;
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sensor-side-location-card p {
+  margin: 4px 0 0;
+  color: #7b8c86;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.sensor-side-connection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid #dbe8e1;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #557068;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.sensor-side-connection i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #9da9a5;
+}
+
+.sensor-side-connection i.is-live {
+  background: #32a465;
+  box-shadow: 0 0 0 4px rgba(50, 164, 101, 0.1);
+}
+
+.sensor-side-connection i.is-delay {
+  background: #e9a532;
+}
+
+.sensor-side-connection i.is-stale,
+.sensor-side-connection i.is-empty {
+  background: #9da9a5;
+}
+
+.sensor-location-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 4px 5px 4px 10px;
+  border: 1px solid #d6e5dd;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.sensor-location-control > span {
+  color: #7a8d85;
+  font-size: 10px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.sensor-location-control .location-switcher {
+  position: relative;
+}
+
+.sensor-location-control .location-switcher-button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: #eef8f2;
+  color: #226f49;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: none;
+}
+
+.sensor-location-control .location-list-panel {
+  z-index: 100;
+}
+
+.sensor-location-empty .location-switcher {
+  position: relative;
+  margin-top: 6px;
+}
+
+.sensor-location-empty .location-switcher-button {
+  min-width: 170px;
+  justify-content: center;
+}
+
+/* 최근 측정 기록: 실내 / 실외 / 상태를 한눈에 구분 */
+.sensor-history-table .sensor-table-group-row th {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #dbe7e0;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: -0.01em;
+}
+
+.sensor-history-table .sensor-table-detail-row th {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.sensor-history-table .sensor-table-group.is-indoor,
+.sensor-history-table .sensor-table-detail-row .is-indoor {
+  background: #edf8f1;
+  color: #23784c;
+}
+
+.sensor-history-table .sensor-table-group.is-outdoor,
+.sensor-history-table .sensor-table-detail-row .is-outdoor {
+  background: #edf5ff;
+  color: #2869b0;
+}
+
+.sensor-history-table .sensor-table-group.is-state,
+.sensor-history-table .sensor-table-detail-row .is-state {
+  background: #f7f4fb;
+  color: #685080;
+}
+
+.sensor-history-table .sensor-table-time {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 92px;
+  border-right: 1px solid #dbe7e0;
+  background: #fbfdfc;
+}
+
+.sensor-history-table thead .sensor-table-time {
+  z-index: 4;
+  color: #405d53;
+}
+
+.sensor-history-table .sensor-table-cell.is-indoor {
+  background: rgba(239, 249, 243, 0.58);
+}
+
+.sensor-history-table .sensor-table-cell.is-outdoor {
+  background: rgba(239, 246, 255, 0.58);
+}
+
+.sensor-history-table .sensor-table-cell.is-state {
+  background: rgba(248, 245, 251, 0.62);
+}
+
+.sensor-history-table tbody tr:hover .sensor-table-cell.is-indoor {
+  background: #e7f6ed;
+}
+
+.sensor-history-table tbody tr:hover .sensor-table-cell.is-outdoor {
+  background: #e7f2ff;
+}
+
+.sensor-history-table tbody tr:hover .sensor-table-cell.is-state {
+  background: #f3edf8;
+}
+
+#sensor-overview,
+#sensor-history,
+#sensor-records,
+#sensor-status {
+  scroll-margin-top: 112px;
+}
+
+/* 헤더가 시안처럼 넓은 데스크톱에서 한 줄을 유지하도록 조정 */
+.sensor-page-header {
+  padding-right: clamp(18px, 2.6vw, 42px);
+  padding-left: clamp(18px, 2.6vw, 42px);
+}
+
+.sensor-page-main {
+  max-width: 1600px;
+}
+
+.sensor-info-note strong {
+  color: #207849;
+}
+
+@media (max-width: 1180px) {
+  .sensor-page-workspace {
+    margin-left: 0;
+  }
+
+  .sensor-side-nav {
+    display: none;
+  }
+
+  .sensor-page-header {
+    padding-left: 22px;
+  }
+}
+
+@media (max-width: 860px) {
+  .sensor-location-control {
+    order: -2;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .sensor-location-control .location-switcher {
+    flex: 1 1 auto;
+  }
+
+  .sensor-location-control .location-switcher-button {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .sensor-history-table .sensor-table-time {
+    min-width: 82px;
+  }
+}
+
+@media (max-width: 620px) {
+  .sensor-location-control > span {
+    display: none;
+  }
+
+  .sensor-page-workspace {
+    width: 100%;
+  }
+}
+
+/* =========================================================
+   공통 사이드바 + 정확한 수신 상태 + 5초 테스트 자동 기록
+   ========================================================= */
+
+/* 기존 센서 전용 사이드바는 더 이상 렌더하지 않으며, 혹시 남아 있어도 숨깁니다. */
+.sensor-side-nav {
+  display: none !important;
+}
+
+.sensor-page-shell {
+  display: block;
+  min-height: 100vh;
+}
+
+.sensor-desktop-shell {
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  align-items: stretch;
+}
+
+.sensor-desktop-shell > .mypage-sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+}
+
+.sensor-page-workspace {
+  width: 100%;
+  min-width: 0;
+  margin-left: 0;
+}
+
+.sensor-mobile-topbar {
+  z-index: 60;
+}
+
+.sensor-live-badge.is-connected,
+.sensor-live-badge.is-waiting {
+  background: #edf5ff;
+  color: #356fa6;
+}
+
+.sensor-live-badge.is-error {
+  background: #fff0ef;
+  color: #c04a43;
+}
+
+.sensor-test-record-toggle {
+  border-color: #d8e5f8;
+  background: #f7faff;
+  color: #396896;
+}
+
+.sensor-test-record-toggle.is-active {
+  border-color: #8ab4e6;
+  background: #edf5ff;
+  box-shadow: 0 0 0 3px rgba(73, 132, 197, 0.1);
+}
+
+.sensor-test-record-toggle input:checked + .sensor-auto-toggle__track {
+  background: #4c86c7;
+}
+
+/* 공통 사이드바의 현재 페이지 버튼은 클릭하지 않아도 버튼 모양을 유지합니다. */
+.sensor-desktop-shell .mypage-sidebar-link[aria-current="page"] {
+  cursor: default;
+}
+
+@media (max-width: 1180px) {
+  .sensor-page-workspace {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .sensor-desktop-shell {
+    display: block;
+  }
+
+  .sensor-desktop-shell > .mypage-sidebar {
+    display: none;
+  }
+
+  .sensor-page-header {
+    top: var(--mypage-mobile-topbar-height, 64px);
+  }
+}
+
+/* =========================================================
+   2026-07-18 센서 우선 수정
+   - 실제 시간 비율 그래프
+   - 실제값/테스트값/이전 기록 구분
+   - 날씨 API 출처 오류·창문 센서 미연결 표시
+   ========================================================= */
+.sensor-chart-series-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  transition: opacity 0.15s ease;
+}
+
+.sensor-chart-series-line.is-actual {
+  opacity: 0.95;
+}
+
+.sensor-chart-series-line.is-test {
+  color: #9b6bd7;
+  stroke-dasharray: 7 5;
+  opacity: 0.95;
+}
+
+.sensor-chart-series-line.is-unknown {
+  color: #9aa8a2;
+  stroke-dasharray: 3 5;
+  opacity: 0.8;
+}
+
+.sensor-chart-point.is-test {
+  fill: #fff;
+  stroke: #9b6bd7;
+  stroke-width: 2.4;
+}
+
+.sensor-chart-point.is-unknown {
+  fill: #fff;
+  stroke: #9aa8a2;
+  stroke-width: 2;
+}
+
+.sensor-chart-point.is-actual {
+  fill: #fff;
+  stroke: currentColor;
+  stroke-width: 2.2;
+}
+
+.sensor-latest-source-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 7px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #f2eafd;
+  color: #7547af;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+.sensor-record-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 14px 0 4px;
+  padding: 10px 13px;
+  border: 1px solid #e3ece8;
+  border-radius: 12px;
+  background: #fbfdfc;
+  color: #536b62;
+  font-size: 12px;
+}
+
+.sensor-record-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 800;
+}
+
+.sensor-record-legend i {
+  display: inline-block;
+  width: 25px;
+  height: 0;
+  border-top: 3px solid #1f946d;
+}
+
+.sensor-record-legend i.is-test {
+  border-top-color: #9b6bd7;
+  border-top-style: dashed;
+}
+
+.sensor-record-legend i.is-unknown {
+  border-top-color: #9aa8a2;
+  border-top-style: dotted;
+}
+
+.sensor-record-legend small {
+  margin-left: auto;
+  color: #7a8c85;
+  font-size: 11px;
+}
+
+.sensor-range-empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 210px;
+  margin-top: 16px;
+  padding: 30px;
+  border: 1px dashed #ccddd6;
+  border-radius: 18px;
+  background: #fbfdfc;
+  text-align: center;
+}
+
+.sensor-range-empty-state strong {
+  color: #294c40;
+  font-size: 16px;
+}
+
+.sensor-range-empty-state p {
+  margin: 8px 0 0;
+  color: #789087;
+  font-size: 13px;
+}
+
+.sensor-outdoor-source-warning {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #f3c8c8;
+  border-radius: 12px;
+  background: #fff6f6;
+  color: #a53a3a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.sensor-panel-source.is-invalid {
+  border-color: #efc4c4;
+  background: #fff3f3;
+  color: #b04040;
+}
+
+.sensor-table-source {
+  min-width: 84px;
+  text-align: center;
+}
+
+.sensor-reading-source-chip {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 58px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.sensor-reading-source-chip.is-actual {
+  background: #e7f6ef;
+  color: #16724f;
+}
+
+.sensor-reading-source-chip.is-test {
+  background: #f1e8fc;
+  color: #7547af;
+}
+
+.sensor-reading-source-chip.is-unknown {
+  background: #eef2f0;
+  color: #687a73;
+}
+
+.sensor-state-timeline-card__legend i.is-unknown,
+.sensor-state-segment.is-unknown {
+  background: #aab5b0;
+}
+
+.sensor-export-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .sensor-record-legend {
+    align-items: flex-start;
+  }
+
+  .sensor-record-legend small {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+/* =========================================================
+   2026-07-18 긴 측정 공백 축약 + 항목별 데이터 출처 표시
+   ========================================================= */
+.sensor-chart-series-line.is-api {
+  color: currentColor;
+  opacity: 0.96;
+}
+
+.sensor-chart-point.is-api {
+  fill: #fff;
+  stroke: currentColor;
+  stroke-width: 2.2;
+}
+
+.sensor-latest-source-badge.is-api {
+  background: #e9f3ff;
+  color: #2f6fae;
+}
+
+.sensor-chart-gap-break {
+  cursor: help;
+  pointer-events: auto;
+}
+
+.sensor-chart-gap-marker-bg {
+  fill: rgba(255, 255, 255, 0.96);
+  stroke: #d9e5df;
+  stroke-width: 1;
+}
+
+.sensor-chart-gap-marker {
+  fill: #71857c;
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: -1px;
+}
+
+.sensor-record-legend i.is-api {
+  border-top-color: #438bf0;
+  border-top-style: solid;
+}
+
+@media (max-width: 640px) {
+  .sensor-record-legend small {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+/* =========================================================
+   센서 출처·날씨 API 진단·에어컨 상태 최종 정리
+   ========================================================= */
+.sensor-panel-source.is-test {
+  background: #f2eafd;
+  color: #7547af;
+}
+
+.sensor-test-interval-select select:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.sensor-observation-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid #dce8e1;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #6b7e76;
+  font-size: 11px;
+}
+
+.sensor-observation-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sensor-observation-strip strong {
+  color: #315347;
+  font-weight: 850;
+}
+
+.sensor-chart-reference-line {
+  stroke: #e0a33a;
+  stroke-width: 1.2;
+  stroke-dasharray: 5 4;
+  opacity: 0.85;
+}
+
+.sensor-chart-reference-label {
+  fill: #a46c12;
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.sensor-history-table .sensor-table-cell.is-test-cell {
+  background: rgba(244, 234, 253, 0.76);
+  color: #6d3ea3;
+  font-weight: 800;
+}
+
+.sensor-history-table tbody tr:hover .sensor-table-cell.is-test-cell {
+  background: #efe0fb;
+}
+
+.sensor-status-row p,
+.sensor-status-row small,
+.sensor-status-row .sensor-status-source {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.sensor-history-table {
+  min-width: 1240px;
+}
+
+.sensor-system-strip strong {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+@media (max-width: 1120px) {
+  .sensor-system-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .sensor-system-strip > div {
+    border-bottom: 1px solid #e3ece7;
+  }
+}
+
+@media (max-width: 760px) {
+  .sensor-observation-strip {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .sensor-chart-x-label {
+    font-size: 8px;
+  }
+}
+
+.sensor-source-row > div > span,
+.sensor-table-source small {
+  display: block;
+  margin-top: 3px;
+  color: #7b8e86;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.sensor-table-source small {
+  max-width: 96px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.sensor-source-row {
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+}
+
+.sensor-source-row strong {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.sensor-source-row time {
+  grid-column: 2 / 4;
+  justify-self: end;
+}
+
+.sensor-history-table .sensor-table-time {
+  min-width: 112px;
+}
+
+/* =========================================================
+   유한 테스트 세션: 총 시간 + 기록 간격 사용자 설정
+   ========================================================= */
+.sensor-test-session-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 42px;
+}
+
+.sensor-test-setting-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 8px 0 12px;
+  border: 1px solid #d7e4dd;
+  border-radius: 12px;
+  background: #fff;
+  color: #49645a;
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.sensor-test-setting-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sensor-test-setting-field input {
+  width: 58px;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #234a3b;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: right;
+}
+
+.sensor-test-setting-field input:focus {
+  border-radius: 6px;
+  box-shadow: 0 0 0 3px rgba(77, 153, 113, 0.14);
+}
+
+.sensor-test-setting-field input:disabled {
+  color: #8a9993;
+  cursor: not-allowed;
+}
+
+.sensor-test-setting-field em {
+  color: #71857c;
+  font-style: normal;
+  font-size: 11px;
+}
+
+.sensor-test-setting-apply {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #cfe0d7;
+  border-radius: 12px;
+  background: #f7fbf8;
+  color: #315f4b;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.sensor-test-setting-apply:hover:not(:disabled) {
+  border-color: #9fc5b1;
+  background: #edf7f1;
+}
+
+.sensor-test-setting-apply:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sensor-test-session-summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: #f2f8f4;
+  color: #527064;
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.sensor-test-session-control.is-running .sensor-test-session-summary {
+  background: #f4effb;
+  color: #744ca9;
+}
+
+@media (max-width: 1100px) {
+  .sensor-test-session-control {
+    width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .sensor-test-session-control {
+    align-items: stretch;
+  }
+
+  .sensor-test-setting-input {
+    flex: 1 1 180px;
+    justify-content: space-between;
+  }
+
+  .sensor-test-setting-apply {
+    flex: 0 0 auto;
+  }
+
+  .sensor-test-session-summary {
+    width: 100%;
+    justify-content: center;
+  }
+}
