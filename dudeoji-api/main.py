@@ -34,6 +34,11 @@ allowed_origins = [
     "http://127.0.0.1:5173",
     "http://localhost:5174",
     "http://127.0.0.1:5174",
+    # jh 수정함 - 정현 직접 요청으로 추가(main.py 담당 공용이라 원래 범위 밖,
+    # 팀원들에게 공유 필요). 로컬 백엔드(8001)와 같은 오리진에서 프론트를
+    # 띄워 테스트하는 경우 대비.
+    "http://localhost:8001",
+    "http://127.0.0.1:8001",
     "https://dudeoji-web.onrender.com",
 ]
 

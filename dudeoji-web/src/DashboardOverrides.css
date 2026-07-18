@@ -3382,3 +3382,88 @@ main {
   font-weight: 700;
   line-height: 1.5;
 }
+
+/* jh 수정함 - 모달 카드가 뜰 때 scale(0.95->1) + fade-in. 배경(.location-add-
+   modal-backdrop)은 다른 위치 모달과 공유하는 클래스라 애니메이션을 얹지 않고,
+   카드(.location-delete-confirm-card) 쪽에만 건다. */
+@keyframes location-delete-confirm-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* jh 수정함 - 장소 삭제 확인 모달(MyPage.jsx). 오버레이는 위
+   .location-add-modal-backdrop을 그대로 재사용하고, 카드만 확인 문구 하나에
+   맞게 720px짜리 .location-add-modal보다 훨씬 좁은 전용 클래스로 새로 만든다.
+   테두리는 진한 색 대신 var(--border) 헤어라인 + 진한 elevation shadow 두 겹
+   (box-shadow만으로 border-radius를 안 깨고 은은한 윤곽을 냄)로 정리하고,
+   등장 시 scale+fade 트랜지션을 얹었다. */
+.location-delete-confirm-card {
+  width: min(100%, 360px);
+  padding: 24px;
+  border-radius: 22px;
+  background: var(--card, #ffffff);
+  box-shadow:
+    0 0 0 1px var(--border, #dce7e2),
+    0 32px 70px rgba(19, 51, 35, 0.32),
+    0 10px 24px rgba(19, 51, 35, 0.14);
+  animation: location-delete-confirm-pop 180ms ease-out;
+}
+
+/* jh 수정함 - 경고 아이콘. ⚠️ 이모지 자체가 이미 앰버/레드 톤이라 별도 색을
+   더 추가하지 않고 크기/여백만 준다. */
+.location-delete-confirm-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.location-delete-confirm-text {
+  margin: 0 0 20px;
+  color: var(--text, #15382f);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.location-delete-confirm-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* jh 수정함 - 위험한 동작이라 삭제 버튼만 .mypage-modal-actions.danger가 쓰는
+   빨간 톤(#ef543f)을 그대로 가져와 강조한다. transition을 추가해 hover 시
+   즉시 바뀌지 않고 살짝 진해지는 느낌을 준다. */
+.location-delete-confirm-button {
+  min-width: 92px;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid #ef543f;
+  border-radius: 15px;
+  background: #ef543f;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 820;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(239, 84, 63, 0.16);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.location-delete-confirm-button:hover {
+  background: #d6432f;
+  border-color: #d6432f;
+  box-shadow: 0 14px 28px rgba(214, 67, 47, 0.24);
+}

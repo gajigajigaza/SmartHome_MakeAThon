@@ -19,7 +19,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from auth_utils import get_current_user
-from db import AIRCON_MODELS_TABLE, PLACES_TABLE, USER_AIRCONS_TABLE, supabase
+# jh 수정함 - READINGS_TABLE: delete_place()에서 place 삭제 전에 그 place를
+# 참조하는 readings를 먼저 지우기 위해 추가로 import
+from db import (
+    AIRCON_MODELS_TABLE,
+    PLACES_TABLE,
+    READINGS_TABLE,
+    USER_AIRCONS_TABLE,
+    supabase,
+)
 
 router = APIRouter(prefix="/api", tags=["places"])
 
@@ -346,6 +354,11 @@ def delete_place(
         )
 
     was_default = place_result.data[0]["is_default"]
+
+    # jh 수정함 - readings.place_id -> places.id FK(readings_place_id_fkey) 때문에,
+    # 이 place를 참조하는 reading이 남아있는 상태로 place를 먼저 지우면 FK 위반으로
+    # 500이 났다. place를 지우기 전에 그 place를 참조하는 readings를 먼저 지운다.
+    supabase.table(READINGS_TABLE).delete().eq("place_id", place_id).execute()
 
     supabase.table(PLACES_TABLE).delete().eq("id", place_id).execute()
 
