@@ -74,6 +74,26 @@ function PlaceLocationStatus({ placeId, lat, lon }) {
   return <p>{cachedAddress || "주소를 확인하지 못했어요"}</p>;
 }
 
+// jh 수정함 - 장소 삭제 확인 문구에 장소 이름을 그대로 꽂으면 "정현을 삭제"/
+// "회사를 삭제"처럼 받침 유무에 따라 을/를이 갈려서, 완성형 한글 마지막 글자의
+// 받침 유무(유니코드 오프셋 % 28)로 올바른 조사를 골라준다.
+function getEulReulParticle(word) {
+  const lastChar = word?.trim().slice(-1);
+
+  if (!lastChar) {
+    return "를";
+  }
+
+  const code = lastChar.charCodeAt(0);
+
+  if (code < 0xac00 || code > 0xd7a3) {
+    return "를";
+  }
+
+  const hasBatchim = (code - 0xac00) % 28 !== 0;
+  return hasBatchim ? "을" : "를";
+}
+
 function formatPower(value) {
   if (!value) {
     return "전력 정보 없음";
@@ -574,6 +594,10 @@ function MyPage({
 
   const editingLocation = locations.find(
     (location) => String(location.id) === String(openLocationPopoverId),
+  );
+  // jh 수정함 - 삭제 확인 모달 제목에 실제 장소 이름을 넣기 위한 조회
+  const deleteTargetLocation = locations.find(
+    (location) => String(location.id) === String(deleteTargetPlaceId),
   );
   const trimmedNameDraft = nameDraft.trim();
   const hasNameChange = Boolean(
@@ -1080,8 +1104,13 @@ function MyPage({
               aria-label="장소 삭제 확인"
               onMouseDown={(event) => event.stopPropagation()}
             >
+              <div className="location-delete-confirm-icon" aria-hidden="true">
+                ⚠️
+              </div>
+
               <p className="location-delete-confirm-text">
-                이 장소를 삭제하시겠습니까?
+                &lsquo;{deleteTargetLocation?.name ?? "이 장소"}&rsquo;
+                {getEulReulParticle(deleteTargetLocation?.name)} 삭제하시겠습니까?
               </p>
 
               <div className="location-delete-confirm-actions">
