@@ -201,6 +201,9 @@ function MyPage({
   const [registeredAircons, setRegisteredAircons] = useState(
     createInitialAirconSlots,
   );
+  // jh 수정함 - window.confirm() 대신 커스텀 모달로 삭제 여부를 물어보기 위한 state.
+  // null이면 모달이 닫혀 있고, 값이 있으면 그 place id의 삭제 확인 모달이 열려 있음.
+  const [deleteTargetPlaceId, setDeleteTargetPlaceId] = useState(null);
 
   const [activeModal, setActiveModal] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -376,16 +379,31 @@ function MyPage({
     }
   }
 
-  async function handleDeleteLocation(placeId) {
+  // jh 수정함 - window.confirm() 호출을 없애고, 대신 deleteTargetPlaceId를 세팅해
+  // 아래 커스텀 확인 모달을 열도록 바꿈. 실제 삭제는 confirmDeleteLocation에서 처리.
+  function handleDeleteLocation(placeId) {
     if (locations.length <= 1) {
       return;
     }
 
-    const confirmed = window.confirm("이 장소를 삭제하시겠습니까?");
+    setDeleteTargetPlaceId(placeId);
+  }
 
-    if (!confirmed) {
+  // jh 수정함 - 삭제 확인 모달의 "취소" 버튼과 배경 클릭에서 공용으로 씀.
+  function closeDeleteConfirm() {
+    setDeleteTargetPlaceId(null);
+  }
+
+  // jh 수정함 - 삭제 확인 모달의 "삭제" 버튼을 눌렀을 때만 실행되는 실제 삭제 로직.
+  // window.confirm(true 분기)에 있던 로직을 그대로 옮김.
+  async function confirmDeleteLocation() {
+    const placeId = deleteTargetPlaceId;
+
+    if (placeId === null) {
       return;
     }
+
+    setDeleteTargetPlaceId(null);
 
     if (openLocationPopoverId === placeId) {
       closeLocationPopover();
@@ -1038,6 +1056,50 @@ function MyPage({
                     </button>
                   </div>
                 </section>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {/* jh 수정함 - 장소 삭제 확인용 커스텀 모달. window.confirm() 대체.
+          오버레이는 다른 위치 모달과 동일한 .location-add-modal-backdrop을
+          재사용하고(배경 클릭 시 onMouseDown으로 닫힘), 카드만 확인 문구에
+          맞게 좁은 전용 클래스(.location-delete-confirm-card)로 새로 만듦. */}
+      {deleteTargetPlaceId !== null &&
+        createPortal(
+          <div
+            className="location-add-modal-backdrop"
+            role="presentation"
+            onMouseDown={closeDeleteConfirm}
+          >
+            <div
+              className="location-delete-confirm-card"
+              role="dialog"
+              aria-modal="true"
+              aria-label="장소 삭제 확인"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <p className="location-delete-confirm-text">
+                이 장소를 삭제하시겠습니까?
+              </p>
+
+              <div className="location-delete-confirm-actions">
+                <button
+                  type="button"
+                  className="flow-secondary-button"
+                  onClick={closeDeleteConfirm}
+                >
+                  취소
+                </button>
+
+                <button
+                  type="button"
+                  className="location-delete-confirm-button"
+                  onClick={confirmDeleteLocation}
+                >
+                  삭제
+                </button>
               </div>
             </div>
           </div>,

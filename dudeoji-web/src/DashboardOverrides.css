@@ -3382,3 +3382,53 @@ main {
   font-weight: 700;
   line-height: 1.5;
 }
+
+/* jh 수정함 - 장소 삭제 확인 모달(MyPage.jsx). 오버레이는 위
+   .location-add-modal-backdrop을 그대로 재사용하고, 카드만 확인 문구 하나에
+   맞게 720px짜리 .location-add-modal보다 훨씬 좁은 전용 클래스로 새로 만든다. */
+.location-delete-confirm-card {
+  width: min(100%, 360px);
+  padding: 24px;
+  /* jh 수정함 - 테두리만 연두색 느낌으로: .mypage-modal-card 그라데이션에 쓰던
+     연두 톤(rgba(216,239,150))을 그대로 가져와 border-color로만 씀 */
+  border: 1.5px solid rgba(198, 224, 120, 0.75);
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 28px 80px rgba(19, 51, 35, 0.24);
+}
+
+.location-delete-confirm-text {
+  margin: 0 0 20px;
+  color: #15382f;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.location-delete-confirm-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* jh 수정함 - 위험한 동작이라 삭제 버튼만 .mypage-modal-actions.danger가 쓰는
+   빨간 톤(#ef543f)을 그대로 가져와 강조한다. */
+.location-delete-confirm-button {
+  min-width: 92px;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid #ef543f;
+  border-radius: 15px;
+  background: #ef543f;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 820;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(239, 84, 63, 0.16);
+}
+
+.location-delete-confirm-button:hover {
+  background: #d6432f;
+  border-color: #d6432f;
+}
