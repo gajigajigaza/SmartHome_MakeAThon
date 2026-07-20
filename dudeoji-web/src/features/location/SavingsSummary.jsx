@@ -2,8 +2,10 @@
 // 담당: 정현(나) (예상 절감 1일 / 1주 / 1달)
 //
 // GET /api/savings/summary(readings_router.py, 정현이 민주 승인받아 추가)를
-// sensors/readingsApi.js의 getSavingsSummary(period)로 호출해서 채운다.
-// period 탭(day/week/month)을 바꾸면 다시 조회한다.
+// sensors/readingsApi.js의 getSavingsSummary(period, placeId)로 호출해서 채운다.
+// period 탭(day/week/month)이나 placeId(선택된 장소)가 바뀌면 다시 조회한다.
+// jh 수정함 - placeId를 안 넘기던 걸 고쳐서, 이제 대시보드에서 장소를 바꾸면
+// 그 장소의 절감량만 집계해서 보여준다(App.jsx의 DashboardHome이 넘겨줌).
 import { useEffect, useState } from "react";
 
 import { getSavingsSummary } from "../sensors/readingsApi";
@@ -22,7 +24,7 @@ function formatWon(amount) {
   return Math.round(amount).toLocaleString("ko-KR");
 }
 
-export default function SavingsSummary() {
+export default function SavingsSummary({ placeId = null }) {
   const [period, setPeriod] = useState("month");
   const [summary, setSummary] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,7 +35,7 @@ export default function SavingsSummary() {
     setIsLoading(true);
     setError("");
 
-    getSavingsSummary(period)
+    getSavingsSummary(period, placeId)
       .then((data) => {
         if (!isCancelled) {
           setSummary(data);
@@ -53,7 +55,7 @@ export default function SavingsSummary() {
     return () => {
       isCancelled = true;
     };
-  }, [period]);
+  }, [period, placeId]);
 
   const periodLabel = PERIOD_LABEL_BY_VALUE[period];
 

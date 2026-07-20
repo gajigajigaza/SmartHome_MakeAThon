@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import "./DashboardOverrides.css";
 import { getLatestReading, getReadingHistory } from "./features/sensors/readingsApi";
+import { getStoredToken } from "./api";
 
 import MyPage from "./features/mypage/MyPage";
 import BadgePage from "./features/badge/BadgePage";
@@ -18,7 +19,10 @@ import SavingsSummary from "./features/location/SavingsSummary";
 import LocationSwitcher from "./features/location/LocationSwitcher";
 // jh 수정함 - LocationSwitcher/EnvironmentCard가 각자 useSelectedLocation()을
 // 따로 호출해서 서로 다른 위치를 가리키던 문제를 고치려고 Context를 추가했다.
-import { LocationProvider } from "./features/location/LocationContext";
+import {
+  LocationProvider,
+  useLocationContext,
+} from "./features/location/LocationContext";
 import SensorReadings from "./features/sensors/SensorReadings";
 
 // 우리가 제작한 설정 컴포넌트 및 자동제어 팝업 컴포넌트
@@ -54,21 +58,8 @@ function App({
 }) {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [badgeReturnPage, setBadgeReturnPage] = useState("dashboard");
-  const [sensorData, setSensorData] = useState(null);
-  const [recommendation, setRecommendation] = useState(
-    convertRecommendation(null),
-  );
-  
-  // 팝업 모달창에 그대로 넘겨줄 백엔드 오리지널 추천 상태
-  const [rawRecommendation, setRawRecommendation] = useState(null);
-
-  // 💡 사용자가 현재 자동제어 팝업을 보고 있는 중인지 판별하는 상태 (리셋 방지용)
-  const [isPopupActive, setIsPopupActive] = useState(false);
-
-  const [readingHistory, setReadingHistory] = useState([]);
-  const [updatedAt, setUpdatedAt] = useState(null);
+  const [readingHistory] = useState([]);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState("checking");
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [dashboardToast, setDashboardToast] = useState("");
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
@@ -80,69 +71,14 @@ function App({
   const currentProfileBadge = getProfileBadgeById(profileBadgeId);
 
   // 사용자 세션의 토큰을 가져오는 장치
-  const currentToken = localStorage.getItem("access_token") || "";
+  // jh 수정함 - "access_token"이 아니라 api.js의 saveAuthToken()이 실제로
+  // 쓰는 "dudeoji_auth_token" 키였다. 예전엔 항상 빈 문자열이라 자동제어
+  // 팝업의 기기 제어 요청(RecommendationPopup.jsx)이 인증 없이 나가고 있었다.
+  const currentToken = getStoredToken() || "";
 
   useEffect(() => {
     setProfileBadgeId(getStoredProfileBadgeId(user));
   }, [user?.username]);
-
-  // 백엔드 API로부터 최신 추천 데이터를 한 번 읽어오는 핵심 함수
-  async function loadLatestReading() {
-    try {
-      const latestBackendReading = await getLatestReading();
-      const latestReading = convertReading(latestBackendReading);
-
-      setSensorData({
-        indoorTemperature: latestReading.indoorTemperature,
-        indoorHumidity: latestReading.indoorHumidity,
-        outdoorTemperature: latestReading.outdoorTemperature,
-        outdoorHumidity: latestReading.outdoorHumidity,
-      });
-
-      if (latestBackendReading && latestBackendReading.recommendation) {
-        setRawRecommendation(latestBackendReading.recommendation);
-      }
-
-      setRecommendation(
-        convertRecommendation(latestBackendReading.recommendation),
-      );
-      setUpdatedAt(latestReading.recordedAt);
-      setConnectionStatus("connected");
-    } catch (error) {
-      if (error.message.includes("저장된 센서 기록이 없습니다")) {
-        setSensorData(null);
-        setRawRecommendation(null);
-        setRecommendation(convertRecommendation(null));
-        setUpdatedAt(null);
-        setConnectionStatus("connected");
-        return;
-      }
-      setConnectionStatus("error");
-    }
-  }
-
-  // 💡 [개선 완료] 주기적 갱신 타이머 로직
-  useEffect(() => {
-    // 최초 화면 로드 시 한 번 실행
-    loadLatestReading();
-
-    // 팝업이 켜져 있는 동안에는 주기적 데이터 로드를 잠시 중단합니다.
-    if (isPopupActive) {
-      console.log("자동 제어 판단 팝업 작동 중: 주기적 추천 데이터 갱신을 잠시 중단합니다.");
-      return undefined;
-    }
-
-    // 1분(60000ms)마다 백엔드에 새로운 날씨 정보가 있는지 요청하는 타이머 작동
-    const updateInterval = setInterval(() => {
-      console.log("60초 도래: 백엔드로부터 최신 환경 추천 정보를 업데이트합니다.");
-      loadLatestReading();
-    }, 60000);
-
-    // 컴포넌트가 꺼지거나 상태가 바뀔 때 작동 중이던 타이머를 깨끗이 청소합니다.
-    return () => {
-      clearInterval(updateInterval);
-    };
-  }, [isPopupActive]); // isPopupActive 상태가 변할 때마다 타이머를 켰다 껐다 조절합니다.
 
   useEffect(() => {
     if (!showTutorialOnFirstVisit) {
@@ -329,6 +265,148 @@ function App({
     );
   }
 
+  return (
+    // jh 수정함 - 대시보드 전체를 LocationProvider로 감싸서 LocationSwitcher/
+    // EnvironmentCard/LocationListPanel이 같은 selectedLocation을 공유하게 한다.
+    // DashboardHome이 그 Provider 안쪽 자식이라 useLocationContext()로 선택된
+    // 장소를 읽어서 place_id를 API에 실어 보낼 수 있다(App 자신은 Provider를
+    // 선언하는 쪽이라 같은 컨텍스트를 못 읽는다).
+    <LocationProvider>
+      <DashboardHome
+        nickname={nickname}
+        currentProfileBadge={currentProfileBadge}
+        isUserMenuOpen={isUserMenuOpen}
+        onToggleUserMenu={() => setIsUserMenuOpen((previous) => !previous)}
+        onCloseUserMenu={() => setIsUserMenuOpen(false)}
+        onOpenMyPage={openMyPage}
+        onOpenSensorReadings={openSensorReadings}
+        onOpenBadgePage={openBadgePage}
+        onStartTutorial={startTutorial}
+        onLogout={handleLogoutClick}
+        isLoggingOut={isLoggingOut}
+        isTutorialOpen={isTutorialOpen}
+        tutorialStepIndex={tutorialStepIndex}
+        onTutorialNext={moveToNextTutorialStep}
+        onTutorialPrevious={moveToPreviousTutorialStep}
+        onTutorialClose={closeTutorial}
+        dashboardToast={dashboardToast}
+        currentToken={currentToken}
+      />
+    </LocationProvider>
+  );
+}
+
+// jh 수정함 - 예전엔 이 JSX가 App() 안에 그대로 있어서 selectedLocation을 몰랐다
+// (App이 LocationProvider를 선언하는 쪽이라 자신의 Provider를 못 읽음). 대시보드
+// 전용 데이터 패칭(sensorData/recommendation/updatedAt/connectionStatus)을 이
+// 컴포넌트로 옮기고 useLocationContext()로 선택된 장소의 place_id를
+// getLatestReading에 실어 보내서, 헤더에서 장소를 바꾸면 실내/추천 카드도 그
+// 장소 것으로 즉시 갱신되게 했다(기존엔 실외 날씨만 위치를 따라갔음).
+function DashboardHome({
+  nickname,
+  currentProfileBadge,
+  isUserMenuOpen,
+  onToggleUserMenu,
+  onCloseUserMenu,
+  onOpenMyPage,
+  onOpenSensorReadings,
+  onOpenBadgePage,
+  onStartTutorial,
+  onLogout,
+  isLoggingOut,
+  isTutorialOpen,
+  tutorialStepIndex,
+  onTutorialNext,
+  onTutorialPrevious,
+  onTutorialClose,
+  dashboardToast,
+  currentToken,
+}) {
+  const { selectedLocation } = useLocationContext();
+  const selectedPlaceId = selectedLocation?.id ?? null;
+
+  const [sensorData, setSensorData] = useState(null);
+  const [recommendation, setRecommendation] = useState(
+    convertRecommendation(null),
+  );
+  // 팝업 모달창에 그대로 넘겨줄 백엔드 오리지널 추천 상태
+  const [rawRecommendation, setRawRecommendation] = useState(null);
+  // 💡 사용자가 현재 자동제어 팝업을 보고 있는 중인지 판별하는 상태 (리셋 방지용)
+  const [isPopupActive, setIsPopupActive] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState("checking");
+  // jh 수정함 - "추천 시작" 버튼(추천카드.png)을 눌렀는지 여부. 새로 fetch를
+  // 트리거하지 않고, 이미 불러와져 있는 recommendation을 그제서야 화면에
+  // 노출하는 순수 UI 상태다. 장소를 바꾸면 그 장소의 추천을 다시 확인하도록
+  // 리셋한다(아래 useEffect).
+  const [hasStartedRecommendation, setHasStartedRecommendation] =
+    useState(false);
+
+  // 백엔드 API로부터 선택된 장소의 최신 추천 데이터를 한 번 읽어오는 핵심 함수
+  async function loadLatestReading() {
+    try {
+      const latestBackendReading = await getLatestReading(selectedPlaceId);
+      const latestReading = convertReading(latestBackendReading);
+
+      setSensorData({
+        indoorTemperature: latestReading.indoorTemperature,
+        indoorHumidity: latestReading.indoorHumidity,
+        outdoorTemperature: latestReading.outdoorTemperature,
+        outdoorHumidity: latestReading.outdoorHumidity,
+      });
+
+      if (latestBackendReading && latestBackendReading.recommendation) {
+        setRawRecommendation(latestBackendReading.recommendation);
+      }
+
+      setRecommendation(
+        convertRecommendation(latestBackendReading.recommendation),
+      );
+      setUpdatedAt(latestReading.recordedAt);
+      setConnectionStatus("connected");
+    } catch (error) {
+      if (error.message.includes("저장된 센서 기록이 없습니다")) {
+        setSensorData(null);
+        setRawRecommendation(null);
+        setRecommendation(convertRecommendation(null));
+        setUpdatedAt(null);
+        setConnectionStatus("connected");
+        return;
+      }
+      setConnectionStatus("error");
+    }
+  }
+
+  // 💡 [개선 완료] 주기적 갱신 타이머 로직
+  useEffect(() => {
+    // 최초 화면 로드 시, 그리고 선택된 장소가 바뀔 때마다 한 번 실행
+    loadLatestReading();
+
+    // 팝업이 켜져 있는 동안에는 주기적 데이터 로드를 잠시 중단합니다.
+    if (isPopupActive) {
+      console.log("자동 제어 판단 팝업 작동 중: 주기적 추천 데이터 갱신을 잠시 중단합니다.");
+      return undefined;
+    }
+
+    // 1분(60000ms)마다 백엔드에 새로운 날씨 정보가 있는지 요청하는 타이머 작동
+    const updateInterval = setInterval(() => {
+      console.log("60초 도래: 백엔드로부터 최신 환경 추천 정보를 업데이트합니다.");
+      loadLatestReading();
+    }, 60000);
+
+    // 컴포넌트가 꺼지거나 상태가 바뀔 때 작동 중이던 타이머를 깨끗이 청소합니다.
+    return () => {
+      clearInterval(updateInterval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPlaceId, isPopupActive]); // 선택된 장소나 isPopupActive가 바뀔 때마다 다시 불러옵니다.
+
+  // jh 수정함 - 장소를 바꾸면 이전 장소 기준으로 이미 "추천 시작"을 눌렀던
+  // 상태가 남아있지 않도록, 선택된 장소가 바뀔 때마다 대기 화면으로 되돌린다.
+  useEffect(() => {
+    setHasStartedRecommendation(false);
+  }, [selectedPlaceId]);
+
   const tutorialStepKey = isTutorialOpen
     ? TUTORIAL_STEPS[tutorialStepIndex].key
     : "";
@@ -336,9 +414,6 @@ function App({
     tutorialStepKey === "menu" || tutorialStepKey === "again";
 
   return (
-    // jh 수정함 - 대시보드 전체를 LocationProvider로 감싸서 LocationSwitcher/
-    // EnvironmentCard/LocationListPanel이 같은 selectedLocation을 공유하게 한다.
-    <LocationProvider>
     <div
       className={`app ${
         isTutorialOpen ? `tutorial-open tutorial-step-${tutorialStepKey}` : ""
@@ -355,14 +430,14 @@ function App({
           nickname={nickname}
           currentProfileBadge={currentProfileBadge}
           isOpen={isUserMenuOpen}
-          onToggleOpen={() => setIsUserMenuOpen((previous) => !previous)}
-          onClose={() => setIsUserMenuOpen(false)}
+          onToggleOpen={onToggleUserMenu}
+          onClose={onCloseUserMenu}
           connectionStatus={connectionStatus}
-          onOpenMyPage={openMyPage}
-          onOpenSensorReadings={openSensorReadings}
-          onOpenBadgePage={openBadgePage}
-          onStartTutorial={startTutorial}
-          onLogout={handleLogoutClick}
+          onOpenMyPage={onOpenMyPage}
+          onOpenSensorReadings={onOpenSensorReadings}
+          onOpenBadgePage={onOpenBadgePage}
+          onStartTutorial={onStartTutorial}
+          onLogout={onLogout}
           isLoggingOut={isLoggingOut}
           isTutorialTarget={isIconTutorialStep}
         />
@@ -375,6 +450,8 @@ function App({
           <RecommendationCard
             recommendation={recommendation}
             isTutorialTarget={isTutorialOpen && tutorialStepIndex === 1}
+            hasStarted={hasStartedRecommendation}
+            onStart={() => setHasStartedRecommendation(true)}
           />
 
           <div className="flex-layout-column" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -386,7 +463,7 @@ function App({
               // 갱신할 때 기존 loadLatestReading()을 그대로 재사용하도록 전달
               onMockReadingCreated={loadLatestReading}
             >
-              <SavingsSummary />
+              <SavingsSummary placeId={selectedPlaceId} />
             </EnvironmentCard>
 
           </div>
@@ -404,20 +481,20 @@ function App({
           step={TUTORIAL_STEPS[tutorialStepIndex]}
           stepIndex={tutorialStepIndex}
           totalSteps={TUTORIAL_STEPS.length}
-          onNext={moveToNextTutorialStep}
-          onPrevious={moveToPreviousTutorialStep}
-          onClose={closeTutorial}
+          onNext={onTutorialNext}
+          onPrevious={onTutorialPrevious}
+          onClose={onTutorialClose}
         />
       )}
 
       {/* 💡 팝업 활성화 상태 여부를 감지할 수 있도록 콜백(setIsPopupActive)을 함께 전달합니다. */}
-      <RecommendationPopup 
-        recommendation={rawRecommendation} 
+      <RecommendationPopup
+        recommendation={rawRecommendation}
         currentToken={currentToken}
         setIsPopupActive={setIsPopupActive}
+        placeId={selectedPlaceId}
       />
     </div>
-    </LocationProvider>
   );
 }
 
