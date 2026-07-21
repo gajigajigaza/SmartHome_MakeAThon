@@ -1,7 +1,6 @@
-/* eslint-disable react/prop-types */
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
-export default function RecommendationPopup({ recommendation, currentToken, setIsPopupActive }) {
+export default function RecommendationPopup({ recommendation, currentToken, setIsPopupActive, placeId }) {
   const [isOpen, setIsOpen] = useState(false);
   const [rejectedId] = useState(null); // 중복 팝업 방지용 (필요시 활성화)
 
@@ -32,9 +31,9 @@ export default function RecommendationPopup({ recommendation, currentToken, setI
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${currentToken}`
         },
-        body: JSON.stringify({ 
-          place_id: 1, 
-          action: recommendation.action 
+        body: JSON.stringify({
+          place_id: placeId,
+          action: recommendation.action
         })
       });
 

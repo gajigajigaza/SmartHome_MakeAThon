@@ -115,8 +115,11 @@ export async function getRecommendation(placeId = null, options = {}) {
   });
 }
 
-export async function getSavingsSummary(period) {
-  return requestReadWithRetry(`/api/savings/summary?period=${period}`, {
+export async function getSavingsSummary(period, placeId = null) {
+  let endpoint = `/api/savings/summary?period=${period}`;
+  endpoint = appendPlaceId(endpoint, placeId);
+
+  return requestReadWithRetry(endpoint, {
     auth: true,
   });
 }

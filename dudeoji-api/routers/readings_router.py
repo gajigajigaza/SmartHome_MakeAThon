@@ -776,8 +776,14 @@ def read_recommendation(
 
 
 @router.get("/savings/summary", response_model=SavingsSummaryResponse)
-def read_savings_summary(period: str = Query(default="day"), current_user: dict = Depends(get_current_user)):
-    return get_savings_summary(current_user["id"], period)
+def read_savings_summary(
+    period: str = Query(default="day"),
+    place_id: Optional[int] = Query(default=None, ge=1),
+    current_user: dict = Depends(get_current_user),
+):
+    if place_id is not None:
+        get_place_for_user(current_user["id"], place_id)
+    return get_savings_summary(current_user["id"], period, place_id)
 @router.post("/devices/control")
 def control_device(command: DeviceControl, current_user: dict = Depends(get_current_user)):
     return {}

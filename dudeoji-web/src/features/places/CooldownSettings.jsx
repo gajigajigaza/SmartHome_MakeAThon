@@ -1,7 +1,11 @@
-/* eslint-disable react/prop-types */
-import React, { useState } from 'react';
+import { useState } from 'react';
 
-export default function CooldownSettings({ placeId = 1, currentToken }) {
+import { request } from '../../api';
+
+// jh 수정함 - placeId 하드코딩 기본값(1)과 http://127.0.0.1:8000 직접 fetch를
+// 제거. 호출하는 쪽이 선택된 장소의 placeId를 반드시 넘기도록 하고,
+// 공용 request() 헬퍼(api.js)를 써서 배포 환경 API 주소를 그대로 따라가게 했다.
+export default function CooldownSettings({ placeId }) {
   const [roomSize, setRoomSize] = useState("거실/투룸");
   const [minutes, setMinutes] = useState(30);
 
@@ -14,22 +18,20 @@ export default function CooldownSettings({ placeId = 1, currentToken }) {
   };
 
   const handleSave = async () => {
-    try {
-      const response = await fetch(`http://127.0.0.1:8000/api/places/${placeId}/cooldown`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentToken}`
-        },
-        body: JSON.stringify({ target_cooldown_minutes: Number(minutes) })
-      });
+    if (!placeId) {
+      alert("장소가 선택되지 않았습니다.");
+      return;
+    }
 
-      if (response.ok) {
-        alert("성공적으로 저장되었습니다.");
-      } else {
-        alert("저장에 실패했습니다.");
-      }
+    try {
+      await request(`/api/places/${placeId}/cooldown`, {
+        method: 'PATCH',
+        auth: true,
+        body: JSON.stringify({ target_cooldown_minutes: Number(minutes) }),
+      });
+      alert("성공적으로 저장되었습니다.");
     } catch (error) {
+      alert("저장에 실패했습니다.");
       console.error("오류:", error);
     }
   };

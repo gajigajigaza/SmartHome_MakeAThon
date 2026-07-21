@@ -175,7 +175,9 @@ def get_cumulative_kwh(user_id: str) -> float:
     return total_kwh
 
 
-def get_savings_summary(user_id: str, period: str) -> dict:
+def get_savings_summary(
+    user_id: str, period: str, place_id: Optional[str] = None
+) -> dict:
     """기간(day/week/month) 동안 저장된 reading들의 recommendation.savings 값을 그대로 합산한다.
 
     get_cumulative_kwh()와 달리 새로 계산하지 않고, save_reading_for_user()가
@@ -183,6 +185,7 @@ def get_savings_summary(user_id: str, period: str) -> dict:
     savings가 없는 기존 데이터(마이그레이션 이전 등)는 건너뛴다.
     action이 OPEN_WINDOW인 reading만 "절감"으로 집계하고, USE_AIRCON(소비) 등
     나머지 action은 제외한다 — 그래서 합계는 항상 0 이상이다.
+    place_id를 주면 해당 장소의 reading만 집계하고, 안 주면 사용자의 모든 장소를 합산한다.
     """
     now = datetime.now(timezone.utc)
 
@@ -196,13 +199,16 @@ def get_savings_summary(user_id: str, period: str) -> dict:
     else:
         raise ValueError(f"알 수 없는 period입니다: {period}")
 
-    readings_result = (
+    query = (
         supabase.table(READINGS_TABLE)
         .select("recommendation")
         .eq("user_id", user_id)
         .gte("measured_at", period_start.isoformat())
-        .execute()
     )
+    if place_id is not None:
+        query = query.eq("place_id", place_id)
+
+    readings_result = query.execute()
 
     total_power_saved_kwh = 0.0
     total_cost_won = 0

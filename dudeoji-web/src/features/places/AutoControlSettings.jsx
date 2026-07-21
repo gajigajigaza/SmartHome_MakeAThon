@@ -1,4 +1,3 @@
-/* eslint-disable react/prop-types */
 import { useEffect, useMemo, useState } from "react";
 
 import { updatePlaceCooldown } from "./placesApi";

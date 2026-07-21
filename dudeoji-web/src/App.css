@@ -220,6 +220,67 @@ body {
   line-height: 1.6;
 }
 
+/* jh 수정함 - 상단 "현재 동작 상태" 배지. 추천 시작 전에는 렌더되지 않고,
+   시작 후에는 에어컨/환기 배지가 항상 둘 다 보인다(꺼짐/닫힘 상태도 표시해서
+   "동작 중일 때만 보이는" 문제를 없앴다) - is-active/is-muted로 강조 여부만 구분. */
+.recommendation-status-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.recommendation-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  padding: 6px 14px;
+
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recommendation-status-badge.is-active {
+  background: var(--green-light);
+  color: var(--green-dark);
+}
+
+.recommendation-status-badge.is-muted {
+  background: #eef1f0;
+  color: var(--muted);
+}
+
+/* jh 수정함 - 추천카드.png 시안의 "추천 시작" 버튼. 실제 추천 결과는 이미
+   불러와져 있지만, 이 버튼을 눌러야 화면에 노출한다(App.jsx의 DashboardHome
+   참고, hasStartedRecommendation). */
+.recommendation-start-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 10px;
+  width: 100%;
+  margin-top: 22px;
+  padding: 16px;
+
+  border: none;
+  border-radius: 18px;
+
+  background: var(--green);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+
+  transition: background-color 0.15s ease;
+}
+
+.recommendation-start-button:hover {
+  background: var(--green-dark);
+}
+
 /* 추천 이유를 보여주는 박스 */
 .reason-box {
   display: flex;
