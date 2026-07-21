@@ -2,11 +2,11 @@
 
 실내/실외 온습도와 날씨·미세먼지·풍속 데이터를 종합 분석해서
 **"창문을 열까, 에어컨을 켤까, 지금 상태를 유지할까"**를 추천해주고,
-그 선택으로 아낀(혹은 쓴) 전력량과 비용까지 보여주는 스마트홈 해커톤 프로젝트입니다.
+그 선택으로 아낀(혹은 쓴) 전력량과 비용까지 보여주는 스마트홈 해커톤 프로젝트
 
 센서(또는 시뮬레이션된 값)로 실내 환경을, 외부 API로 실외 환경을 읽어 규칙 기반 엔진이
 `창문 열기 / 에어컨 사용 / 유지 / 창문 닫기 / (이미 좋은 상태) 유지 중`을 판단하고,
-사용자는 대시보드에서 그 추천과 이유, 그리고 하루/주/달 단위 절감 전력·비용을 확인할 수 있습니다.
+사용자는 대시보드에서 그 추천과 이유, 그리고 하루/주/달 단위 절감 전력·비용 확인 가능
 
 ## 팀 구성
 
@@ -44,13 +44,13 @@ npm run build
 npm run lint
 ```
 
-필요한 환경변수(`.env`)는 다음과 같습니다.
+필요한 환경변수(`.env`):
 
 - 백엔드: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`(필수), `FRONTEND_URL`, `MQTT_ENABLED`, `OPENWEATHER_API_KEY`, `KMA_SERVICE_KEY`, `KAKAO_REST_API_KEY`
 - 프론트엔드: `VITE_API_BASE_URL`(생략 시 배포된 백엔드 주소를 기본값으로 사용)
 
 하드웨어 없이 센서 데이터를 채워보고 싶다면 `dudeoji-api/dev_tools/mock_simulator.py`를 돌리거나,
-로그인 후 대시보드 환경 카드의 "테스트 모드" 토글 → "가짜 데이터 받기" 버튼을 눌러 한 건씩 생성할 수 있습니다.
+로그인 후 대시보드 환경 카드의 "테스트 모드" 토글 → "가짜 데이터 받기" 버튼을 눌러 한 건씩 생성 가능
 
 ## 프로젝트 구조
 
@@ -96,6 +96,7 @@ SmartHome_MakeAThon/
 **로그인 / 회원가입** (`features/auth/`)
 - 아이디/비밀번호 로그인, 회원가입(닉네임 → 장소+에어컨 등록 2단계), 비밀번호 찾기(복구 토큰 방식)
 - 회원가입 중 위치 검색(주소/현재 위치 → 위경도)까지 한 흐름으로 처리
+  
   <img width="1892" height="897" alt="스크린샷 2026-07-21 232628" src="https://github.com/user-attachments/assets/c907e46e-cd5b-4323-bac7-d925448a3f97" />
 
 
@@ -104,17 +105,20 @@ SmartHome_MakeAThon/
 - 실내/실외 온습도·날씨를 보여주는 환경 카드, 위치별 전환(LocationSwitcher)
 - 하루/주/달 단위 절감 전력·비용 요약
 - 자동제어 모드일 때 뜨는 확인 팝업(에어컨/창문 동작 전 사용자 확인)
+  
   <img width="1917" height="906" alt="스크린샷 2026-07-21 232444" src="https://github.com/user-attachments/assets/865373e3-f4e6-464c-a706-bef46ca259c0" />
 
 
 **센서 측정값** (`features/sensors/`)
 - 시간대별 실내 온도 그래프, 측정 이력 조회
+  
   <img width="1881" height="900" alt="스크린샷 2026-07-21 232709" src="https://github.com/user-attachments/assets/67bb2e40-7240-4055-9668-b8efb9815773" />
 
 
 **마이페이지** (`features/mypage/`)
 - 닉네임/비밀번호 변경, 계정 복구 설정, 탈퇴
 - 장소 정보 관리(장소별 이름·위치 수정, 기본 장소 지정, 장소 추가/삭제)
+  
   <img width="1877" height="883" alt="스크린샷 2026-07-21 232736" src="https://github.com/user-attachments/assets/a2f0e9b9-9a5a-4764-98cf-667b48b56393" />
 
 
