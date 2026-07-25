@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { request } from "../../api";
 import { useLocationContext } from "../location/LocationContext";
 import { getLatestReading } from "../sensors/readingsApi";
+import { useSensorRealtimeContext } from "../sensors/SensorRealtimeContext";
 
 import "./HeaderQuickControls.css";
 
@@ -62,6 +63,10 @@ function getStatusText({
 export default function HeaderQuickControls() {
   const { selectedLocation } = useLocationContext();
   const selectedPlaceId = selectedLocation?.id ?? null;
+  const {
+    latestReading: realtimeReading,
+    connectionStatus: realtimeConnectionStatus,
+  } = useSensorRealtimeContext();
 
   const [deviceState, setDeviceState] = useState({
     windowAvailable: false,
@@ -111,8 +116,27 @@ export default function HeaderQuickControls() {
   }, [selectedPlaceId]);
 
   useEffect(() => {
+    if (
+      !realtimeReading ||
+      String(realtimeReading.place_id) !== String(selectedPlaceId)
+    ) {
+      return;
+    }
+
+    setDeviceState(extractDeviceState(realtimeReading));
+    setStatusError("");
+    setIsLoading(false);
+  }, [realtimeReading, selectedPlaceId]);
+
+  useEffect(() => {
     setIsLoading(true);
     refreshDeviceState();
+
+    // WebSocket 연결 중에는 2초 HTTP 반복 조회를 중지합니다.
+    // 연결이 끊겼을 때만 기존 HTTP 조회가 예비 수단으로 작동합니다.
+    if (realtimeConnectionStatus === "connected") {
+      return undefined;
+    }
 
     const intervalId = window.setInterval(
       refreshDeviceState,
@@ -120,7 +144,7 @@ export default function HeaderQuickControls() {
     );
 
     return () => window.clearInterval(intervalId);
-  }, [refreshDeviceState]);
+  }, [realtimeConnectionStatus, refreshDeviceState]);
 
   useEffect(() => {
     setFeedback("");

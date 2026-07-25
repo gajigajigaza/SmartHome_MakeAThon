@@ -7,6 +7,7 @@ import {
   getWeatherStatus,
 } from "./readingsApi";
 import LocationSwitcher from "../location/LocationSwitcher";
+import { useSensorRealtimeContext } from "./SensorRealtimeContext";
 import SharedAppSidebar from "../navigation/SharedAppSidebar";
 import { useLocationContext } from "../location/LocationContext";
 import "./SensorReadings.css";
@@ -1676,6 +1677,10 @@ export default function SensorReadings({
     loadError: locationLoadError,
   } = useLocationContext();
   const selectedPlaceId = selectedLocation?.id ?? null;
+  const {
+    latestReading: realtimeReading,
+    connectionStatus: realtimeConnectionStatus,
+  } = useSensorRealtimeContext();
   const [readings, setReadings] = useState([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -2115,10 +2120,36 @@ export default function SensorReadings({
   ]);
 
   useEffect(() => {
-    if (!autoRefresh || !selectedPlaceId || isTestAutoRecording) {
+    if (
+      !autoRefresh ||
+      !realtimeReading ||
+      !selectedPlaceId ||
+      String(realtimeReading.place_id) !== String(selectedPlaceId)
+    ) {
+      return;
+    }
+
+    mergeIntoState([realtimeReading], {
+      expectedPlaceId: String(selectedPlaceId),
+      expectedVersion: requestVersionRef.current,
+    });
+    consecutiveFailureRef.current = 0;
+    setErrorMessage("");
+    setSyncStatus("connected");
+    setLastSyncedAt(new Date());
+  }, [autoRefresh, mergeIntoState, realtimeReading, selectedPlaceId]);
+
+  useEffect(() => {
+    if (
+      !autoRefresh ||
+      !selectedPlaceId ||
+      isTestAutoRecording ||
+      realtimeConnectionStatus === "connected"
+    ) {
       return undefined;
     }
 
+    // WebSocket이 연결되지 않은 동안에만 기존 5초 HTTP 조회를 사용합니다.
     const timerId = window.setInterval(() => {
       if (document.visibilityState === "visible") {
         performRefreshCycle({ createTestRecord: false });
@@ -2130,6 +2161,7 @@ export default function SensorReadings({
     autoRefresh,
     isTestAutoRecording,
     performRefreshCycle,
+    realtimeConnectionStatus,
     refreshSeconds,
     selectedPlaceId,
   ]);
@@ -2218,7 +2250,8 @@ export default function SensorReadings({
       if (
         document.visibilityState === "visible" &&
         autoRefresh &&
-        !isTestAutoRecording
+        !isTestAutoRecording &&
+        realtimeConnectionStatus !== "connected"
       ) {
         performRefreshCycle({ createTestRecord: false });
       }
@@ -2227,7 +2260,12 @@ export default function SensorReadings({
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () =>
       document.removeEventListener("visibilitychange", refreshWhenVisible);
-  }, [autoRefresh, isTestAutoRecording, performRefreshCycle]);
+  }, [
+    autoRefresh,
+    isTestAutoRecording,
+    performRefreshCycle,
+    realtimeConnectionStatus,
+  ]);
 
   useEffect(() => {
     if (!toastMessage) {

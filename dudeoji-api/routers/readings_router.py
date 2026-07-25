@@ -10,6 +10,7 @@ from auth_utils import get_current_user
 from db import READINGS_TABLE, PLACES_TABLE, supabase
 from mqtt_handler import publish_device_command
 from recommendation_engine import LOGIC_THRESHOLDS, determine_action
+from sensor_realtime_hub import reading_hub
 from weather import fetch_air_pollution, fetch_current_weather
 from savings import get_rated_power, get_cumulative_kwh, estimate_savings, get_savings_summary
 router = APIRouter(prefix="/api", tags=["readings"])
@@ -216,7 +217,7 @@ def _infer_control_context(
     sensor_data: SensorReadingCreate,
     recommendation: Recommendation,
 ) -> str:
-    """ENJOY를 에어컨 상태로 오인하지 않도록 제어 맥락을 별도로 구분합니다."""
+    """ENJOY? ??? ??? ???? ??? ?? ??? ??? ?????."""
     combined_text = " ".join(
         [recommendation.title, recommendation.summary, recommendation.reason]
     )
@@ -229,11 +230,11 @@ def _infer_control_context(
         return "VENTILATION"
     if action == "ENJOY":
         if sensor_data.ac_is_on is True and any(
-            keyword in combined_text for keyword in ("에어컨", "냉기", "냉방")
+            keyword in combined_text for keyword in ("???", "??", "??")
         ):
             return "AIRCON"
         if sensor_data.window_is_open is True and any(
-            keyword in combined_text for keyword in ("환기", "바람", "창문")
+            keyword in combined_text for keyword in ("??", "??", "??")
         ):
             return "VENTILATION"
         return "COMFORT"
@@ -608,7 +609,16 @@ async def save_reading_for_user(
             detail="센서 기록을 Supabase에 저장하지 못했습니다.",
         ) from error
 
-    return SensorReadingResponse.model_validate(result.data[0])
+    saved_reading = SensorReadingResponse.model_validate(result.data[0])
+
+    # HTTP 또는 센서 WebSocket 중 어느 경로로 저장돼도 웹 구독자에게 즉시 전송합니다.
+    await reading_hub.broadcast_reading(
+        user_id=user_id,
+        place_id=resolved_place_id,
+        reading=saved_reading.model_dump(mode="json"),
+    )
+
+    return saved_reading
 
 
 # jh 수정함 - 프론트 "테스트 모드" 버튼용 가짜 센서값 생성.

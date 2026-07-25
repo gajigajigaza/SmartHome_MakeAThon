@@ -42,9 +42,8 @@
 }
 
 .sensor-page-header {
-  position: sticky;
-  z-index: 20;
-  top: 0;
+  position: static;
+  z-index: auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1292,7 +1291,7 @@
 
 @media (max-width: 640px) {
   .sensor-page-header {
-    position: sticky;
+    position: static;
     min-height: 0;
     padding: 16px;
   }
