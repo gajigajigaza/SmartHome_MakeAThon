@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from auth_utils import get_current_user
 from db import READINGS_TABLE, PLACES_TABLE, supabase
+from mqtt_handler import publish_device_command
 from recommendation_engine import LOGIC_THRESHOLDS, determine_action
 from weather import fetch_air_pollution, fetch_current_weather
 from savings import get_rated_power, get_cumulative_kwh, estimate_savings, get_savings_summary
@@ -92,9 +93,17 @@ class SensorReadingResponse(SensorReadingCreate):
 
 
 # 기기 제어를 위한 데이터 모델
+DeviceControlAction = Literal[
+    "OPEN_WINDOW",
+    "CLOSE_WINDOW",
+    "TURN_ON_AIRCON",
+    "TURN_OFF_AIRCON",
+]
+
+
 class DeviceControl(BaseModel):
-    place_id: int
-    action: str
+    place_id: int = Field(ge=1)
+    action: DeviceControlAction
 class SavingsSummaryResponse(BaseModel):
     period: str
     power_saved_kwh: float
@@ -785,5 +794,24 @@ def read_savings_summary(
         get_place_for_user(current_user["id"], place_id)
     return get_savings_summary(current_user["id"], period, place_id)
 @router.post("/devices/control")
-def control_device(command: DeviceControl, current_user: dict = Depends(get_current_user)):
-    return {}
+def control_device(
+    command: DeviceControl,
+    current_user: dict = Depends(get_current_user),
+):
+    get_place_for_user(current_user["id"], command.place_id)
+
+    try:
+        return publish_device_command(
+            place_id=command.place_id,
+            action=command.action,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+    except RuntimeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error
