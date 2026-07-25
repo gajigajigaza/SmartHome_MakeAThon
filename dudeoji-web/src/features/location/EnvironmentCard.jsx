@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { request } from "../../api";
 import { createMockReading } from "../sensors/readingsApi";
+import { useSensorRealtimeContext } from "../sensors/SensorRealtimeContext";
 import { useLocationContext } from "./LocationContext";
 import LocationSearchPopover from "./LocationSearchPopover";
 
@@ -50,6 +51,16 @@ export default function EnvironmentCard({
   // 바꿔서, LocationSwitcher(헤더 위치 버튼)가 선택한 위치를 그대로 공유한다
   // (따로 호출하면 각자 다른 위치를 가리키는 문제가 있었음 - App.jsx의 LocationProvider 참고).
   const { selectedLocation, setLocationCoordinates } = useLocationContext();
+  const { latestReading: realtimeReading } = useSensorRealtimeContext();
+  const realtimeMatchesSelectedPlace =
+    realtimeReading &&
+    String(realtimeReading.place_id) === String(selectedLocation?.id);
+  const activeSensorData = realtimeMatchesSelectedPlace
+    ? {
+        indoorTemperature: realtimeReading.indoor_temperature,
+        indoorHumidity: realtimeReading.indoor_humidity,
+      }
+    : sensorData;
   const hasLocation =
     selectedLocation?.lat != null && selectedLocation?.lon != null;
 
@@ -170,10 +181,10 @@ export default function EnvironmentCard({
           </div>
 
           <strong>
-            <TemperatureValue value={sensorData?.indoorTemperature} />
+            <TemperatureValue value={activeSensorData?.indoorTemperature} />
           </strong>
           <p>
-            <HumidityValue value={sensorData?.indoorHumidity} />
+            <HumidityValue value={activeSensorData?.indoorHumidity} />
           </p>
         </div>
 

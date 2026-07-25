@@ -20,6 +20,7 @@ from db import READINGS_TABLE, supabase
 from routers.auth_router import router as auth_router
 from routers.places_router import router as places_router
 from routers.readings_router import router as readings_router
+from routers.realtime_router import router as realtime_router
 from routers.readings_router import save_reading_for_user
 from routers.weather_router import router as weather_router
 
@@ -57,6 +58,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(places_router)
 app.include_router(readings_router)
+app.include_router(realtime_router)
 app.include_router(weather_router)
 
 
@@ -112,3 +114,13 @@ def start_mqtt_listener_if_enabled():
     except Exception as error:
         # 브로커 연결 실패로 서버 전체가 죽으면 안 되므로 로그만 남긴다.
         print(f"[MQTT] 시작 실패, REST API는 정상 동작합니다: {error}")
+
+# WebSocket ??? ?? ?? ??
+# ?? ???? ???? ??? ?? ?? FastAPI ?? ?????.
+_registered_paths = {
+    getattr(route, "path", None)
+    for route in app.routes
+}
+
+if "/ws/readings" not in _registered_paths:
+    app.include_router(realtime_router)

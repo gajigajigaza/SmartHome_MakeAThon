@@ -11,6 +11,7 @@
 import { createContext, useCallback, useContext, useState } from "react";
 
 import { updatePlaceLocation } from "../places/placesApi";
+import { SensorRealtimeProvider } from "../sensors/SensorRealtimeContext";
 import { useSelectedLocation } from "./useSelectedLocation";
 
 const LocationContext = createContext(null);
@@ -60,7 +61,11 @@ export function LocationProvider({ children }) {
 
   return (
     <LocationContext.Provider value={value}>
-      {children}
+      <SensorRealtimeProvider
+        selectedPlaceId={selectedLocationState.selectedLocation?.id ?? null}
+      >
+        {children}
+      </SensorRealtimeProvider>
     </LocationContext.Provider>
   );
 }
