@@ -16,6 +16,7 @@ import RecommendationCard, {
 import EnvironmentCard from "./features/location/EnvironmentCard";
 import SavingsSummary from "./features/location/SavingsSummary";
 import LocationSwitcher from "./features/location/LocationSwitcher";
+import HeaderQuickControls from "./features/dashboard/HeaderQuickControls";
 // jh 수정함 - LocationSwitcher/EnvironmentCard가 각자 useSelectedLocation()을
 // 따로 호출해서 서로 다른 위치를 가리키던 문제를 고치려고 Context를 추가했다.
 import { LocationProvider } from "./features/location/LocationContext";
@@ -368,6 +369,7 @@ function App({
         />
 
         <LocationSwitcher />
+        <HeaderQuickControls />
       </header>
 
       <main>

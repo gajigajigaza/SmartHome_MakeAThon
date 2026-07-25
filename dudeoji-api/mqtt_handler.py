@@ -12,6 +12,11 @@ import os
 BROKER_ADDRESS = os.getenv("MQTT_BROKER_ADDRESS", "test.mosquitto.org")
 BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
 TOPIC = os.getenv("MQTT_TOPIC", "smarthome/dudeoji/sensor")
+CONTROL_TOPIC = os.getenv(
+    "MQTT_CONTROL_TOPIC",
+    "smarthome/dudeoji/control",
+)
+_mqtt_client = None
 
 
 def _resolve_user_id_for_place(supabase, place_id: int):
@@ -70,7 +75,52 @@ def handle_sensor_payload(supabase, payload: dict, save_reading_fn):
             running_loop.create_task(save_result)
 
 
+
+def publish_device_command(place_id: int, action: str) -> dict:
+    # ESP32가 구독하는 MQTT 제어 토픽으로 명령을 발행합니다.
+    allowed_actions = {
+        "OPEN_WINDOW",
+        "CLOSE_WINDOW",
+        "TURN_ON_AIRCON",
+        "TURN_OFF_AIRCON",
+    }
+
+    if action not in allowed_actions:
+        raise ValueError("지원하지 않는 기기 제어 명령입니다.")
+
+    client = _mqtt_client
+    if client is None or not client.is_connected():
+        raise RuntimeError(
+            "MQTT가 연결되어 있지 않습니다. "
+            "MQTT_ENABLED=true와 브로커 연결 상태를 확인해 주세요."
+        )
+
+    payload = {
+        "place_id": int(place_id),
+        "action": action,
+    }
+
+    publish_result = client.publish(
+        CONTROL_TOPIC,
+        json.dumps(payload, ensure_ascii=False),
+        qos=1,
+        retain=False,
+    )
+
+    if publish_result.rc != 0:
+        raise RuntimeError(
+            f"MQTT 명령 발행에 실패했습니다. 오류 코드: {publish_result.rc}"
+        )
+
+    return {
+        "accepted": True,
+        "topic": CONTROL_TOPIC,
+        "place_id": int(place_id),
+        "action": action,
+    }
+
 def start_mqtt(supabase, save_reading_fn):
+    global _mqtt_client
     """MQTT 브로커에 연결하고 백그라운드에서 센서값을 수신합니다."""
     import paho.mqtt.client as mqtt
 
@@ -97,4 +147,5 @@ def start_mqtt(supabase, save_reading_fn):
     client.on_message = on_message
     client.connect(BROKER_ADDRESS, BROKER_PORT, 60)
     client.loop_start()
+    _mqtt_client = client
     return client

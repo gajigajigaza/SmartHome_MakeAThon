@@ -1292,7 +1292,7 @@
 
 @media (max-width: 640px) {
   .sensor-page-header {
-    position: static;
+    position: sticky;
     min-height: 0;
     padding: 16px;
   }
@@ -1907,8 +1907,10 @@
     display: none;
   }
 
+  /* 좁은 화면에서는 상단 배너도 본문과 함께 스크롤됩니다. */
   .sensor-page-header {
-    top: var(--mypage-mobile-topbar-height, 64px);
+    position: static;
+    top: auto;
   }
 }
 
