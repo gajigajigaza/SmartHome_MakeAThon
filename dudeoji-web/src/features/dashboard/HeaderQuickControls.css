@@ -231,20 +231,22 @@
   background: #dcf3e6;
 }
 
+/* jh 수정함 - "★ 추천" 알약 배지 대신 별 아이콘 하나만 원형 배지로 */
 .header-device-action--recommended::after {
-  content: "★ 추천";
+  content: "★";
   position: absolute;
-  top: -9px;
-  right: -7px;
+  top: -8px;
+  right: -8px;
   z-index: 1;
-  padding: 1px 6px;
-  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
   background: #ffb020;
   box-shadow: 0 2px 6px rgba(122, 79, 0, 0.28);
   color: #ffffff;
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: -0.02em;
-  white-space: nowrap;
+  font-size: 9px;
+  line-height: 1;
   pointer-events: none;
 }
