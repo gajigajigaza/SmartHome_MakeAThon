@@ -9,10 +9,16 @@
 // false면(대기 상태) title/summary/reason/warning 등 "추천 내용"만 숨기고
 // 대기 문구 + 버튼으로 대체한다. 새로 fetch를 트리거하지 않고, App.jsx가 이미
 // 들고 있는 최신 recommendation을 버튼 클릭 시점에 그대로 노출하는
-// 방식이다(합의된 옵션 a). 상단 상태 배지(에어컨/환기)는 시안에서도 대기
-// 화면에 이미 보이는 위치라 hasStarted와 무관하게 항상 둘 다 보여주고,
-// 실제로 켜져/열려 있을 때만 강조 스타일로 구분한다(아래
-// getAcStatusBadge/getWindowStatusBadge 참고).
+// 방식이다(합의된 옵션 a).
+//
+// jh 수정함(2026-07-26, 팀 결정) - 헤더에 있던 HeaderQuickControls(창문/
+// 에어컨 상태+제어 4칸)를 이 카드 우측 상단으로 이식. 예전에 여기 있던
+// "에어컨 꺼짐"/"창문 닫힘" 상태 배지(getAcStatusBadge/getWindowStatusBadge)는
+// 이식해온 4칸의 상태 표시와 중복이라 제거하고, 대신 이식된 버튼 중 현재
+// 추천 action과 일치하는 쪽에 스타일 강조를 준다(HeaderQuickControls의
+// recommendedAction prop).
+
+import HeaderQuickControls from "./HeaderQuickControls";
 
 export const initialRecommendation = {
   type: "maintain",
@@ -49,30 +55,6 @@ function getRecommendationIcon(action) {
   return "✅";
 }
 
-// jh 수정함 - 상단 "현재 동작 상태" 배지. 처음엔 action === "ENJOY"일 때만
-// (즉 뭔가 실제로 진행 중일 때만) 배지를 보여줬는데, 그러면 그 상태가 아닐
-// 때는 배지 자체가 사라져서 "지금 에어컨/환기가 꺼져 있다"는 것도 확인할
-// 방법이 없었다. 이제 hasStarted면 항상 에어컨/환기 배지 둘 다 보여주되,
-// 실제로 켜져/열려 있는 상태(ENJOY + 해당 control_context)만 강조 스타일
-// (active: true)로 표시하고, 그 외엔 "꺼짐/닫힘"을 muted 스타일로 보여준다.
-function getAcStatusBadge(action, controlContext) {
-  const isRunning = action === "ENJOY" && controlContext === "AIRCON";
-  return {
-    icon: isRunning ? "❄️" : "🌡️",
-    label: isRunning ? "에어컨 가동 중" : "에어컨 꺼짐",
-    active: isRunning,
-  };
-}
-
-function getWindowStatusBadge(action, controlContext) {
-  const isOpen = action === "ENJOY" && controlContext === "VENTILATION";
-  return {
-    icon: isOpen ? "🍃" : "🚪",
-    label: isOpen ? "환기 중" : "창문 닫힘",
-    active: isOpen,
-  };
-}
-
 export function convertRecommendation(backendRecommendation) {
   if (!backendRecommendation) {
     return initialRecommendation;
@@ -99,37 +81,19 @@ export default function RecommendationCard({
   const displayRecommendation = hasStarted
     ? safeRecommendation
     : { ...initialRecommendation, ...START_PROMPT };
-  // jh 수정함 - 추천카드.png를 다시 보니 상태 배지는 "추천 시작" 버튼이 떠
-  // 있는 대기 화면에도 이미 보이는 위치였다(hasStarted로 가릴 게 아니었음).
-  // 대기 상태에서도 실제로 로드된 recommendation이 있으면(예: 이전에 저장된
-  // 최신 값) 그 기준으로 지금 에어컨/창문이 어떤지 항상 보여준다.
-  const acStatusBadge = getAcStatusBadge(
-    safeRecommendation.action,
-    safeRecommendation.controlContext,
-  );
-  const windowStatusBadge = getWindowStatusBadge(
-    safeRecommendation.action,
-    safeRecommendation.controlContext,
-  );
+  // jh 수정함 - 추천 시작 전(대기 화면)이거나 추천이 없을 때는 강조 없음.
+  const recommendedAction = hasStarted ? safeRecommendation.action : null;
 
   return (
     <article className={`card recommendation-card ${displayRecommendation.type} ${isTutorialTarget ? "tutorial-target" : ""}`}>
-      <p className="section-label">두더지의 현재 추천</p>
-      <p className="dashboard-tagline recommendation-card-tagline">
-        두 가지 냉방 방식 중, 더 효율적인 선택을 지능적으로
-      </p>
-
-      <div className="recommendation-status-badges">
-        <span
-          className={`recommendation-status-badge ${acStatusBadge.active ? "is-active" : "is-muted"}`}
-        >
-          <span aria-hidden="true">{acStatusBadge.icon}</span> {acStatusBadge.label}
-        </span>
-        <span
-          className={`recommendation-status-badge ${windowStatusBadge.active ? "is-active" : "is-muted"}`}
-        >
-          <span aria-hidden="true">{windowStatusBadge.icon}</span> {windowStatusBadge.label}
-        </span>
+      <div className="recommendation-card-topbar">
+        <div className="recommendation-card-heading">
+          <p className="section-label">두더지의 현재 추천</p>
+          <p className="dashboard-tagline recommendation-card-tagline">
+            두 가지 냉방 방식 중, 더 효율적인 선택을 지능적으로
+          </p>
+        </div>
+        <HeaderQuickControls recommendedAction={recommendedAction} />
       </div>
 
       <div className="recommendation-main">

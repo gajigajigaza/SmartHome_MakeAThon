@@ -17,7 +17,8 @@ import RecommendationCard, {
 import EnvironmentCard from "./features/location/EnvironmentCard";
 import SavingsSummary from "./features/location/SavingsSummary";
 import LocationSwitcher from "./features/location/LocationSwitcher";
-import HeaderQuickControls from "./features/dashboard/HeaderQuickControls";
+// jh 수정함 - HeaderQuickControls는 이제 헤더가 아니라 RecommendationCard
+// 우측 상단에서 렌더링됨(2026-07-26, 팀 결정). 여기서 직접 안 씀.
 // jh 수정함 - LocationSwitcher/EnvironmentCard가 각자 useSelectedLocation()을
 // 따로 호출해서 서로 다른 위치를 가리키던 문제를 고치려고 Context를 추가했다.
 import {
@@ -448,7 +449,6 @@ function DashboardHome({
         />
 
         <LocationSwitcher />
-        <HeaderQuickControls />
       </header>
 
       <main>
