@@ -16,6 +16,11 @@
       예전처럼 한 파일에 다 모여서 merge 충돌이 잦아집니다.)
 - [ ] Supabase 테이블을 바꿨다면 → 팀 채팅방에 한 줄 공유했는가?
 - [ ] `.env`에 새 키가 필요해졌다면 → 다른 사람에게 값(또는 어디서 구하는지)을 알려줬는가?
+- [ ] `readings` 컬럼을 추가/변경했다면 → 프론트에서 각자 따로 정규화하는
+      4곳을 다 확인했는가? `App.jsx`(`convertReading`), `RecommendationCard.jsx`
+      (`convertRecommendation`), `HeaderQuickControls.jsx`(`extractDeviceState`),
+      `SensorReadings.jsx`(`normalizeReading`) — 공유 매핑 함수가 없어서 하나만
+      고치고 넘어가면 나머지 3곳은 조용히 안 맞는 값을 계속 읽는다.
 
 ---
 
@@ -137,11 +142,11 @@ merged/
 | `auth_utils.py` | 비밀번호 해시, 세션 토큰 생성/검증, `get_current_user`(로그인한 사용자인지 확인하는 함수). 다른 라우터들이 이걸 가져다 씀 | **류은** |
 | `routers/auth_router.py` | `/api/auth/*` — 회원가입, 로그인, 로그아웃, 아이디 중복확인, 비번 찾기, 닉네임/비번/복구정보 변경, 탈퇴 | **류은** |
 | `routers/places_router.py` | `/api/aircon-models`, `/api/places`(GET/POST — GET 응답에 `is_default` 포함, POST는 유저의 첫 장소면 자동으로 `is_default: true`), `/api/places/{place_id}`(PATCH — `name`/`lat`/`lon` 각각 선택 필드, 이름만/위치만/둘다 가능; DELETE — 소유자 확인 후 삭제, `user_aircons`는 DB `ON DELETE CASCADE`로 자동 정리됨, 삭제한 게 기본 장소였으면 남은 것 중 가장 오래된 걸 새 기본 장소로 재할당), `/api/places/{place_id}/default`(PATCH, 기본 장소 지정 — 같은 유저 다른 place는 자동 false), `/api/places/{place_id}/cooldown`(PATCH, 에어컨 최소 가동시간 — **민주 작성**), `/api/places/geocode`, `/api/places/reverse-geocode` — 카카오 로컬 API. `places` 테이블에 `lat`/`lon`(nullable, `004_add_place_location.sql`)/`is_default`(not null default false, `005_add_place_default.sql`) 컬럼. **담당자 셋 다 코드 있는 파일**(핵심 CRUD=류은, 위치/기본장소/삭제=정현이 추가, cooldown=민주) | **류은**(+정현 일부) |
-| `routers/readings_router.py` | `/api/readings/*`, `/api/recommendation`, `/api/devices/control`(스텁, 로그만 남기고 실제 제어 없음) — 센서 기록 저장/조회, 추천 결과 조회. MQTT/dev_tools로 들어오는 센서 데이터도 결국 여기로 저장됨. `save_reading_for_user()`가 이제 `weather.py`의 `fetch_outdoor_weather`를 직접 호출해서 저장 전 실외값을 채우는데, 사용자의 장소를 `user_id`로만 조회해 `.limit(1)` — **`is_default`나 선택된 위치를 안 보고 그냥 아무 장소나(사실상 첫 번째) 씀**. 다중 위치 사용자는 엉뚱한 장소 기준 날씨로 추천받을 수 있는 알려진 버그(아래 6번 참고). `calculate_ac_run_time()`으로 에어컨 누적 가동시간을 추정해 `target_cooldown_minutes`와 비교 판단 | **민주** |
+| `routers/readings_router.py` | `/api/readings/*`, `/api/recommendation`, `/api/devices/control`(스텁, 로그만 남기고 실제 제어 없음) — 센서 기록 저장/조회, 추천 결과 조회. MQTT/dev_tools로 들어오는 센서 데이터도 결국 여기로 저장됨. jh 수정함 - `save_reading_for_user()`가 팬아웃 구조로 바뀜: 물리 센서는 사용자당 1개라는 제품 결정에 따라 실내값 1건이 들어오면 "아무 장소나 하나"가 아니라 **그 사용자의 모든 장소에 각각** (그 장소 좌표의 실외값 + 개별 추천) readings 행을 저장함. 특정 장소만 좌표 미설정/날씨 실패면 그 장소만 스킵하고 나머지는 저장, 전부 실패해야 에러 응답. 반환은 대표 1건(`is_default` 성공 행, 없으면 첫 성공 행)만 — 기존 "아무 장소나 하나만 쓰던" 버그는 해소됨(아래 6번도 갱신됨). `calculate_ac_run_time()`으로 에어컨 누적 가동시간을 추정해 `target_cooldown_minutes`와 비교 판단 | **민주**(+정현: 팬아웃) |
 | `recommendation_engine.py` | 실내외 온습도 + 날씨/미세먼지/바람 + 에어컨 가동 상태(`is_ac_on`/`ac_run_time_minutes`/`target_cooldown_minutes`)를 보고 판단하는 규칙 엔진(`determine_action`). 자동제어/쿨다운 로직 추가하며 전면 재작성됨 — THI 공식이 바뀌었고, 센서 이상값용 `ERROR` 액션이 새로 생겼고, **`savings.py` import/호출이 빠졌음**(아래 `savings.py` 행 참고) | **민주** |
 | `savings.py` | 판단된 행동(action)에 대해 절감 전력(kWh)·시간·비용(원)·멘트를 계산 (`estimate_savings`) — ⚠️ 지금 `recommendation_engine.py`가 이 함수를 아예 안 부르고 있어서(import도 없음) 실제 추천 응답에 절감량이 안 실림. 프론트 `SavingsSummary.jsx`도 아직 placeholder라 당장 화면이 깨지진 않지만, 절감량 기능을 만들려면 이 연동부터 복구해야 함(민주와 상의 필요) | **정현** |
 | `weather.py` | 외부 날씨 API 연동. `fetch_outdoor_weather(lat, lon)`이 기상청 초단기실황조회(getUltraSrtNcst, 기온/습도/풍속/강수형태)와 OpenWeatherMap Air Pollution API(미세먼지)를 합쳐서 반환(`precipitation_probability`는 둘 다 없어서 항상 `None`). 위경도→기상청 격자좌표 변환(`latlon_to_kma_grid`, 순수함수)/발표시각 역산(`_get_kma_base_datetime`) 등 헬퍼 포함. `KMA_SERVICE_KEY` 환경변수 필요(`.env.example` 참고, data.go.kr에서 이 API에 대한 활용신청 승인이 별도로 필요할 수 있음). `routers/weather_router.py`(표시 전용)와 `routers/readings_router.py`(추천 파이프라인) 양쪽에서 호출됨 | **정현** |
-| `routers/weather_router.py` | `GET /api/weather?lat=&lon=` — 로그인 필요, `weather.py`의 `fetch_outdoor_weather`를 그대로 감싸서 반환, 실패 시 502(콘솔에 원본 에러 로그 남김). `EnvironmentCard.jsx`가 실외 날씨 표시에 씀. `readings_router.py`도 이제 같은 함수를 직접 호출하지만 **서로 다른 위경도를 쓸 수 있다** — 이 라우터는 프론트가 넘긴(현재 선택된 위치의) lat/lon을 쓰고, `readings_router.py`는 사용자의 아무 장소나 고정으로 쓴다(위 `readings_router.py` 행·아래 6번 참고) | **정현** |
+| `routers/weather_router.py` | `GET /api/weather?lat=&lon=` — 로그인 필요, `weather.py`의 `fetch_outdoor_weather`를 그대로 감싸서 반환, 실패 시 502(콘솔에 원본 에러 로그 남김). `EnvironmentCard.jsx`가 실외 날씨 표시에 씀. jh 수정함 - `readings_router.py`는 팬아웃으로 사용자의 **모든 장소**에 대해 각자 좌표로 실외값을 채우므로(위 `readings_router.py` 행 참고), 이 라우터가 보여주는 "지금 선택된 위치" 카드와 그 장소의 추천 이유는 항상 같은 장소 기준 데이터를 씀 — 예전에 있던 위경도 불일치는 해소됨 | **정현** |
 | `routers/locations_router.py` | 위치(집/회사) 저장/조회/선택 API. `추가 예정` — 아직 엔드포인트가 없고 `main.py`에도 연결 안 됨. 류은의 `places_router.py`와의 통합 방향은 이미 실행됨(→ `places` 테이블에 `lat`/`lon` 컬럼 추가, 위치 검색은 `places_router.py`의 `geocode`/`reverse-geocode`로 구현됨) — 이 파일 자체는 여전히 빈 뼈대 상태 | **정현** |
 | `mqtt_handler.py` | 라즈베리파이 게이트웨이가 MQTT로 보내는 실제 센서 데이터를 받아서 저장까지 연결하는 코드(사전 준비) | **민주** (실제 하드웨어 연결·전환은 특정 담당자 없이 대면 현장에서 진행) |
 | `dev_tools/mock_simulator.py` | 하드웨어 없을 때 터미널에서 실행해서 가짜 센서값을 5초마다 서버로 계속 보내는 스크립트(지금 단계 테스트용) | **민주** (실제 하드웨어 연결·전환은 특정 담당자 없이 대면 현장에서 진행) |
@@ -183,11 +188,10 @@ merged/
 `AirconPage.jsx`는 여전히 별도 구현이라 `LocationSearchPopover`와 로직을 공유하지 않지만,
 `LocationSearchPopover` 자체는 `embedded` prop 덕분에 `EnvironmentCard`/마이페이지 두 곳에서 로직을 공유한다.
 
-**실외 날씨 두 가지 소스 — 예전엔 완전히 분리였는데, 이제 연결은 됐지만 값이 다를 수 있음:**
+**실외 날씨 두 가지 소스 — 예전엔 완전히 분리였는데, 이제 연결됐고 값도 일치함:**
 `EnvironmentCard.jsx`가 보여주는 실외 온습도/날씨는 `GET /api/weather`(프론트가 선택한 위치의 lat/lon으로 즉시 조회, 표시 전용)에서 오고,
 `recommendation_engine.py`/`RecommendationCard.jsx`가 쓰는 실외값은 `readings` 테이블에 저장된 값에서 온다.
-`readings_router.py`의 `save_reading_for_user()`가 이제 실제로 `weather.py`를 호출해서 저장 시점에 채우긴 하지만,
-**어느 장소의 lat/lon을 쓸지는 `is_default`도, 프론트가 선택한 위치도 안 보고 그냥 그 사용자의 아무 장소나(사실상 첫 번째)를 쓴다** — 다중 위치를 등록한 사용자는 화면의 "실외" 카드와 추천 이유의 실외 조건이 서로 다른 장소 기준일 수 있다. `save_reading_for_user()`가 요청 시점에 현재 선택된(또는 `is_default`) 장소의 lat/lon을 명시적으로 받도록 고쳐야 완전히 해결됨(민주와 상의 필요, 아래 6번 참고).
+jh 수정함 - `readings_router.py`의 `save_reading_for_user()`가 팬아웃 구조로 바뀌면서, 실내값 1건이 들어올 때마다 **사용자의 모든 장소에 대해 각각 그 장소 좌표로** 실외값을 조회해서 저장한다(예전처럼 "아무 장소나 하나"가 아님). 그래서 다중 위치를 등록한 사용자도 화면의 "실외" 카드(선택된 위치)와 그 위치의 추천 이유가 항상 같은 장소 데이터를 쓴다 — 이 항목의 예전 버그는 해소됨(아래 6번도 갱신됨).
 
 ---
 
@@ -257,7 +261,7 @@ supabase/005_add_place_default.sql, 006_backfill_default_place.sql → is_defaul
 ### 민주
 ```
 dudeoji-api/recommendation_engine.py      → 자동제어/쿨다운 로직 추가하며 전면 재작성됨(savings.py 연동 빠짐, 위 참고)
-dudeoji-api/routers/readings_router.py    → weather.py를 실제로 호출하도록 연결함(단, "아무 장소나" 쓰는 버그 있음), /api/devices/control 스텁 추가
+dudeoji-api/routers/readings_router.py    → weather.py를 실제로 호출하도록 연결함, /api/devices/control 스텁 추가. jh 수정함 - 이후 "아무 장소나 하나만 쓰는" 버그를 팬아웃 구조로 해소(아래 6번 참고)
 dudeoji-api/routers/places_router.py      → cooldown 엔드포인트(PATCH /places/{id}/cooldown)만 추가(류은 담당 파일 일부)
 dudeoji-api/mqtt_handler.py
 dudeoji-api/dev_tools/
@@ -299,7 +303,7 @@ dudeoji-web/src/features/badge/     (여유 있으면)
 - **`readings_router.py`가 이제 `weather.py`를 실제로 호출합니다**(민주가 연결) — 다만 아래 "아직 안 됨"의 첫 항목처럼 완전히 해결된 건 아님.
 
 **아직 안 됨**
-- **`readings_router.py`가 weather.py를 호출할 때 "아무 장소나"(사실상 첫 번째) 씁니다.** `is_default`도, 프론트가 지금 선택한 위치도 안 보고 그냥 `user_id`로만 조회해서 `.limit(1)`한 결과를 씁니다. 위치를 하나만 등록한 사용자는 문제없지만, 여러 개 등록한 사용자는 화면의 "실외" 카드(선택된 위치 기준)와 추천 이유(엉뚱한 위치 기준)가 서로 다른 장소 데이터를 쓸 수 있습니다 — `save_reading_for_user()`가 어떤 장소 기준인지 명시적으로 받도록 고쳐야 함(민주와 상의 필요).
+- ~~`readings_router.py`가 weather.py를 호출할 때 "아무 장소나"(사실상 첫 번째) 씁니다.~~ **(해결됨, jh 수정함)** `save_reading_for_user()`가 팬아웃 구조로 바뀌어서, 이제 사용자의 **모든 장소**에 대해 각자 좌표로 실외값을 조회하고 각자 추천을 계산해 저장합니다("아무 장소나 하나"가 아님). 반환은 대표 1건(`is_default` 성공 행, 없으면 첫 성공 행)만 돌려주지만, 각 장소의 `readings` 행 자체는 그 장소 기준 데이터로 정확하게 저장됩니다.
 - **`savings.py` 연동이 끊어져 있습니다.** `recommendation_engine.py`가 전면 재작성되면서 `estimate_savings` 호출이 빠졌습니다. `SavingsSummary.jsx`가 실제 절감량을 보여주려면 이 연동부터 복구해야 합니다(민주와 상의 필요).
 - **`CooldownSettings.jsx`/`RecommendationPopup.jsx`(민주 작성)가 `placeId`/`place_id`를 `1`로 하드코딩하고, `http://127.0.0.1:8000`을 `request()` 대신 직접 fetch합니다.** 배포 환경에서 안 붙고, 여러 위치를 등록한 사용자에겐 항상 엉뚱한 장소를 대상으로 동작합니다.
 - 위치가 여러 개면 "각 위치마다 최근 센서 기록이 따로 있어야 하는가"도 정해야 합니다. 지금 `readings` 테이블은 장소 구분 없이 사용자 1명당 최신 기록 1줄만 조회하는 구조라, 위치별로 나누려면 `readings` 테이블에도 `place_id`(또는 `location_id`) 컬럼이 필요할 수 있습니다. 이건 민주(`readings_router.py`)와 같이 상의해야 하는 부분입니다.
