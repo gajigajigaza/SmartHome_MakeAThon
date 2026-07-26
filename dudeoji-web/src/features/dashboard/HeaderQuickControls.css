@@ -10,24 +10,19 @@
   display: inline-flex;
   align-items: center;
   flex: 0 1 auto;
+  flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
   min-height: 48px;
   padding: 5px;
-  border: 1px solid rgba(184, 211, 194, 0.94);
+  /* jh 수정함 - 그라데이션 제거 + 테두리를 더 연하게(요청 반영) */
+  border: 1px solid rgba(184, 211, 194, 0.5);
   border-radius: 17px;
-  background:
-    radial-gradient(
-      circle at 100% 0%,
-      rgba(215, 240, 172, 0.14),
-      transparent 45%
-    ),
-    rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.88);
   box-shadow:
-    0 8px 20px rgba(32, 70, 45, 0.07),
+    0 8px 20px rgba(32, 70, 45, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.88);
   font-family: inherit;
-  white-space: nowrap;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -173,7 +168,6 @@
 @media (max-width: 1050px) {
   .header-device-controls {
     gap: 5px;
-    margin-left: -12px;
     padding: 4px;
   }
 
@@ -194,29 +188,12 @@
   }
 }
 
-@media (max-width: 560px) {
-  .header-device-controls {
-    overflow-x: auto;
-    justify-content: flex-start;
-    scrollbar-width: none;
-  }
-
-  .header-device-controls::-webkit-scrollbar {
-    display: none;
-  }
-}
-
+/* jh 수정함(오버플로 수정) - 예전엔 여기서 가로 스크롤(overflow-x:auto)이나
+   grid 전환으로 좁은 폭에 대응했는데, 이제 위쪽 flex-wrap이 4칸을 2×2로
+   자연스럽게 접어주므로 둘 다 필요 없어졌음(오히려 overflow-x:auto는 아래
+   추천 강조 배지가 위로 살짝 튀어나오는 걸 잘라버릴 수 있어서 제거).
+   버튼 최소폭만 좁은 화면에서 살짝 키워 터치 영역을 유지한다. */
 @media (max-width: 390px) {
-  .header-device-controls {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    overflow: visible;
-  }
-
-  .header-device-status {
-    width: 100%;
-  }
-
   .header-device-action {
     min-width: 88px;
   }
@@ -239,8 +216,11 @@
 }
 
 /* jh 수정함 - 추천-액션 하이라이트. 비활성화는 아니고 스타일만 강조
-   (disabled 로직과는 완전히 분리 — 추천과 무관하게 항상 누를 수 있음). */
+   (disabled 로직과는 완전히 분리 — 추천과 무관하게 항상 누를 수 있음).
+   테두리/배경 강조만으로는 눈에 잘 안 띈다는 피드백으로 우측 상단에
+   별 배지를 추가했다(::after, 마크업 변경 없이 CSS만으로). */
 .header-device-action--recommended {
+  position: relative;
   border-color: #238f61;
   background: #e7f7ee;
   color: #1c7a4e;
@@ -249,4 +229,22 @@
 
 .header-device-action--recommended:hover:not(:disabled) {
   background: #dcf3e6;
+}
+
+.header-device-action--recommended::after {
+  content: "★ 추천";
+  position: absolute;
+  top: -9px;
+  right: -7px;
+  z-index: 1;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #ffb020;
+  box-shadow: 0 2px 6px rgba(122, 79, 0, 0.28);
+  color: #ffffff;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  pointer-events: none;
 }
