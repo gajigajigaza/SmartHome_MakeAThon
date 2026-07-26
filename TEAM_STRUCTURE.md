@@ -308,6 +308,16 @@ dudeoji-web/src/features/badge/     (여유 있으면)
 - **`CooldownSettings.jsx`/`RecommendationPopup.jsx`(민주 작성)가 `placeId`/`place_id`를 `1`로 하드코딩하고, `http://127.0.0.1:8000`을 `request()` 대신 직접 fetch합니다.** 배포 환경에서 안 붙고, 여러 위치를 등록한 사용자에겐 항상 엉뚱한 장소를 대상으로 동작합니다.
 - 위치가 여러 개면 "각 위치마다 최근 센서 기록이 따로 있어야 하는가"도 정해야 합니다. 지금 `readings` 테이블은 장소 구분 없이 사용자 1명당 최신 기록 1줄만 조회하는 구조라, 위치별로 나누려면 `readings` 테이블에도 `place_id`(또는 `location_id`) 컬럼이 필요할 수 있습니다. 이건 민주(`readings_router.py`)와 같이 상의해야 하는 부분입니다.
 
+### 자동제어(AUTO 모드) — UI 숨김 상태 (jh 수정함, 2026-07-26)
+
+`RecommendationPopup`이 팝업이 아니라 페이지 하단에 스타일 없는 생 텍스트로 렌더링되는 문제가 있었고, 자동제어는 실제 기기 제어가 현장 하드웨어 연동 후에나 의미가 있어서 이번 라운드는 화면에서 숨기기로 팀이 결정함.
+
+- `App.jsx`의 `<RecommendationPopup>` 마운트와 `MyPage.jsx`의 `<AutoControlSettings>` 마운트를 각각 주석 처리(두 import도 함께 주석). **컴포넌트 파일 자체는 삭제하지 않음.**
+- 백엔드는 그대로 유지: `PATCH /places/{id}/cooldown`, `auto_control_enabled` 저장 로직, `save_reading_for_user()`의 장소별 `auto_control_enabled` 기반 `current_mode` 서버 결정 로직 전부 안 건드림. 토글이 숨겨지면 새 사용자는 AUTO가 될 일이 없고, 기존에 켜둔 계정만 AUTO로 남는다.
+- ⚠️ **기존에 `auto_control_enabled=true`로 켜둔 계정이 있으면, 팝업 없이 AUTO 추천만 도는 상태가 됨.** 확인 후 필요하면 Supabase에서 직접 실행: `UPDATE places SET auto_control_enabled = false WHERE auto_control_enabled = true;`
+- **재활성화 조건**: `/api/devices/control` 스텁(로그만 남기고 실제 제어 없음) → `mqtt_handler.py`의 `publish_device_command`로 실제 기기 제어가 연결된 뒤. 재활성화 시 `RecommendationPopup`의 포지셔닝(모달/포탈 방식)부터 고쳐야 함.
+- `HeaderQuickControls.jsx`(대시보드 상단 수동 제어 버튼)는 그대로 유지 — 지금은 이게 유일한 제어 UI.
+
 
 ## 로컬 실행
 

@@ -14,7 +14,9 @@ import LocationSearchPopover from "../location/LocationSearchPopover";
 import { buildPlacePayload } from "../location/buildPlacePayload";
 import AirconPage, { createInitialAirconSlots } from "../places/AirconPage";
 import AirconSelectorModal from "../places/AirconSelectorModal";
-import AutoControlSettings from "../places/AutoControlSettings";
+// jh 수정함 - 자동제어 UI, 하드웨어 제어 연동 후 활성화 예정(팀 결정,
+// 2026-07-26). 파일은 지우지 않음 — TEAM_STRUCTURE.md 참고.
+// import AutoControlSettings from "../places/AutoControlSettings";
 // 류은 수정 0718 - 에어컨 이름 변경과 제품 변경 API를 분리해서 사용합니다.
 import {
   createPlaceWithAircons,
@@ -1049,6 +1051,11 @@ function MyPage({
                                 </button>
                               </div>
 
+                              {/* jh 수정함 - 자동제어 UI, 하드웨어 제어 연동 후
+                                  활성화 예정(팀 결정, 2026-07-26). 컴포넌트
+                                  파일은 보존, 마운트만 제거. PATCH
+                                  /places/{id}/cooldown과 auto_control_enabled
+                                  저장 로직 자체는 그대로 유지됨.
                               <AutoControlSettings
                                 placeId={location.id}
                                 airconName={aircon.nickname || "에어컨"}
@@ -1068,6 +1075,7 @@ function MyPage({
                                   );
                                 }}
                               />
+                              */}
                             </article>
                           ))}
                         </div>
