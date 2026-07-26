@@ -9,8 +9,14 @@ import inspect
 import json
 import os
 
-BROKER_ADDRESS = os.getenv("MQTT_BROKER_ADDRESS", "test.mosquitto.org")
+# jh 수정함 - 공개 테스트 브로커(test.mosquitto.org) 기본값 제거. 인증 없이
+# 아무나 같은 토픽에 publish할 수 있는 브로커라, 센서값 위조는 물론 기기
+# 제어 토픽(CONTROL_TOPIC)까지 남이 명령을 보낼 수 있는 상태였음. 이제
+# MQTT_BROKER_ADDRESS가 없으면 start_mqtt()가 리스너를 아예 시작하지 않음.
+BROKER_ADDRESS = os.getenv("MQTT_BROKER_ADDRESS")
 BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
+MQTT_USERNAME = os.getenv("MQTT_USERNAME")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 TOPIC = os.getenv("MQTT_TOPIC", "smarthome/dudeoji/sensor")
 CONTROL_TOPIC = os.getenv(
     "MQTT_CONTROL_TOPIC",
@@ -122,6 +128,16 @@ def publish_device_command(place_id: int, action: str) -> dict:
 def start_mqtt(supabase, save_reading_fn):
     global _mqtt_client
     """MQTT 브로커에 연결하고 백그라운드에서 센서값을 수신합니다."""
+    # jh 수정함 - MQTT_BROKER_ADDRESS 없이는 리스너를 시작하지 않음
+    # (예전엔 test.mosquitto.org 공개 브로커로 조용히 연결됐음).
+    if not BROKER_ADDRESS:
+        print(
+            "[MQTT] MQTT_BROKER_ADDRESS 환경변수가 설정되어 있지 않아 "
+            "MQTT 리스너를 시작하지 않습니다. 현장 브로커 주소를 .env에 "
+            "설정한 뒤 다시 시작해 주세요."
+        )
+        return None
+
     import paho.mqtt.client as mqtt
 
     def on_connect(client, userdata, flags, rc):
@@ -143,6 +159,10 @@ def start_mqtt(supabase, save_reading_fn):
             print(f"[MQTT] 저장 중 오류: {error}")
 
     client = mqtt.Client()
+    # jh 수정함 - USERNAME/PASSWORD 둘 다 있을 때만 인증 설정(사설 브로커가
+    # 인증 없이 운영되는 경우도 허용하기 위해 선택 사항으로 둠).
+    if MQTT_USERNAME and MQTT_PASSWORD:
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     client.on_connect = on_connect
     client.on_message = on_message
     client.connect(BROKER_ADDRESS, BROKER_PORT, 60)
