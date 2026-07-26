@@ -36,7 +36,10 @@ function extractDeviceState(reading) {
   const recommendation = reading?.recommendation ?? {};
   const windowAvailable = recommendation.window_data_available === true;
   const airconAvailable = recommendation.ac_data_available === true;
-  const rawAirconState = reading?.ac_is_on ?? recommendation.ac_is_on;
+  // jh 수정함 - reading?.ac_is_on(top-level)은 백엔드가 절대 채우지 않는
+  // 죽은 fallback이었음(ac_is_on은 recommendation jsonb 안에만 저장됨).
+  // recommendation.ac_is_on만 신뢰하도록 정리.
+  const rawAirconState = recommendation.ac_is_on;
 
   return {
     windowAvailable,
