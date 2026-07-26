@@ -23,7 +23,7 @@ import time
 
 import requests
 
-API_URL = os.getenv("MOCK_API_URL", "http://127.0.0.1:8001/api/readings") #포트 확인하기!
+API_URL = os.getenv("MOCK_API_URL", "http://127.0.0.1:8001/api/readings")
 AUTH_TOKEN = os.getenv("AUTH_TOKEN", "")
 
 

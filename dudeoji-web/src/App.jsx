@@ -17,7 +17,8 @@ import RecommendationCard, {
 import EnvironmentCard from "./features/location/EnvironmentCard";
 import SavingsSummary from "./features/location/SavingsSummary";
 import LocationSwitcher from "./features/location/LocationSwitcher";
-import HeaderQuickControls from "./features/dashboard/HeaderQuickControls";
+// jh 수정함 - HeaderQuickControls는 이제 헤더가 아니라 RecommendationCard
+// 우측 상단에서 렌더링됨(2026-07-26, 팀 결정). 여기서 직접 안 씀.
 // jh 수정함 - LocationSwitcher/EnvironmentCard가 각자 useSelectedLocation()을
 // 따로 호출해서 서로 다른 위치를 가리키던 문제를 고치려고 Context를 추가했다.
 import {
@@ -27,7 +28,11 @@ import {
 import SensorReadings from "./features/sensors/SensorReadings";
 
 // 우리가 제작한 설정 컴포넌트 및 자동제어 팝업 컴포넌트
-import RecommendationPopup from "./features/dashboard/RecommendationPopup";
+// jh 수정함 - 자동제어 UI, 하드웨어 제어 연동 후 활성화 예정(팀 결정,
+// 2026-07-26). 팝업이 스타일/포지셔닝 없이 페이지 하단에 생 텍스트로
+// 렌더링되는 문제도 있어서, 재활성화 시 포지셔닝(모달/포탈)부터 손봐야 함.
+// 파일 자체는 지우지 않음 — TEAM_STRUCTURE.md 참고.
+// import RecommendationPopup from "./features/dashboard/RecommendationPopup";
 
 import {
   ProfileBadgeIcon,
@@ -444,7 +449,6 @@ function DashboardHome({
         />
 
         <LocationSwitcher />
-        <HeaderQuickControls />
       </header>
 
       <main>
@@ -489,13 +493,15 @@ function DashboardHome({
         />
       )}
 
-      {/* 💡 팝업 활성화 상태 여부를 감지할 수 있도록 콜백(setIsPopupActive)을 함께 전달합니다. */}
+      {/* jh 수정함 - 자동제어 UI, 하드웨어 제어 연동 후 활성화 예정(팀 결정,
+          2026-07-26). RecommendationPopup.jsx 파일은 보존, 마운트만 제거.
       <RecommendationPopup
         recommendation={rawRecommendation}
         currentToken={currentToken}
         setIsPopupActive={setIsPopupActive}
         placeId={selectedPlaceId}
       />
+      */}
     </div>
   );
 }

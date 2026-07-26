@@ -206,6 +206,11 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
                 )
                 continue
 
+            # jh 수정함 - save_reading_for_user()는 이제 기본적으로 팬아웃
+            # 저장(사용자의 모든 장소에 각각 행 저장)을 하고 대표 1건만
+            # 반환한다. 아래 reading_id/measured_at은 그 대표 행(기본 장소
+            # 우선) 기준이라, 이 소켓이 연결된 place_id와 다른 장소의 값일
+            # 수 있다 — place_id 필드 자체는 이 연결의 값 그대로라 정확함.
             await websocket.send_json(
                 {
                     "type": "reading_saved",

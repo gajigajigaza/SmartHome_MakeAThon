@@ -220,36 +220,23 @@ body {
   line-height: 1.6;
 }
 
-/* jh 수정함 - 상단 "현재 동작 상태" 배지. 추천 시작 전에는 렌더되지 않고,
-   시작 후에는 에어컨/환기 배지가 항상 둘 다 보인다(꺼짐/닫힘 상태도 표시해서
-   "동작 중일 때만 보이는" 문제를 없앴다) - is-active/is-muted로 강조 여부만 구분. */
-.recommendation-status-badges {
+/* jh 수정함(2026-07-26, 팀 결정) - 상태 배지(.recommendation-status-badge*)는
+   헤더에서 이식해온 HeaderQuickControls의 상태 표시와 중복이라 제거함.
+   대신 카드 우측 상단에 그 컴포넌트를 배치하는 레이아웃을 추가.
+   jh 수정함(오버플로 수정) - flex-wrap을 고정 breakpoint 뒤에 숨기지 않고
+   항상 허용한다. 타이틀(heading)과 4칸(HeaderQuickControls)을 합쳐 한 줄에
+   못 들어가면 자연스럽게 4칸이 다음 줄로 내려간다 — 내용 기반 wrap이
+   1차 메커니즘이고, 아래 미디어쿼리는 그 결과를 다듬는 보조 역할만 한다. */
+.recommendation-card-topbar {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 10px 16px;
 }
 
-.recommendation-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-
-  padding: 6px 14px;
-
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.recommendation-status-badge.is-active {
-  background: var(--green-light);
-  color: var(--green-dark);
-}
-
-.recommendation-status-badge.is-muted {
-  background: #eef1f0;
-  color: var(--muted);
+.recommendation-card-heading {
+  min-width: 0;
 }
 
 /* jh 수정함 - 추천카드.png 시안의 "추천 시작" 버튼. 실제 추천 결과는 이미

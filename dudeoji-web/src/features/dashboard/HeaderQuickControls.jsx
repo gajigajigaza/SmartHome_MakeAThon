@@ -1,6 +1,9 @@
 // src/features/dashboard/HeaderQuickControls.jsx
-// 우리집 오른쪽의 한 줄 상태창 2개 + 조작 버튼 2개입니다.
+// 상태창 2개 + 조작 버튼 2개(창문/에어컨)입니다.
 // 상태는 버튼 클릭값이 아니라 백엔드의 최신 실제 센서 기록을 기준으로 표시합니다.
+// jh 수정함 - 헤더에서 RecommendationCard 안(우측 상단)으로 이식됨(2026-07-26,
+// 팀 결정). 이름은 그대로 유지(파일 위치/컴포넌트명 변경 없음), 컴포넌트
+// 자체 로직·마크업·스타일은 이식 전과 동일 — 추천 강조(recommendedAction)만 추가.
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -36,7 +39,10 @@ function extractDeviceState(reading) {
   const recommendation = reading?.recommendation ?? {};
   const windowAvailable = recommendation.window_data_available === true;
   const airconAvailable = recommendation.ac_data_available === true;
-  const rawAirconState = reading?.ac_is_on ?? recommendation.ac_is_on;
+  // jh 수정함 - reading?.ac_is_on(top-level)은 백엔드가 절대 채우지 않는
+  // 죽은 fallback이었음(ac_is_on은 recommendation jsonb 안에만 저장됨).
+  // recommendation.ac_is_on만 신뢰하도록 정리.
+  const rawAirconState = recommendation.ac_is_on;
 
   return {
     windowAvailable,
@@ -60,7 +66,11 @@ function getStatusText({
   return isOn ? onText : offText;
 }
 
-export default function HeaderQuickControls() {
+// jh 수정함 - 헤더에서 추천 카드 안으로 이식하며 추가. recommendedAction은
+// 현재 추천의 action(예: "OPEN_WINDOW")을 그대로 받는다. 스타일 강조만
+// 하고 버튼 활성/비활성에는 관여하지 않는다(추천은 강제가 아니라는
+// 서비스 철학 — 아래 disabled 로직은 그대로 controlsDisabled만 따름).
+export default function HeaderQuickControls({ recommendedAction = null }) {
   const { selectedLocation } = useLocationContext();
   const selectedPlaceId = selectedLocation?.id ?? null;
   const {
@@ -222,6 +232,15 @@ export default function HeaderQuickControls() {
 
   const controlsDisabled = !selectedPlaceId || Boolean(pendingDevice);
 
+  // jh 수정함 - 버튼이 지금 제안하는 동작(windowAction/airconAction)이
+  // 추천의 action과 같을 때만 강조한다. 창문은 OPEN_WINDOW/CLOSE_WINDOW를
+  // 그대로 비교하면 되고(windowAction 값과 표현이 동일), 에어컨은 추천
+  // 쪽 action 이름이 "USE_AIRCON"이라 버튼이 "틀기"를 제안 중일 때만
+  // 매칭시킨다. MAINTAIN/ENJOY/ERROR/추천 없음(null)은 둘 다 false.
+  const windowRecommended = recommendedAction === windowAction;
+  const airconRecommended =
+    recommendedAction === "USE_AIRCON" && airconAction === "TURN_ON_AIRCON";
+
   return (
     <section
       className="header-device-controls"
@@ -239,7 +258,9 @@ export default function HeaderQuickControls() {
 
       <button
         type="button"
-        className="header-device-action"
+        className={`header-device-action${
+          windowRecommended ? " header-device-action--recommended" : ""
+        }`}
         disabled={controlsDisabled}
         onClick={() => sendControlCommand("window", windowAction)}
       >
@@ -258,7 +279,9 @@ export default function HeaderQuickControls() {
 
       <button
         type="button"
-        className="header-device-action"
+        className={`header-device-action${
+          airconRecommended ? " header-device-action--recommended" : ""
+        }`}
         disabled={controlsDisabled}
         onClick={() => sendControlCommand("aircon", airconAction)}
       >
