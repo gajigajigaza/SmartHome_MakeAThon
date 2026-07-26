@@ -62,9 +62,17 @@ def handle_sensor_payload(supabase, payload: dict, save_reading_fn):
         # 키가 없으면 None을 유지해 '닫힘'으로 오판하지 않습니다.
         "window_is_open": payload.get("window_is_open"),
         "ac_is_on": payload.get("ac_is_on"),
+        # jh 수정함 - current_mode는 이제 저장 단계(save_reading_for_user)가
+        # 장소별 auto_control_enabled로 다시 정하므로 이 값은 안 쓰임. 페이로드
+        # 형태 호환을 위해 계속 받기만 함.
         "current_mode": payload.get("current_mode", "MANUAL"),
     }
 
+    # jh 수정함 - place_id는 "누구 소유인지 식별"용으로만 쓰고, 실제 저장은
+    # save_reading_fn(=save_reading_for_user)의 기본 팬아웃(fan_out=True)이
+    # 이 사용자의 모든 장소에 각각 저장한다. 물리 센서 1개가 라즈베리파이
+    # 게이트웨이를 거쳐 들어오는 이 MQTT 경로가 "실내값은 장소 공통" 제품
+    # 결정의 핵심 대상 경로임 — WebSocket(/ws/sensors)도 같은 기본값을 쓴다.
     save_result = save_reading_fn(
         user_id,
         sensor_data,

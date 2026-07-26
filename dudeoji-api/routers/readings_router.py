@@ -47,6 +47,12 @@ class SensorReadingCreate(BaseModel):
     ac_is_on: Optional[bool] = None
     current_mode: Literal["MANUAL", "AUTO"] = "MANUAL"
 
+    # jh 수정함 - 현장 하드웨어(전력 측정 모듈/PIR 재실 센서) 수신용.
+    # 008 마이그레이션으로 readings에 같은 이름 top-level 컬럼을 추가함.
+    # 미연결 시 None 유지(ac_is_on/window_is_open과 동일한 규칙).
+    power_watt: Optional[float] = Field(default=None, ge=0, le=20000)
+    person_detected: Optional[bool] = None
+
 
 class SavingsEstimate(BaseModel):
     power_saved_kwh: float
@@ -467,32 +473,38 @@ def _read_required_weather_number(
     return number
 
 
-async def save_reading_for_user(
+# jh 수정함 - 팬아웃 전용 스킵 예외. HTTPException(422/503)과 구분해서
+# fan-out 루프가 "이 장소만 건너뛰기"로 처리할 수 있게 표시만 해준다.
+class _PlaceSaveSkipped(Exception):
+    def __init__(self, place_id, detail: str):
+        super().__init__(detail)
+        self.place_id = place_id
+        self.detail = detail
+
+
+async def _save_reading_to_place(
     user_id: int,
-    sensor_data_dict: dict,
-    place_id: Optional[int] = None,
-    reading_source: str = "SENSOR",
+    base_sensor_data: SensorReadingCreate,
+    place: dict,
+    reading_source: str,
+    cumulative_kwh_this_month: float,
 ) -> SensorReadingResponse:
-    sensor_data = SensorReadingCreate.model_validate(sensor_data_dict)
-    place = get_place_for_user(user_id, place_id)
+    """실내값 하나를 특정 장소 기준으로 저장한다.
 
-    if not place:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="실외 날씨 API를 조회할 장소가 등록되어 있지 않습니다.",
-        )
-
+    fan-out(모든 장소)/단일 장소 저장 양쪽에서 공유하는 핵심 로직. 장소별로
+    실외값·추천·자동제어 모드가 다 다를 수 있어 base_sensor_data를 복사해서
+    이 장소 전용으로만 값을 채운다(원본은 다른 장소 처리에 재사용됨).
+    """
+    sensor_data = base_sensor_data.model_copy()
     resolved_place_id = place["id"]
     lat = place.get("lat") if place.get("lat") is not None else place.get("latitude")
     lon = place.get("lon") if place.get("lon") is not None else place.get("longitude")
 
     if lat is None or lon is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                "선택한 장소의 위치가 설정되지 않아 실외 날씨 API를 "
-                "조회할 수 없습니다. 장소 위치를 먼저 설정해 주세요."
-            ),
+        raise _PlaceSaveSkipped(
+            resolved_place_id,
+            "선택한 장소의 위치가 설정되지 않아 실외 날씨 API를 "
+            "조회할 수 없습니다. 장소 위치를 먼저 설정해 주세요.",
         )
 
     outdoor_weather, weather_status = await _load_outdoor_weather(
@@ -501,33 +513,39 @@ async def save_reading_for_user(
         float(lon),
     )
     if not outdoor_weather:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "날씨 API 실패로 측정 기록을 저장하지 않았습니다. "
-                + weather_status.get("error_summary", "API 연결 상태를 확인해 주세요.")
-            ),
+        raise _PlaceSaveSkipped(
+            resolved_place_id,
+            "날씨 API 실패로 측정 기록을 저장하지 않았습니다. "
+            + weather_status.get("error_summary", "API 연결 상태를 확인해 주세요."),
         )
 
-    sensor_data.outdoor_temperature = _read_required_weather_number(
-        outdoor_weather, "outdoor_temperature", -50, 80
-    )
-    sensor_data.outdoor_humidity = _read_required_weather_number(
-        outdoor_weather, "outdoor_humidity", 0, 100
-    )
-    sensor_data.wind_speed = _read_required_weather_number(
-        outdoor_weather, "wind_speed", 0, 100
-    )
-    sensor_data.pm25 = _read_required_weather_number(
-        outdoor_weather, "pm25", 0, 1000
-    )
-    weather_condition = outdoor_weather.get("weather_condition")
-    if not isinstance(weather_condition, str) or not weather_condition.strip():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="기상청 API 응답에 날씨 상태가 없습니다.",
+    try:
+        sensor_data.outdoor_temperature = _read_required_weather_number(
+            outdoor_weather, "outdoor_temperature", -50, 80
         )
-    sensor_data.weather_condition = weather_condition.strip()
+        sensor_data.outdoor_humidity = _read_required_weather_number(
+            outdoor_weather, "outdoor_humidity", 0, 100
+        )
+        sensor_data.wind_speed = _read_required_weather_number(
+            outdoor_weather, "wind_speed", 0, 100
+        )
+        sensor_data.pm25 = _read_required_weather_number(
+            outdoor_weather, "pm25", 0, 1000
+        )
+        weather_condition = outdoor_weather.get("weather_condition")
+        if not isinstance(weather_condition, str) or not weather_condition.strip():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="기상청 API 응답에 날씨 상태가 없습니다.",
+            )
+        sensor_data.weather_condition = weather_condition.strip()
+    except HTTPException as error:
+        raise _PlaceSaveSkipped(resolved_place_id, str(error.detail)) from error
+
+    # jh 수정함 - current_mode는 더 이상 페이로드를 안 믿고, 이 장소의
+    # auto_control_enabled 설정으로 서버가 정한다(실외값을 항상 API 값으로
+    # 덮어쓰는 것과 같은 원칙). fan-out이면 장소마다 모드가 다를 수 있다.
+    sensor_data.current_mode = "AUTO" if place.get("auto_control_enabled") else "MANUAL"
 
     previous_action = "MAINTAIN"
     target_cooldown = place.get("target_cooldown_minutes") or 30
@@ -548,15 +566,20 @@ async def save_reading_for_user(
         resolved_place_id,
         sensor_data.ac_is_on,
     )
-    cumulative_kwh_this_month = get_cumulative_kwh(user_id)
 
-    recommendation = calculate_recommendation(
-        sensor_data=sensor_data,
-        previous_action=previous_action,
-        target_cooldown_minutes=target_cooldown,
-        is_ac_on=actual_ac_state,
-        ac_run_time_minutes=ac_run_time_minutes,
-    )
+    try:
+        recommendation = calculate_recommendation(
+            sensor_data=sensor_data,
+            previous_action=previous_action,
+            target_cooldown_minutes=target_cooldown,
+            is_ac_on=actual_ac_state,
+            ac_run_time_minutes=ac_run_time_minutes,
+        )
+    except HTTPException as error:
+        # calculate_recommendation()도 실외값 불완전 시 503을 던질 수 있음
+        # (정상 경로에선 위에서 이미 검증돼서 거의 안 일어남) — 같은
+        # "이 장소만 스킵" 취급으로 맞춘다.
+        raise _PlaceSaveSkipped(resolved_place_id, str(error.detail)) from error
 
     normalized_source = (
         reading_source
@@ -621,6 +644,97 @@ async def save_reading_for_user(
     return saved_reading
 
 
+def _get_all_places_for_user(user_id: int) -> list[dict]:
+    result = (
+        supabase.table(PLACES_TABLE)
+        .select("*")
+        .eq("user_id", user_id)
+        .order("id")
+        .execute()
+    )
+    return result.data or []
+
+
+async def save_reading_for_user(
+    user_id: int,
+    sensor_data_dict: dict,
+    place_id: Optional[int] = None,
+    reading_source: str = "SENSOR",
+    fan_out: bool = True,
+) -> SensorReadingResponse:
+    """실내값 하나를 저장한다.
+
+    jh 수정함 - 팬아웃 도입: 물리 센서는 사용자당 1개라는 제품 결정에 따라,
+    실내값 1건이 들어오면 그 사용자의 모든 장소에 각각 (그 장소 좌표의
+    실외값 + 개별 추천) readings 행을 하나씩 만든다. fan_out=False면 옛날
+    방식대로 place_id 하나만 저장한다(/dev/mock-reading 전용 — 테스트
+    버튼은 "이 카드만" 확인하는 용도라 팬아웃 대상이 아님).
+
+    반환값은 항상 대표 1건: is_default 장소 저장이 성공했으면 그 행,
+    아니면(기본장소 없음 또는 기본장소가 스킵됨) 첫 성공 행. 호출부 3곳
+    (create_reading/create_mock_reading/realtime_router)의 응답 계약은
+    바뀌지 않는다 — fan_out 여부와 무관하게 항상 SensorReadingResponse
+    하나를 돌려준다.
+    """
+    base_sensor_data = SensorReadingCreate.model_validate(sensor_data_dict)
+
+    if not fan_out:
+        place = get_place_for_user(user_id, place_id)
+        if not place:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="실외 날씨 API를 조회할 장소가 등록되어 있지 않습니다.",
+            )
+        cumulative_kwh_this_month = get_cumulative_kwh(user_id)
+        try:
+            return await _save_reading_to_place(
+                user_id, base_sensor_data, place, reading_source, cumulative_kwh_this_month
+            )
+        except _PlaceSaveSkipped as error:
+            status_code = (
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+                if "위치가 설정되지 않아" in error.detail
+                else status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+            raise HTTPException(status_code=status_code, detail=error.detail) from error
+
+    places = _get_all_places_for_user(user_id)
+    if not places:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="실외 날씨 API를 조회할 장소가 등록되어 있지 않습니다.",
+        )
+
+    # jh 수정함 - 사용자 전체 기준 값이라 장소마다 다시 계산할 필요 없음.
+    # 팬아웃 진입 전 1회만 조회해서 모든 장소의 estimate_savings()에 재사용.
+    cumulative_kwh_this_month = get_cumulative_kwh(user_id)
+
+    successes: list[tuple[dict, SensorReadingResponse]] = []
+    last_skip_detail = "모든 장소의 실외 날씨 API 조회에 실패했습니다."
+
+    for place in places:
+        try:
+            saved = await _save_reading_to_place(
+                user_id, base_sensor_data, place, reading_source, cumulative_kwh_this_month
+            )
+            successes.append((place, saved))
+        except _PlaceSaveSkipped as error:
+            last_skip_detail = error.detail
+            print(f"[readings] place_id={error.place_id} 저장 스킵: {error.detail}")
+
+    if not successes:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=last_skip_detail,
+        )
+
+    for place, saved in successes:
+        if place.get("is_default"):
+            return saved
+
+    return successes[0][1]
+
+
 # jh 수정함 - 프론트 "테스트 모드" 버튼용 가짜 센서값 생성.
 def generate_mock_sensor_reading() -> dict:
     """실내 테스트값만 만듭니다. 실외값은 저장 단계에서 날씨 API로 채웁니다."""
@@ -650,6 +764,8 @@ async def create_reading(
     place_id: Optional[int] = Query(default=None, ge=1),
     current_user: dict = Depends(get_current_user),
 ):
+    # jh 수정함 - fan_out 기본값(True)이라 place_id는 하위호환으로만 받고
+    # 실제 저장 대상 결정엔 안 쓰임 — 이 사용자의 모든 장소에 팬아웃 저장됨.
     return await save_reading_for_user(
         current_user["id"],
         sensor_data.model_dump(),
@@ -670,11 +786,14 @@ async def create_mock_reading(
 ):
     mock_data = generate_mock_sensor_reading()
     source = "TEST_AUTO" if test_mode == "auto" else "TEST_MANUAL"
+    # jh 수정함 - 테스트 버튼은 "선택한 장소 카드 확인" 용도라 팬아웃 대상이
+    # 아님(결정사항). fan_out=False로 옛날처럼 지정 place 단일 저장 유지.
     return await save_reading_for_user(
         current_user["id"],
         mock_data,
         place_id=place_id,
         reading_source=source,
+        fan_out=False,
     )
 
 
