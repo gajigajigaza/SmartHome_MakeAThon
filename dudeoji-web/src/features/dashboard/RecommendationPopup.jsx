@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 
-export default function RecommendationPopup({ recommendation, currentToken, setIsPopupActive, placeId }) {
+import { request } from '../../api';
+
+export default function RecommendationPopup({ recommendation, setIsPopupActive, placeId }) {
   const [isOpen, setIsOpen] = useState(false);
   const [rejectedId] = useState(null); // 중복 팝업 방지용 (필요시 활성화)
 
@@ -25,25 +27,22 @@ export default function RecommendationPopup({ recommendation, currentToken, setI
   const handleConfirm = async () => {
     setIsOpen(false); // 여기서 isOpen이 false가 되며 App.jsx의 타이머가 재개됩니다.
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/devices/control', {
+      // jh 수정함 - localhost 직접 fetch 제거, api.js의 request() 헬퍼로 교체
+      // (배포 환경에서 VITE_API_BASE_URL을 따라가도록). auth: true가 토큰을
+      // 알아서 붙여주므로 currentToken을 직접 헤더에 넣을 필요가 없어졌다.
+      await request('/api/devices/control', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentToken}`
-        },
+        auth: true,
         body: JSON.stringify({
           place_id: placeId,
           action: recommendation.action
         })
       });
 
-      if (response.ok) {
-        alert(`${recommendation.title} 명령을 전송했습니다.`);
-      } else {
-        alert("기기 제어 요청에 실패했습니다.");
-      }
+      alert(`${recommendation.title} 명령을 전송했습니다.`);
     } catch (error) {
       console.error("오류:", error);
+      alert("기기 제어 요청에 실패했습니다.");
     }
   };
 
