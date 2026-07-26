@@ -115,9 +115,18 @@ def get_cumulative_kwh(user_id: str) -> float:
 
     readings.place_id가 있는 행은 그 장소에 등록된 에어컨의 정격 전력을 그대로
     쓴다. place_id가 NULL인 행(마이그레이션 이전에 저장된 기존 데이터, 또는
-    아직 readings_router.py가 place_id를 채우지 않는 경우)은 사용자의
-    (가장 오래된) 장소 정격 전력으로 근사한다 — 알려진 한계, CLAUDE.md의
-    readings_router.py 항목 참고.
+    place_id 없이 저장된 예외 상황)은 사용자의 (가장 오래된) 장소 정격 전력으로
+    근사한다.
+
+    jh 수정함 - readings_router.py의 팬아웃 도입(실내값 1건 → 사용자의 모든
+    장소에 각각 저장) 때문에, 물리 센서 한 번 push당 여러 장소 행이 거의
+    같은 시각에 연달아 insert된다. 이전처럼 "user_id로만 조회해서 전체를
+    시간순으로 훑으며 연속 행끼리 시간차"를 계산하면, 같은 배치 안 형제
+    행끼리는 몇 초 차이(→ kWh 거의 0)로 뭉개지고 배치 사이 진짜 간격은
+    그 배치의 마지막 place에만 몰빵돼서 소비량이 왜곡된다. place_id별로
+    먼저 그룹화한 뒤 그룹 안에서만 연속 시간차를 계산하도록 고쳤다.
+    place_id가 NULL인 행들은 서로 하나의 그룹으로만 묶는다(다른 place
+    그룹과 안 섞이게).
     """
     place_result = (
         supabase.table(PLACES_TABLE)
@@ -155,22 +164,30 @@ def get_cumulative_kwh(user_id: str) -> float:
     if len(readings) < 2:
         return 0.0
 
+    readings_by_place: dict = {}
+    for reading in readings:
+        readings_by_place.setdefault(reading.get("place_id"), []).append(reading)
+
     total_kwh = 0.0
-    for current_reading, next_reading in zip(readings, readings[1:]):
-        action = (current_reading.get("recommendation") or {}).get("action")
-        is_ac_on = action in ("USE_AIRCON", "ENJOY")
-        if not is_ac_on:
+    for place_id, place_readings in readings_by_place.items():
+        if len(place_readings) < 2:
             continue
 
-        current_time = datetime.fromisoformat(
-            current_reading["measured_at"].replace("Z", "+00:00")
-        )
-        next_time = datetime.fromisoformat(
-            next_reading["measured_at"].replace("Z", "+00:00")
-        )
-        hours = (next_time - current_time).total_seconds() / 3600
-        power_kw = power_kw_for(current_reading.get("place_id"))
-        total_kwh += hours * power_kw
+        power_kw = power_kw_for(place_id)
+        for current_reading, next_reading in zip(place_readings, place_readings[1:]):
+            action = (current_reading.get("recommendation") or {}).get("action")
+            is_ac_on = action in ("USE_AIRCON", "ENJOY")
+            if not is_ac_on:
+                continue
+
+            current_time = datetime.fromisoformat(
+                current_reading["measured_at"].replace("Z", "+00:00")
+            )
+            next_time = datetime.fromisoformat(
+                next_reading["measured_at"].replace("Z", "+00:00")
+            )
+            hours = (next_time - current_time).total_seconds() / 3600
+            total_kwh += hours * power_kw
 
     return total_kwh
 
