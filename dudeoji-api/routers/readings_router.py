@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field, ValidationError
 from auth_utils import execute_supabase_with_retry, get_current_user
 from db import READINGS_TABLE, PLACES_TABLE, supabase
-from mqtt_handler import publish_device_command
+from device_connection_hub import DeviceConnectionError, device_hub
 from recommendation_engine import LOGIC_THRESHOLDS, determine_action
 from sensor_realtime_hub import reading_hub
 from weather import fetch_air_pollution, fetch_current_weather
@@ -1003,15 +1003,21 @@ def read_savings_summary(
         get_place_for_user(current_user["id"], place_id)
     return get_savings_summary(current_user["id"], period, place_id)
 @router.post("/devices/control")
-def control_device(
+async def control_device(
     command: DeviceControl,
     current_user: dict = Depends(get_current_user),
 ):
-    get_place_for_user(current_user["id"], command.place_id)
+    # 선택 장소가 로그인 사용자의 소유인지 먼저 확인합니다.
+    await asyncio.to_thread(
+        get_place_for_user,
+        current_user["id"],
+        command.place_id,
+    )
 
     try:
-        return publish_device_command(
-            place_id=command.place_id,
+        return await device_hub.send_command(
+            user_id=current_user["id"],
+            requested_place_id=command.place_id,
             action=command.action,
         )
     except ValueError as error:
@@ -1019,7 +1025,7 @@ def control_device(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(error),
         ) from error
-    except RuntimeError as error:
+    except DeviceConnectionError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(error),

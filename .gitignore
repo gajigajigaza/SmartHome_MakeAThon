@@ -22,3 +22,5 @@ CLAUDE.md
 .claude/
 plans/
 
+
+dudeoji-firmware/**/secrets.h
