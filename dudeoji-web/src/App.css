@@ -408,7 +408,10 @@ body {
 
 .environment-mock-button {
   /* jh 수정함 - 상하 padding을 1px 줄여서 버튼 높이가 제목(h3)보다 커지지
-     않게 맞췄다(안 그러면 테스트 모드 ON일 때 카드 높이가 1px 더 커짐). */
+     않게 맞췄다(안 그러면 테스트 모드 ON일 때 카드 높이가 1px 더 커짐).
+     flex-shrink: 0 - .environment-mock-form 안에서 다른 입력칸에 밀려
+     혼자 다음 줄로 내려가거나 찌그러지지 않게 고정한다. */
+  flex-shrink: 0;
   padding: 3px 10px;
 
   border: 1px solid var(--border);
@@ -431,6 +434,125 @@ body {
 
   color: var(--muted);
   font-size: 13px;
+}
+
+/* jh 수정함 - "가짜 데이터 받기" 버튼을 대체하는 테스트 모드 입력 폼.
+   실내 입력/토글/전송 버튼 행과, 그 아래 접힘 섹션(실외 직접 입력)을
+   세로로 쌓는다. */
+.environment-mock-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  margin: 0 0 16px;
+  padding: 10px;
+
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+}
+
+/* jh 수정함 - 전송 버튼만 혼자 다음 줄로 내려가지 않도록 nowrap + 각 요소를
+   컴팩트하게 줄여서 한 줄에 들어가게 한다. 그래도 카드 폭이 아주
+   좁아지면(모바일) overflow-x로 가로 스크롤되게 해서 잘림은 막는다. */
+.environment-mock-form-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 8px;
+
+  overflow-x: auto;
+}
+
+.environment-mock-numbers {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.environment-mock-field {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 3px;
+
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.environment-mock-field input {
+  width: 48px;
+  padding: 3px 6px;
+
+  border: 1px solid var(--border);
+  border-radius: 8px;
+
+  font-size: 12px;
+}
+
+.environment-mock-tristate {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 3px;
+
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.environment-mock-tristate-options {
+  display: flex;
+  gap: 3px;
+}
+
+.environment-mock-tristate-button {
+  padding: 3px 6px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  background: var(--card);
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.environment-mock-tristate-button.is-active {
+  border-color: var(--green);
+  background: var(--green-light);
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+/* jh 수정함 - 테스트 모드의 "실외 직접 입력(시연용)" 접힘 섹션. 기본은
+   접혀 있고(<details> 기본 동작), 펼치면 실외 온도/습도 입력이 보인다. */
+.environment-mock-outdoor summary {
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.environment-mock-outdoor-badge {
+  margin-left: 6px;
+  padding: 2px 6px;
+
+  border-radius: 999px;
+
+  background: var(--green-light);
+  color: var(--green-dark);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.environment-mock-outdoor-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+
+  margin-top: 8px;
 }
 
 /* jh 수정함 - 위치 미설정 안내("위치를 설정해 주세요")를 실외 카드 안에서
@@ -596,6 +718,13 @@ body {
 /* jh 수정함 - 절감 요약 로딩 중 스켈레톤(펄스 애니메이션) */
 .saving-box.saving-box-skeleton {
   opacity: 0.75;
+}
+
+/* jh 수정함 - 창문 센서 미연결이라 절감액을 아직 계산할 수 없는 상태.
+   "0원"과 헷갈리지 않도록 saving-box-error와 같은 중립색 톤으로 구분한다. */
+.saving-box.saving-box-pending {
+  background: #eef1f4;
+  color: var(--text);
 }
 
 .saving-skeleton-bar {

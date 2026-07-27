@@ -1,11 +1,14 @@
 // src/features/location/EnvironmentCard.jsx
 // 담당: 정현(나) (위치 추가 · 실외 날씨 · 실내외 환경 · 예상 절감)
 //
-// 실내는 sensorData(백엔드 최신 기록)를 그대로 표시하고, 실외는 선택된
-// 위치(useSelectedLocation)의 위경도로 GET /api/weather를 호출해 표시합니다.
-import { useEffect, useState } from "react";
+// 실내·실외 모두 sensorData(백엔드 최신 reading)를 그대로 표시합니다.
+// jh 수정함 - 실외는 예전엔 GET /api/weather를 따로 실시간 조회했는데,
+// 그러면 추천 카드가 판단에 쓴 실외값(reading에 저장된 값)과 이 카드가
+// 보여주는 실외값이 서로 다른 시점의 값이라 어긋날 수 있었다. 같은
+// reading 하나에서 실내·실외를 함께 읽도록 통일했다(중복 요청도 제거).
+// GET /api/weather 자체는 다른 용도로 쓸 수 있어 백엔드에는 그대로 둔다.
+import { useState } from "react";
 
-import { request } from "../../api";
 import { createMockReading } from "../sensors/readingsApi";
 import { useSensorRealtimeContext } from "../sensors/SensorRealtimeContext";
 import { useLocationContext } from "./LocationContext";
@@ -23,6 +26,20 @@ const WEATHER_EMOJI = {
 function getWeatherEmoji(condition) {
   return WEATHER_EMOJI[condition] || "🌤️";
 }
+
+// jh 수정함 - 테스트 모드 폼의 창문/에어컨 3-state 토글 옵션.
+// "미연결"을 고르면 window_is_open/ac_is_on을 null로 보내 센서 미연결 상태를 재현한다.
+const WINDOW_STATE_OPTIONS = [
+  { value: "open", label: "열림" },
+  { value: "closed", label: "닫힘" },
+  { value: "unknown", label: "미연결" },
+];
+
+const AC_STATE_OPTIONS = [
+  { value: "on", label: "켜짐" },
+  { value: "off", label: "꺼짐" },
+  { value: "unknown", label: "미연결" },
+];
 
 export function TemperatureValue({ value }) {
   if (value === null || value === undefined) {
@@ -55,21 +72,28 @@ export default function EnvironmentCard({
   const realtimeMatchesSelectedPlace =
     realtimeReading &&
     String(realtimeReading.place_id) === String(selectedLocation?.id);
+  // jh 수정함 - realtime 브로드캐스트(WebSocket)도 저장된 reading 전체를 그대로
+  // 보내주므로, 예전엔 빠져 있던 실외값도 같이 뽑아서 HTTP 폴링 경로와 동일하게 맞췄다.
   const activeSensorData = realtimeMatchesSelectedPlace
     ? {
         indoorTemperature: realtimeReading.indoor_temperature,
         indoorHumidity: realtimeReading.indoor_humidity,
+        outdoorTemperature: realtimeReading.outdoor_temperature,
+        outdoorHumidity: realtimeReading.outdoor_humidity,
+        weatherCondition: realtimeReading.weather_condition,
       }
     : sensorData;
   const hasLocation =
     selectedLocation?.lat != null && selectedLocation?.lon != null;
+  // jh 수정함 - 장소는 있지만 아직 reading이 한 건도 없는 경우(막 등록한 장소
+  // 등) 실외 온도/습도가 null/undefined다 — 이때 "측정 대기 중"을 보여준다.
+  const hasOutdoorReading =
+    activeSensorData?.outdoorTemperature != null &&
+    activeSensorData?.outdoorHumidity != null;
 
-  const [outdoorWeather, setOutdoorWeather] = useState(null);
-  const [isWeatherLoading, setIsWeatherLoading] = useState(false);
-  const [weatherError, setWeatherError] = useState("");
   // jh 수정함 - 실외 카드가 비어 있을 때(is-empty) "+" 버튼으로 여는 위치 검색
-  // 팝오버 열림 상태. 위치가 저장되면(hasLocation이 true가 됨) 위 useEffect가
-  // 알아서 날씨를 다시 불러오므로 별도 재조회 로직은 필요 없다.
+  // 팝오버 열림 상태. 위치가 저장되면(hasLocation이 true가 됨) 다음 reading
+  // 폴링/realtime 브로드캐스트가 그 장소의 실외값을 자연히 채워준다.
   const [isLocationPopoverOpen, setIsLocationPopoverOpen] = useState(false);
 
   // jh 수정함 - 개발/데모용 "테스트 모드" 토글. 서버에 저장하지 않는 로컬 state라
@@ -77,6 +101,19 @@ export default function EnvironmentCard({
   const [isTestModeOn, setIsTestModeOn] = useState(false);
   const [isMockReadingLoading, setIsMockReadingLoading] = useState(false);
   const [mockReadingError, setMockReadingError] = useState("");
+  // jh 수정함 - "가짜 데이터 받기" 버튼(랜덤 생성)을 입력 폼으로 교체.
+  // 창문/에어컨은 기본값을 "미연결"로 둬서, 실제 하드웨어가 붙기 전
+  // 기본 상태(리드 스위치/전원 센서 없음)를 그대로 재현한다.
+  const [mockIndoorTemperature, setMockIndoorTemperature] = useState("26");
+  const [mockIndoorHumidity, setMockIndoorHumidity] = useState("60");
+  const [mockWindowState, setMockWindowState] = useState("unknown");
+  const [mockAcState, setMockAcState] = useState("unknown");
+  // jh 수정함 - "실외 직접 입력(시연용)". 비워두면(빈 문자열) 저장 경로가
+  // 실제 날씨 API 값을 그대로 쓴다 — 기본값이 빈 문자열인 이유.
+  const [mockOutdoorTemperature, setMockOutdoorTemperature] = useState("");
+  const [mockOutdoorHumidity, setMockOutdoorHumidity] = useState("");
+  const hasOutdoorOverride =
+    mockOutdoorTemperature.trim() !== "" || mockOutdoorHumidity.trim() !== "";
 
   async function handleLocationSelect(lat, lon) {
     if (!selectedLocation) {
@@ -87,14 +124,37 @@ export default function EnvironmentCard({
     setIsLocationPopoverOpen(false);
   }
 
-  // jh 수정함 - POST /api/dev/mock-reading으로 가짜 reading을 하나 저장한 뒤,
+  // jh 수정함 - POST /api/dev/mock-reading으로 입력한 값을 하나 저장한 뒤,
   // App.jsx의 기존 loadLatestReading() 갱신 패턴을 그대로 재사용해서 화면을 새로고침한다.
-  async function handleMockReadingClick() {
+  async function handleMockFormSubmit(event) {
+    event.preventDefault();
     setIsMockReadingLoading(true);
     setMockReadingError("");
 
+    const windowIsOpen =
+      mockWindowState === "open"
+        ? true
+        : mockWindowState === "closed"
+          ? false
+          : null;
+    const acIsOn =
+      mockAcState === "on" ? true : mockAcState === "off" ? false : null;
+    const outdoorTemperature =
+      mockOutdoorTemperature.trim() === ""
+        ? null
+        : Number(mockOutdoorTemperature);
+    const outdoorHumidity =
+      mockOutdoorHumidity.trim() === "" ? null : Number(mockOutdoorHumidity);
+
     try {
-      await createMockReading(selectedLocation?.id ?? null, "manual");
+      await createMockReading(selectedLocation?.id ?? null, "manual", {
+        indoorTemperature: Number(mockIndoorTemperature),
+        indoorHumidity: Number(mockIndoorHumidity),
+        windowIsOpen,
+        acIsOn,
+        outdoorTemperature,
+        outdoorHumidity,
+      });
       await onMockReadingCreated?.();
     } catch (error) {
       setMockReadingError(error.message);
@@ -102,40 +162,6 @@ export default function EnvironmentCard({
       setIsMockReadingLoading(false);
     }
   }
-
-  useEffect(() => {
-    if (!hasLocation) {
-      return;
-    }
-
-    let isCancelled = false;
-    setIsWeatherLoading(true);
-    setWeatherError("");
-
-    request(
-      `/api/weather?lat=${selectedLocation.lat}&lon=${selectedLocation.lon}`,
-      { auth: true },
-    )
-      .then((data) => {
-        if (!isCancelled) {
-          setOutdoorWeather(data);
-        }
-      })
-      .catch((error) => {
-        if (!isCancelled) {
-          setWeatherError(error.message);
-        }
-      })
-      .finally(() => {
-        if (!isCancelled) {
-          setIsWeatherLoading(false);
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [hasLocation, selectedLocation?.lat, selectedLocation?.lon]);
 
   return (
     <article
@@ -155,19 +181,131 @@ export default function EnvironmentCard({
             />
             테스트 모드
           </label>
-
-          {isTestModeOn && (
-            <button
-              type="button"
-              className="environment-mock-button"
-              onClick={handleMockReadingClick}
-              disabled={isMockReadingLoading}
-            >
-              {isMockReadingLoading ? "생성 중..." : "가짜 데이터 받기"}
-            </button>
-          )}
         </div>
       </div>
+
+      {isTestModeOn && (
+        <form className="environment-mock-form" onSubmit={handleMockFormSubmit}>
+          <div className="environment-mock-form-row">
+            <div className="environment-mock-numbers">
+              <label className="environment-mock-field">
+                온도(℃)
+                <input
+                  type="number"
+                  step="0.1"
+                  required
+                  value={mockIndoorTemperature}
+                  onChange={(event) =>
+                    setMockIndoorTemperature(event.target.value)
+                  }
+                />
+              </label>
+
+              <label className="environment-mock-field">
+                습도(%)
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="100"
+                  required
+                  value={mockIndoorHumidity}
+                  onChange={(event) =>
+                    setMockIndoorHumidity(event.target.value)
+                  }
+                />
+              </label>
+            </div>
+
+            <div className="environment-mock-tristate">
+              <span>창문</span>
+              <div className="environment-mock-tristate-options">
+                {WINDOW_STATE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`environment-mock-tristate-button ${
+                      mockWindowState === option.value ? "is-active" : ""
+                    }`}
+                    onClick={() => setMockWindowState(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="environment-mock-tristate">
+              <span>에어컨</span>
+              <div className="environment-mock-tristate-options">
+                {AC_STATE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`environment-mock-tristate-button ${
+                      mockAcState === option.value ? "is-active" : ""
+                    }`}
+                    onClick={() => setMockAcState(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="environment-mock-button"
+              disabled={isMockReadingLoading}
+            >
+              {isMockReadingLoading ? "전송 중..." : "전송"}
+            </button>
+          </div>
+
+          {/* jh 수정함 - 실외값은 기본적으로 날씨 API 실측을 쓰므로 접힘
+              섹션으로 숨겨두고, 시연/검증용으로 필요할 때만 펼쳐서 override한다. */}
+          <details className="environment-mock-outdoor">
+            <summary>
+              실외 직접 입력 (시연용)
+              {hasOutdoorOverride && (
+                <span className="environment-mock-outdoor-badge">
+                  실외 override 적용 중
+                </span>
+              )}
+            </summary>
+
+            <div className="environment-mock-outdoor-fields">
+              <label className="environment-mock-field">
+                실외 온도(℃)
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder="실제 날씨"
+                  value={mockOutdoorTemperature}
+                  onChange={(event) =>
+                    setMockOutdoorTemperature(event.target.value)
+                  }
+                />
+              </label>
+
+              <label className="environment-mock-field">
+                실외 습도(%)
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="100"
+                  placeholder="실제 날씨"
+                  value={mockOutdoorHumidity}
+                  onChange={(event) =>
+                    setMockOutdoorHumidity(event.target.value)
+                  }
+                />
+              </label>
+            </div>
+          </details>
+        </form>
+      )}
 
       {mockReadingError && (
         <p className="environment-mock-error">{mockReadingError}</p>
@@ -189,13 +327,15 @@ export default function EnvironmentCard({
         </div>
 
         <div
-          className={`environment-item outdoor ${!hasLocation ? "is-empty" : ""}`}
+          className={`environment-item outdoor ${
+            !hasLocation || !hasOutdoorReading ? "is-empty" : ""
+          }`}
         >
           <div className="environment-title">
             <span>실외</span>
             {hasLocation ? (
               <span className="environment-emoji">
-                {getWeatherEmoji(outdoorWeather?.weather_condition)}
+                {getWeatherEmoji(activeSensorData?.weatherCondition)}
               </span>
             ) : (
               // jh 수정함 - 위치 미설정 상태에선 날씨 이모지 자리에 "+" 버튼을 놓고,
@@ -213,17 +353,15 @@ export default function EnvironmentCard({
 
           {!hasLocation ? (
             <p className="environment-outdoor-empty">위치를 설정해 주세요</p>
-          ) : isWeatherLoading ? (
-            <p>불러오는 중...</p>
-          ) : weatherError ? (
-            <p>{weatherError}</p>
+          ) : !hasOutdoorReading ? (
+            <p className="environment-outdoor-empty">측정 대기 중</p>
           ) : (
             <>
               <strong>
-                <TemperatureValue value={outdoorWeather?.outdoor_temperature} />
+                <TemperatureValue value={activeSensorData?.outdoorTemperature} />
               </strong>
               <p>
-                <HumidityValue value={outdoorWeather?.outdoor_humidity} />
+                <HumidityValue value={activeSensorData?.outdoorHumidity} />
               </p>
             </>
           )}

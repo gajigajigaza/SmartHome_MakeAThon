@@ -49,6 +49,10 @@ function convertReading(backendReading) {
     indoorHumidity: backendReading.indoor_humidity,
     outdoorTemperature: backendReading.outdoor_temperature,
     outdoorHumidity: backendReading.outdoor_humidity,
+    // jh 수정함 - EnvironmentCard의 실외 카드가 GET /api/weather 실시간 조회
+    // 대신 이 reading의 실외값을 그대로 쓰도록 바꿨다(추천 판단에 쓴 값과
+    // 표시값을 일치시키기 위함). 날씨 이모지에 필요한 weather_condition도 같이 넘긴다.
+    weatherCondition: backendReading.weather_condition,
     recordedAt: new Date(backendReading.measured_at),
   };
 }
@@ -359,6 +363,7 @@ function DashboardHome({
         indoorHumidity: latestReading.indoorHumidity,
         outdoorTemperature: latestReading.outdoorTemperature,
         outdoorHumidity: latestReading.outdoorHumidity,
+        weatherCondition: latestReading.weatherCondition,
       });
 
       if (latestBackendReading && latestBackendReading.recommendation) {

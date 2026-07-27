@@ -40,11 +40,15 @@ def run_simulator():
 
     while True:
         # 데이터에 약간의 노이즈(랜덤값)를 섞어 실제 센서처럼 구현
+        # window_is_open=True/ac_is_on=False 고정 - 절감(OPEN_WINDOW) 이력이
+        # 쌓이도록, 창문이 계속 열려 있고 에어컨은 꺼져 있는 것으로 재현한다.
         sensor_data = {
             "indoor_temperature": round(base_temp + random.uniform(-0.5, 0.5), 1),
             "indoor_humidity": random.randint(40, 60),
             "outdoor_temperature": round(base_temp + random.uniform(-2.0, 2.0), 1),
             "outdoor_humidity": random.randint(40, 70),
+            "window_is_open": True,
+            "ac_is_on": False,
         }
 
         try:

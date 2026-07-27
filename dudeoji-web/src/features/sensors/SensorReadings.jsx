@@ -25,6 +25,20 @@ const TEST_DURATION_STORAGE_KEY = "dudeoji_sensor_test_duration_seconds";
 const TEST_INTERVAL_STORAGE_KEY = "dudeoji_sensor_test_interval_seconds";
 const HISTORY_LIMIT = 1000;
 
+// jh 수정함 - 백엔드가 더 이상 실내값을 랜덤 생성하지 않으므로(readings_router.py의
+// POST /api/dev/mock-reading이 body를 필수로 받게 바뀜), 이 파일의 자동/수동
+// 테스트 기록 버튼은 예전 서버 쪽 로직(base 26도 +-0.5, 습도 40~60)을 그대로
+// 클라이언트에서 재현해서 넘긴다. window_is_open/ac_is_on은 지정 안 하면
+// createMockReading이 null(센서 미연결)로 보낸다.
+function buildRandomMockReading() {
+  const baseTemperature = 26.0;
+  return {
+    indoorTemperature:
+      Math.round((baseTemperature + (Math.random() - 0.5)) * 10) / 10,
+    indoorHumidity: 40 + Math.floor(Math.random() * 21),
+  };
+}
+
 function normalizeSeconds(value, fallback, minimum, maximum) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
@@ -1941,7 +1955,11 @@ export default function SensorReadings({
       refreshCycleLockRef.current = true;
       try {
         if (createTestRecord) {
-          const created = await createMockReading(placeId, testMode);
+          const created = await createMockReading(
+            placeId,
+            testMode,
+            buildRandomMockReading(),
+          );
 
           if (
             !mountedRef.current ||
@@ -2316,7 +2334,11 @@ export default function SensorReadings({
 
     setIsCreatingMock(true);
     try {
-      const created = await createMockReading(placeId, "manual");
+      const created = await createMockReading(
+        placeId,
+        "manual",
+        buildRandomMockReading(),
+      );
       if (
         String(selectedPlaceIdRef.current) !== String(placeId) ||
         requestVersionRef.current !== version
