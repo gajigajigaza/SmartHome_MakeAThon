@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from auth_utils import get_current_user
+from device_connection_hub import DeviceConnectionError, device_hub
 from sensor_realtime_hub import reading_hub
 from routers.readings_router import get_place_for_user, save_reading_for_user
 
@@ -43,9 +44,15 @@ async def _authenticate_connection(websocket: WebSocket) -> dict:
             timeout=AUTH_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError as error:
-        raise HTTPException(status_code=401, detail="인증 시간이 초과되었습니다.") from error
+        raise HTTPException(
+            status_code=401,
+            detail="인증 시간이 초과되었습니다.",
+        ) from error
     except Exception as error:
-        raise HTTPException(status_code=401, detail="인증 메시지가 올바르지 않습니다.") from error
+        raise HTTPException(
+            status_code=401,
+            detail="인증 메시지가 올바르지 않습니다.",
+        ) from error
 
     message_type = message.get("type") if isinstance(message, dict) else None
     token = message.get("token") if isinstance(message, dict) else None
@@ -81,7 +88,11 @@ async def readings_websocket(websocket: WebSocket, place_id: int) -> None:
             await _close_safely(websocket, code, str(error.detail))
             return
         except Exception:
-            await _close_safely(websocket, 1011, "인증 처리 중 오류가 발생했습니다.")
+            await _close_safely(
+                websocket,
+                1011,
+                "인증 처리 중 오류가 발생했습니다.",
+            )
             return
 
         reading_hub.connect(websocket, user_id, place_id)
@@ -114,9 +125,10 @@ async def readings_websocket(websocket: WebSocket, place_id: int) -> None:
 
 @router.websocket("/ws/sensors")
 async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
-    """XIAO ESP32S3가 센서 측정값을 WebSocket으로 계속 전송합니다."""
+    """XIAO가 센서값을 보내고 같은 연결로 제어 명령을 받습니다."""
 
     await websocket.accept()
+    user_id: int | None = None
 
     try:
         try:
@@ -128,55 +140,110 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
             await _close_safely(websocket, code, str(error.detail))
             return
         except Exception:
-            await _close_safely(websocket, 1011, "인증 처리 중 오류가 발생했습니다.")
+            await _close_safely(
+                websocket,
+                1011,
+                "인증 처리 중 오류가 발생했습니다.",
+            )
             return
 
-        await websocket.send_json(
-            {
+        # 현재 제품 구조는 사용자당 물리 XIAO 1대입니다.
+        # 새 연결이 들어오면 같은 사용자의 이전 연결은 자동으로 교체됩니다.
+        await device_hub.connect(websocket, user_id, place_id)
+        await device_hub.send_to_connection(
+            websocket=websocket,
+            user_id=user_id,
+            message={
                 "type": "connected",
                 "role": "sensor",
                 "place_id": place_id,
-            }
+                "control_transport": "websocket",
+            },
         )
 
         while True:
             message: Any = await websocket.receive_json()
 
             if not isinstance(message, dict):
-                await websocket.send_json(
-                    {
+                await device_hub.send_to_connection(
+                    websocket=websocket,
+                    user_id=user_id,
+                    message={
                         "type": "error",
                         "detail": "JSON 객체 형식으로 보내야 합니다.",
-                    }
+                    },
                 )
                 continue
 
             message_type = message.get("type")
+
             if message_type == "ping":
-                await websocket.send_json(
-                    {
+                await device_hub.send_to_connection(
+                    websocket=websocket,
+                    user_id=user_id,
+                    message={
                         "type": "pong",
                         "place_id": place_id,
-                    }
+                    },
+                )
+                continue
+
+            # XIAO 쪽 라이브러리가 서버 ping에 대한 pong을 직접 보내는 경우를
+            # 허용합니다. 현재 서버가 능동 ping을 보내지는 않지만 오류로 막지 않습니다.
+            if message_type == "pong":
+                continue
+
+            if message_type == "command_result":
+                command_id = message.get("command_id")
+                action = message.get("action")
+                success = message.get("success")
+                detail = message.get("detail")
+
+                if not isinstance(action, str) or not isinstance(success, bool):
+                    await device_hub.send_to_connection(
+                        websocket=websocket,
+                        user_id=user_id,
+                        message={
+                            "type": "error",
+                            "detail": (
+                                "command_result에는 문자열 action과 "
+                                "불리언 success가 필요합니다."
+                            ),
+                        },
+                    )
+                    continue
+
+                print(
+                    "[XIAO 명령 결과] "
+                    f"user_id={user_id}, place_id={place_id}, "
+                    f"command_id={command_id}, action={action}, "
+                    f"success={success}, detail={detail}"
                 )
                 continue
 
             if message_type != "sensor_reading":
-                await websocket.send_json(
-                    {
+                await device_hub.send_to_connection(
+                    websocket=websocket,
+                    user_id=user_id,
+                    message={
                         "type": "error",
-                        "detail": "type은 sensor_reading이어야 합니다.",
-                    }
+                        "detail": (
+                            "type은 ping, pong, sensor_reading 또는 "
+                            "command_result여야 합니다."
+                        ),
+                    },
                 )
                 continue
 
             sensor_data = message.get("data")
             if not isinstance(sensor_data, dict):
-                await websocket.send_json(
-                    {
+                await device_hub.send_to_connection(
+                    websocket=websocket,
+                    user_id=user_id,
+                    message={
                         "type": "error",
                         "detail": "data에 센서 측정값 객체가 필요합니다.",
-                    }
+                    },
                 )
                 continue
 
@@ -188,39 +255,52 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
                     reading_source="SENSOR",
                 )
             except HTTPException as error:
-                await websocket.send_json(
-                    {
+                await device_hub.send_to_connection(
+                    websocket=websocket,
+                    user_id=user_id,
+                    message={
                         "type": "reading_error",
                         "status": error.status_code,
                         "detail": error.detail,
-                    }
+                    },
                 )
                 continue
             except Exception:
-                await websocket.send_json(
-                    {
+                await device_hub.send_to_connection(
+                    websocket=websocket,
+                    user_id=user_id,
+                    message={
                         "type": "reading_error",
                         "status": 500,
                         "detail": "센서 측정값을 저장하지 못했습니다.",
-                    }
+                    },
                 )
                 continue
 
-            # jh 수정함 - save_reading_for_user()는 이제 기본적으로 팬아웃
-            # 저장(사용자의 모든 장소에 각각 행 저장)을 하고 대표 1건만
-            # 반환한다. 아래 reading_id/measured_at은 그 대표 행(기본 장소
-            # 우선) 기준이라, 이 소켓이 연결된 place_id와 다른 장소의 값일
-            # 수 있다 — place_id 필드 자체는 이 연결의 값 그대로라 정확함.
-            await websocket.send_json(
-                {
+            # save_reading_for_user()는 사용자 모든 장소에 팬아웃 저장하고
+            # 대표 1건을 반환합니다. 아래 place_id는 이 소켓의 연결 장소입니다.
+            await device_hub.send_to_connection(
+                websocket=websocket,
+                user_id=user_id,
+                message={
                     "type": "reading_saved",
                     "place_id": place_id,
                     "reading_id": saved.id,
                     "measured_at": saved.measured_at.isoformat(),
-                }
+                },
             )
 
     except WebSocketDisconnect:
         pass
-    except Exception:
+    except DeviceConnectionError:
+        # 새 연결로 교체됐거나 전송 중 연결이 끊긴 경우입니다.
         await _close_safely(websocket, 1011)
+    except Exception as error:
+        print(
+            "[XIAO WebSocket] 처리 중 오류: "
+            f"place_id={place_id}, error={error}"
+        )
+        await _close_safely(websocket, 1011)
+    finally:
+        if user_id is not None:
+            await device_hub.disconnect(websocket, user_id)

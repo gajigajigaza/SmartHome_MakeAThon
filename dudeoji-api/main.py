@@ -114,13 +114,3 @@ def start_mqtt_listener_if_enabled():
     except Exception as error:
         # 브로커 연결 실패로 서버 전체가 죽으면 안 되므로 로그만 남긴다.
         print(f"[MQTT] 시작 실패, REST API는 정상 동작합니다: {error}")
-
-# WebSocket ??? ?? ?? ??
-# ?? ???? ???? ??? ?? ?? FastAPI ?? ?????.
-_registered_paths = {
-    getattr(route, "path", None)
-    for route in app.routes
-}
-
-if "/ws/readings" not in _registered_paths:
-    app.include_router(realtime_router)
