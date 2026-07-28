@@ -1,6 +1,6 @@
 """센서 송신용·웹 구독용 WebSocket 엔드포인트.
 
-센서(XIAO ESP32S3):
+센서 게이트웨이(노트북 또는 Raspberry Pi):
     /ws/sensors?place_id=장소ID
 
 React 웹:
@@ -103,6 +103,12 @@ async def readings_websocket(websocket: WebSocket, place_id: int) -> None:
                 "place_id": place_id,
             }
         )
+        latest_device_state = reading_hub.latest_device_state_message(
+            user_id=user_id,
+            place_id=place_id,
+        )
+        if latest_device_state is not None:
+            await websocket.send_json(latest_device_state)
 
         while True:
             message = await websocket.receive_json()
@@ -125,7 +131,7 @@ async def readings_websocket(websocket: WebSocket, place_id: int) -> None:
 
 @router.websocket("/ws/sensors")
 async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
-    """XIAO가 센서값을 보내고 같은 연결로 제어 명령을 받습니다."""
+    """BLE 게이트웨이가 센서값을 보내고 같은 연결로 제어 명령을 받습니다."""
 
     await websocket.accept()
     user_id: int | None = None
@@ -158,6 +164,11 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
                 "role": "sensor",
                 "place_id": place_id,
                 "control_transport": "websocket",
+                "capabilities": [
+                    "sensor_reading",
+                    "device_state",
+                    "command_result",
+                ],
             },
         )
 
@@ -199,25 +210,89 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
                 success = message.get("success")
                 detail = message.get("detail")
 
-                if not isinstance(action, str) or not isinstance(success, bool):
+                if (
+                    not isinstance(command_id, str)
+                    or not command_id
+                    or not isinstance(action, str)
+                    or not isinstance(success, bool)
+                    or not isinstance(detail, str)
+                ):
                     await device_hub.send_to_connection(
                         websocket=websocket,
                         user_id=user_id,
                         message={
                             "type": "error",
                             "detail": (
-                                "command_result에는 문자열 action과 "
-                                "불리언 success가 필요합니다."
+                                "command_result에는 command_id, 문자열 "
+                                "action/detail과 불리언 success가 필요합니다."
                             ),
                         },
                     )
                     continue
 
+                matched = await device_hub.resolve_command_result(
+                    websocket=websocket,
+                    user_id=user_id,
+                    result=message,
+                )
                 print(
                     "[XIAO 명령 결과] "
                     f"user_id={user_id}, place_id={place_id}, "
                     f"command_id={command_id}, action={action}, "
-                    f"success={success}, detail={detail}"
+                    f"success={success}, detail={detail}, "
+                    f"matched={matched}"
+                )
+                continue
+
+            if message_type == "device_state":
+                device_state = message.get("data")
+                if not isinstance(device_state, dict):
+                    await device_hub.send_to_connection(
+                        websocket=websocket,
+                        user_id=user_id,
+                        message={
+                            "type": "error",
+                            "detail": "device_state.data 객체가 필요합니다.",
+                        },
+                    )
+                    continue
+
+                window_is_open = device_state.get("window_is_open")
+                ac_is_on = device_state.get("ac_is_on")
+                bme_available = device_state.get("bme_available")
+                if (
+                    not isinstance(window_is_open, bool)
+                    or not isinstance(ac_is_on, bool)
+                    or not isinstance(bme_available, bool)
+                ):
+                    await device_hub.send_to_connection(
+                        websocket=websocket,
+                        user_id=user_id,
+                        message={
+                            "type": "error",
+                            "detail": (
+                                "device_state에는 window_is_open, ac_is_on, "
+                                "bme_available 불리언 값이 필요합니다."
+                            ),
+                        },
+                    )
+                    continue
+
+                await reading_hub.broadcast_device_state(
+                    user_id=user_id,
+                    state={
+                        "window_is_open": window_is_open,
+                        "ac_is_on": ac_is_on,
+                        "bme_available": bme_available,
+                    },
+                )
+                await device_hub.send_to_connection(
+                    websocket=websocket,
+                    user_id=user_id,
+                    message={
+                        "type": "device_state_forwarded",
+                        "place_id": place_id,
+                    },
                 )
                 continue
 
@@ -228,8 +303,8 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
                     message={
                         "type": "error",
                         "detail": (
-                            "type은 ping, pong, sensor_reading 또는 "
-                            "command_result여야 합니다."
+                            "type은 ping, pong, sensor_reading, device_state "
+                            "또는 command_result여야 합니다."
                         ),
                     },
                 )
@@ -303,4 +378,11 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
         await _close_safely(websocket, 1011)
     finally:
         if user_id is not None:
-            await device_hub.disconnect(websocket, user_id)
+            removed_current_connection = await device_hub.disconnect(
+                websocket,
+                user_id,
+            )
+            if removed_current_connection:
+                await reading_hub.broadcast_device_disconnected(
+                    user_id=user_id,
+                )
