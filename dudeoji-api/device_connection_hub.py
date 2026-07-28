@@ -24,6 +24,7 @@ ALLOWED_DEVICE_ACTIONS = frozenset(
         "TURN_OFF_AIRCON",
     }
 )
+COMMAND_RESULT_TIMEOUT_SECONDS = 8.0
 
 
 class DeviceConnectionError(RuntimeError):
@@ -46,11 +47,21 @@ class _DeviceConnection:
     send_lock: asyncio.Lock
 
 
+@dataclass(slots=True)
+class _PendingCommand:
+    action: str
+    future: asyncio.Future[dict[str, Any]]
+
+
 class DeviceConnectionHub:
     """사용자당 하나의 XIAO WebSocket 연결을 메모리에서 관리합니다."""
 
     def __init__(self) -> None:
         self._connections: dict[int, _DeviceConnection] = {}
+        self._pending_commands: dict[
+            tuple[int, str],
+            _PendingCommand,
+        ] = {}
         self._registry_lock = asyncio.Lock()
 
     async def connect(
@@ -69,11 +80,31 @@ class DeviceConnectionHub:
             send_lock=asyncio.Lock(),
         )
 
+        replaced_pending: list[_PendingCommand] = []
         async with self._registry_lock:
             previous = self._connections.get(normalized_user_id)
+            if previous is not None and previous.websocket is not websocket:
+                replaced_keys = [
+                    key
+                    for key in self._pending_commands
+                    if key[0] == normalized_user_id
+                ]
+                for key in replaced_keys:
+                    replaced_pending.append(
+                        self._pending_commands.pop(key)
+                    )
             self._connections[normalized_user_id] = new_connection
 
         if previous is not None and previous.websocket is not websocket:
+            for pending in replaced_pending:
+                if not pending.future.done():
+                    pending.future.set_result(
+                        {
+                            "result_received": False,
+                            "success": False,
+                            "detail": "device_connection_replaced",
+                        }
+                    )
             try:
                 await previous.websocket.close(
                     code=1012,
@@ -86,15 +117,39 @@ class DeviceConnectionHub:
         self,
         websocket: WebSocket,
         user_id: int,
-    ) -> None:
+    ) -> bool:
         """현재 등록된 소켓과 같은 연결일 때만 목록에서 제거합니다."""
 
         normalized_user_id = int(user_id)
+        disconnected_pending: list[_PendingCommand] = []
+        removed_current_connection = False
 
         async with self._registry_lock:
             current = self._connections.get(normalized_user_id)
             if current is not None and current.websocket is websocket:
+                removed_current_connection = True
                 self._connections.pop(normalized_user_id, None)
+                disconnected_keys = [
+                    key
+                    for key in self._pending_commands
+                    if key[0] == normalized_user_id
+                ]
+                for key in disconnected_keys:
+                    disconnected_pending.append(
+                        self._pending_commands.pop(key)
+                    )
+
+        for pending in disconnected_pending:
+            if not pending.future.done():
+                pending.future.set_result(
+                    {
+                        "result_received": False,
+                        "success": False,
+                        "detail": "device_disconnected_before_result",
+                    }
+                )
+
+        return removed_current_connection
 
     async def is_connected(self, user_id: int) -> bool:
         async with self._registry_lock:
@@ -134,15 +189,28 @@ class DeviceConnectionHub:
             raise ValueError("지원하지 않는 기기 제어 명령입니다.")
 
         normalized_user_id = int(user_id)
-        connection = await self._get_connection(normalized_user_id)
-        if connection is None:
-            raise DeviceNotConnectedError(
-                "연결된 XIAO 보드가 없습니다. "
-                "보드의 Wi-Fi와 /ws/sensors 연결 상태를 확인해 주세요."
-            )
-
         command_id = uuid4().hex
         sent_at = datetime.now(timezone.utc).isoformat()
+
+        loop = asyncio.get_running_loop()
+        result_future: asyncio.Future[dict[str, Any]] = (
+            loop.create_future()
+        )
+
+        async with self._registry_lock:
+            connection = self._connections.get(normalized_user_id)
+            if connection is None:
+                raise DeviceNotConnectedError(
+                    "연결된 XIAO BLE 게이트웨이가 없습니다. "
+                    "게이트웨이와 /ws/sensors 연결 상태를 확인해 주세요."
+                )
+            self._pending_commands[(normalized_user_id, command_id)] = (
+                _PendingCommand(
+                    action=action,
+                    future=result_future,
+                )
+            )
+
         payload = {
             "type": "device_command",
             "command_id": command_id,
@@ -151,7 +219,34 @@ class DeviceConnectionHub:
             "sent_at": sent_at,
         }
 
-        await self._send(connection, payload)
+        try:
+            await self._send(connection, payload)
+            try:
+                command_result = await asyncio.wait_for(
+                    asyncio.shield(result_future),
+                    timeout=COMMAND_RESULT_TIMEOUT_SECONDS,
+                )
+                result_received = bool(
+                    command_result.get("result_received")
+                )
+            except asyncio.TimeoutError:
+                command_result = {
+                    "result_received": False,
+                    "success": None,
+                    "detail": "command_result_timeout",
+                }
+                result_received = False
+        finally:
+            async with self._registry_lock:
+                pending = self._pending_commands.pop(
+                    (normalized_user_id, command_id),
+                    None,
+                )
+            if (
+                pending is not None
+                and not pending.future.done()
+            ):
+                pending.future.cancel()
 
         return {
             "accepted": True,
@@ -161,7 +256,52 @@ class DeviceConnectionHub:
             "device_connected_place_id": connection.connected_place_id,
             "action": action,
             "sent_at": sent_at,
+            "result_received": result_received,
+            "success": command_result.get("success"),
+            "detail": command_result.get("detail", ""),
         }
+
+    async def resolve_command_result(
+        self,
+        *,
+        websocket: WebSocket,
+        user_id: int,
+        result: dict[str, Any],
+    ) -> bool:
+        """현재 XIAO 연결의 결과를 대기 중인 HTTP 제어 요청에 연결합니다."""
+
+        normalized_user_id = int(user_id)
+        command_id = result.get("command_id")
+        if not isinstance(command_id, str) or not command_id:
+            return False
+
+        async with self._registry_lock:
+            connection = self._connections.get(normalized_user_id)
+            if connection is None or connection.websocket is not websocket:
+                return False
+
+            pending = self._pending_commands.get(
+                (normalized_user_id, command_id)
+            )
+            if pending is None or pending.future.done():
+                return False
+
+            action = result.get("action")
+            if action != pending.action:
+                normalized_result = {
+                    "result_received": True,
+                    "success": False,
+                    "detail": "command_result_action_mismatch",
+                }
+            else:
+                normalized_result = {
+                    "result_received": True,
+                    "success": result.get("success"),
+                    "detail": str(result.get("detail", ""))[:200],
+                }
+
+            pending.future.set_result(normalized_result)
+            return True
 
     async def _get_connection(
         self,

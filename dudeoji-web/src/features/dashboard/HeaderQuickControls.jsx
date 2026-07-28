@@ -5,7 +5,7 @@
 // 팀 결정). 이름은 그대로 유지(파일 위치/컴포넌트명 변경 없음), 컴포넌트
 // 자체 로직·마크업·스타일은 이식 전과 동일 — 추천 강조(recommendedAction)만 추가.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { request } from "../../api";
 import { useLocationContext } from "../location/LocationContext";
@@ -52,6 +52,21 @@ function extractDeviceState(reading) {
   };
 }
 
+function extractRealtimeDeviceState(state) {
+  const gatewayConnected = state?.gateway_connected !== false;
+  const windowAvailable =
+    gatewayConnected && typeof state?.window_is_open === "boolean";
+  const airconAvailable =
+    gatewayConnected && typeof state?.ac_is_on === "boolean";
+
+  return {
+    windowAvailable,
+    windowIsOpen: windowAvailable ? state.window_is_open : null,
+    airconAvailable,
+    airconIsOn: airconAvailable ? state.ac_is_on : null,
+  };
+}
+
 function getStatusText({
   isLoading,
   hasError,
@@ -75,6 +90,7 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
   const selectedPlaceId = selectedLocation?.id ?? null;
   const {
     latestReading: realtimeReading,
+    latestDeviceState: realtimeDeviceState,
     connectionStatus: realtimeConnectionStatus,
   } = useSensorRealtimeContext();
 
@@ -88,6 +104,7 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
   const [statusError, setStatusError] = useState("");
   const [pendingDevice, setPendingDevice] = useState("");
   const [feedback, setFeedback] = useState("");
+  const realtimeDeviceStateRef = useRef(null);
 
   const refreshDeviceState = useCallback(async () => {
     if (!selectedPlaceId) {
@@ -104,9 +121,18 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
 
     try {
       const latestReading = await getLatestReading(selectedPlaceId);
-      setDeviceState(extractDeviceState(latestReading));
-      setStatusError("");
+      // HTTP 요청 중 실제 BLE 상태가 도착했다면 오래된 DB 기록으로
+      // 다시 덮어쓰지 않습니다.
+      if (!realtimeDeviceStateRef.current) {
+        setDeviceState(extractDeviceState(latestReading));
+        setStatusError("");
+      }
     } catch (error) {
+      if (realtimeDeviceStateRef.current) {
+        setStatusError("");
+        return;
+      }
+
       const message = String(error?.message || "");
 
       if (message.includes("저장된 센서 기록이 없습니다")) {
@@ -139,6 +165,22 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
   }, [realtimeReading, selectedPlaceId]);
 
   useEffect(() => {
+    const belongsToSelectedPlace =
+      realtimeDeviceState &&
+      String(realtimeDeviceState.place_id) === String(selectedPlaceId);
+
+    realtimeDeviceStateRef.current = belongsToSelectedPlace
+      ? realtimeDeviceState
+      : null;
+
+    if (!belongsToSelectedPlace) return;
+
+    setDeviceState(extractRealtimeDeviceState(realtimeDeviceState));
+    setStatusError("");
+    setIsLoading(false);
+  }, [realtimeDeviceState, selectedPlaceId]);
+
+  useEffect(() => {
     setIsLoading(true);
     refreshDeviceState();
 
@@ -168,7 +210,7 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
     setFeedback("");
 
     try {
-      await request("/api/devices/control", {
+      const response = await request("/api/devices/control", {
         method: "POST",
         auth: true,
         body: JSON.stringify({
@@ -177,16 +219,37 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
         }),
       });
 
-      // 실제 센서가 보낸 최신 값만 상태창에 반영합니다.
-      setFeedback("명령 전송됨");
-      await refreshDeviceState();
+      if (response?.result_received === true) {
+        setFeedback(
+          response.success === true
+            ? "기기 응답 확인"
+            : `기기 처리 실패: ${response.detail || "원인 미확인"}`,
+        );
+      } else if (response?.result_received === false) {
+        if (response.detail === "device_disconnected_before_result") {
+          setFeedback("명령 전송 후 게이트웨이 연결 끊김");
+        } else if (response.detail === "device_connection_replaced") {
+          setFeedback("게이트웨이 연결이 다른 장치로 교체됨");
+        } else {
+          setFeedback("명령 전송됨 · 기기 응답 시간 초과");
+        }
+      } else {
+        // 아직 결과 대기 기능이 배포되지 않은 구버전 서버와 호환합니다.
+        setFeedback("명령 전송됨");
+      }
+
+      // WebSocket이 연결돼 있으면 XIAO의 device_state만 실제 상태로
+      // 반영합니다. 연결이 없을 때만 기존 HTTP 최신 기록을 예비로 사용합니다.
+      if (realtimeConnectionStatus !== "connected") {
+        await refreshDeviceState();
+      }
     } catch (error) {
       setFeedback(
         String(error?.message || "기기 제어 명령을 전송하지 못했습니다."),
       );
     } finally {
       setPendingDevice("");
-      window.setTimeout(() => setFeedback(""), 2600);
+      window.setTimeout(() => setFeedback(""), 3600);
     }
   }
 
@@ -230,7 +293,13 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
         ? "에어컨 끄기"
         : "에어컨 틀기";
 
-  const controlsDisabled = !selectedPlaceId || Boolean(pendingDevice);
+  const gatewayKnownDisconnected =
+    String(realtimeDeviceState?.place_id) === String(selectedPlaceId) &&
+    realtimeDeviceState?.gateway_connected === false;
+  const controlsDisabled =
+    !selectedPlaceId ||
+    Boolean(pendingDevice) ||
+    gatewayKnownDisconnected;
 
   // jh 수정함 - 버튼이 지금 제안하는 동작(windowAction/airconAction)이
   // 추천의 action과 같을 때만 강조한다. 창문은 OPEN_WINDOW/CLOSE_WINDOW를

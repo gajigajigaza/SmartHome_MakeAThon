@@ -30,6 +30,7 @@ function buildReadingsWebSocketUrl(placeId) {
 
 export function SensorRealtimeProvider({ selectedPlaceId, children }) {
   const [latestReading, setLatestReading] = useState(null);
+  const [latestDeviceState, setLatestDeviceState] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState("idle");
   const [connectionError, setConnectionError] = useState("");
   const socketRef = useRef(null);
@@ -41,6 +42,7 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
     let reconnectAttempt = 0;
 
     setLatestReading(null);
+    setLatestDeviceState(null);
     setConnectionError("");
 
     if (!selectedPlaceId) {
@@ -126,6 +128,20 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
           setLatestReading(message.data);
           setConnectionStatus("connected");
           setConnectionError("");
+          return;
+        }
+
+        if (
+          message?.type === "device_state" &&
+          String(message.place_id) === String(selectedPlaceId) &&
+          message.data
+        ) {
+          setLatestDeviceState({
+            ...message.data,
+            place_id: message.place_id,
+          });
+          setConnectionStatus("connected");
+          setConnectionError("");
         }
       });
 
@@ -176,8 +192,18 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
   }, [selectedPlaceId]);
 
   const value = useMemo(
-    () => ({ latestReading, connectionStatus, connectionError }),
-    [connectionError, connectionStatus, latestReading],
+    () => ({
+      latestReading,
+      latestDeviceState,
+      connectionStatus,
+      connectionError,
+    }),
+    [
+      connectionError,
+      connectionStatus,
+      latestDeviceState,
+      latestReading,
+    ],
   );
 
   return (
