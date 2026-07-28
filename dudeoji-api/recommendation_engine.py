@@ -21,6 +21,12 @@ LOGIC_THRESHOLDS = {
     "ac_cooldown_min_temperature": 22.0,
 }
 
+# 환기가 최적이라는 판단의 액션 집합 — 새 액션 추가 시 환기 계열이면 반드시
+# 포함. window_is_open이 이미 True면 이 함수가 "OPEN_WINDOW"를 다시
+# 추천하지 않고 "ENJOY"("잘 하고 있다")를 반환하므로 둘 다 포함해야
+# 한다. savings.py가 절감 판정에 import해서 사용한다.
+VENTILATION_ACTIONS = ("OPEN_WINDOW", "ENJOY")
+
 
 def calculate_thi(temp: float, humidity: float) -> float:
     return (

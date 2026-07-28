@@ -126,17 +126,41 @@ export async function getSavingsSummary(period, placeId = null) {
 
 // testMode는 manual 또는 auto입니다. 백엔드가 recommendation JSON에
 // TEST_MANUAL/TEST_AUTO 출처를 저장해 실제 센서 기록과 구분합니다.
+// jh 수정함 - 백엔드가 더 이상 실내값을 랜덤 생성하지 않으므로, 호출부가
+// reading으로 { indoorTemperature, indoorHumidity, windowIsOpen, acIsOn }을
+// 넘겨야 한다. windowIsOpen/acIsOn을 안 넘기면(undefined) null로 보내서
+// "센서 미연결" 상태를 그대로 재현한다.
+// jh 수정함 - outdoorTemperature/outdoorHumidity("실외 직접 입력" 시연용)도
+// 안 넘기면 null로 보낸다 — 백엔드가 null이면 실제 날씨 API 값을 그대로 쓴다.
 export async function createMockReading(
   placeId = null,
   testMode = "manual",
+  reading = {},
   options = {},
 ) {
   let endpoint = appendPlaceId("/api/dev/mock-reading", placeId);
   endpoint = appendQuery(endpoint, "test_mode", testMode);
 
+  const {
+    indoorTemperature,
+    indoorHumidity,
+    windowIsOpen = null,
+    acIsOn = null,
+    outdoorTemperature = null,
+    outdoorHumidity = null,
+  } = reading;
+
   return request(endpoint, {
     method: "POST",
     auth: true,
+    body: JSON.stringify({
+      indoor_temperature: indoorTemperature,
+      indoor_humidity: indoorHumidity,
+      window_is_open: windowIsOpen,
+      ac_is_on: acIsOn,
+      outdoor_temperature: outdoorTemperature,
+      outdoor_humidity: outdoorHumidity,
+    }),
     ...options,
   });
 }

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from db import PLACES_TABLE, READINGS_TABLE, USER_AIRCONS_TABLE, supabase
+from recommendation_engine import VENTILATION_ACTIONS
 
 # 전력량요금(원/kWh) 누진 구간표. 기본요금(월 고정비)은 시간당 계산에
 # 포함하지 않으므로 제외. 각 항목은 (구간상한kWh, 그 구간의 단가) 형태이며,
@@ -57,8 +58,28 @@ def estimate_savings(
     rated_power_w: Optional[int] = None,
     duration_hours: float = 1.0,
     cumulative_kwh_this_month: Optional[float] = None,
+    window_is_open: Optional[bool] = None,
+    ac_is_on: Optional[bool] = None,
 ) -> dict:
-    """행동(action)이 실제 유지된 시간(duration_hours) 동안의 절감/소비 총량 추정치."""
+    """구간 시작 시점(직전 reading)의 상태로, 그 구간(duration_hours) 동안의
+    절감/소비 총량을 정산한다(interval closing).
+
+    action/window_is_open/ac_is_on은 "지금 이 순간"이 아니라 호출부가 넘긴
+    "그 구간이 시작될 때 실제로 확인된 상태"여야 한다 — 그 상태가 구간 내내
+    유지됐다고 가정하는 방식(get_cumulative_kwh()와 같은 관례)이라, 방금
+    들어온 새 reading의 상태로 과거 구간을 소급 판단하지 않는다.
+
+    jh 수정함 - recommendation_engine.determine_action()은 window_is_open이
+    이미 True면 "OPEN_WINDOW"가 아니라 "ENJOY"를 반환한다(창문을 열라고
+    또 추천하지 않고 "잘 하고 있다"고만 알려줌). 그래서 action=="OPEN_WINDOW"
+    and window_is_open is True는 같은 reading 안에서 동시에 성립할 수 없는
+    조합이라 절감이 항상 0이었다. "환기 대체 시간"의 실제 의미는 "창문을
+    열라고 추천했거나(OPEN_WINDOW), 이미 열어서 잘 유지 중이라고
+    확인해준(ENJOY) 구간에서, 실제로 창문 열림+에어컨 꺼짐이 확인된 시간"
+    이므로 ENJOY도 인정 대상에 포함한다. window_is_open이 True이고
+    ac_is_on이 False로 실제 확인됐을 때만 절감으로 인정하는 건 그대로다
+    (추천만 됐고 실제로 창문을 열었는지는 모를 수 있어서).
+    """
     power_w = rated_power_w if rated_power_w is not None else DEFAULT_POWER_W
     cumulative_kwh = (
         cumulative_kwh_this_month
@@ -68,12 +89,19 @@ def estimate_savings(
     power_kw = power_w / 1000
     kwh_total = power_kw * duration_hours
 
-    if action == "OPEN_WINDOW":
+    if (
+        action in VENTILATION_ACTIONS
+        and window_is_open is True
+        and ac_is_on is False
+    ):
         power_saved_kwh = kwh_total
-        message = "환기로 에어컨 가동을 대체 중이에요"
+        message = "환기로 에어컨 가동을 대체했어요"
+    elif action == "OPEN_WINDOW":
+        power_saved_kwh = 0.0
+        message = "창문 열기를 추천했지만 실제 환기 상태가 확인되지 않았어요"
     elif action == "USE_AIRCON":
         power_saved_kwh = -kwh_total
-        message = "에어컨을 가동해 전력을 소비하고 있어요"
+        message = "에어컨을 가동해 전력을 소비했어요"
     else:
         power_saved_kwh = 0.0
         message = "지금은 절감량 계산 대상 행동이 아니에요"
@@ -111,7 +139,7 @@ def get_rated_power(place_id: str) -> Optional[int]:
 
 
 def get_cumulative_kwh(user_id: str) -> float:
-    """이번 달(1일 0시~현재) 동안 사용자의 에어컨 가동으로 소비된 누적 전력(kWh) 추정치.
+    """이번 달(1일 0시~현재) 동안 사용자의 에어컨 가동으로 소비된 누적 전력(kWh), 실측(ac_is_on) 기준.
 
     readings.place_id가 있는 행은 그 장소에 등록된 에어컨의 정격 전력을 그대로
     쓴다. place_id가 NULL인 행(마이그레이션 이전에 저장된 기존 데이터, 또는
@@ -127,6 +155,14 @@ def get_cumulative_kwh(user_id: str) -> float:
     먼저 그룹화한 뒤 그룹 안에서만 연속 시간차를 계산하도록 고쳤다.
     place_id가 NULL인 행들은 서로 하나의 그룹으로만 묶는다(다른 place
     그룹과 안 섞이게).
+
+    jh 수정함 - 구간 누적 조건을 추천 action(USE_AIRCON/ENJOY) 기준에서
+    실제 ac_is_on 센서값 기준으로 바꿨다. 알고 싶은 건 "그 구간 동안
+    에어컨이 실제로 켜져 있었는지"지 그 순간 무엇을 추천했는지가 아니라서.
+    ac_is_on이 None(센서 미연결)이거나 False면 소비 0으로 잡히므로, 센서가
+    없는 계정은 이번 달 누적이 계속 0 → estimate_savings()의 누진 단가가
+    항상 1구간(최저가)으로 고정된다 — 실측이 없으니 보수적으로 최저가를
+    쓰는 의도된 동작이다.
     """
     place_result = (
         supabase.table(PLACES_TABLE)
@@ -175,8 +211,9 @@ def get_cumulative_kwh(user_id: str) -> float:
 
         power_kw = power_kw_for(place_id)
         for current_reading, next_reading in zip(place_readings, place_readings[1:]):
-            action = (current_reading.get("recommendation") or {}).get("action")
-            is_ac_on = action in ("USE_AIRCON", "ENJOY")
+            is_ac_on = (
+                current_reading.get("recommendation") or {}
+            ).get("ac_is_on") is True
             if not is_ac_on:
                 continue
 
@@ -200,8 +237,13 @@ def get_savings_summary(
     get_cumulative_kwh()와 달리 새로 계산하지 않고, save_reading_for_user()가
     각 reading에 저장해둔 savings 스냅샷(power_saved_kwh, cost_won)을 그대로 더한다.
     savings가 없는 기존 데이터(마이그레이션 이전 등)는 건너뛴다.
-    action이 OPEN_WINDOW인 reading만 "절감"으로 집계하고, USE_AIRCON(소비) 등
-    나머지 action은 제외한다 — 그래서 합계는 항상 0 이상이다.
+
+    jh 수정함 - 표시 정책: 저장된 스냅샷 중 양수(환기 절감)만 합산한다.
+    음수(에어컨 소비) 스냅샷은 reading에는 계속 저장되지만(estimate_savings()가
+    interval closing으로 계산·기록하는 원본 데이터는 그대로 보존 — 나중에
+    "소비 리포트"를 따로 만들 때 필요) 이 절감 합계에는 포함하지 않는다.
+    표시 계층에서만 걸러내는 것이라 저장 계층(estimate_savings/get_cumulative_kwh)은
+    건드리지 않는다. 그 결과 합계는 항상 0 이상이다.
     place_id를 주면 해당 장소의 reading만 집계하고, 안 주면 사용자의 모든 장소를 합산한다.
     """
     now = datetime.now(timezone.utc)
@@ -232,13 +274,14 @@ def get_savings_summary(
 
     for reading in readings_result.data or []:
         recommendation = reading.get("recommendation") or {}
-        if recommendation.get("action") != "OPEN_WINDOW":
-            continue
-
         savings = recommendation.get("savings")
         if not savings:
             continue
-        total_power_saved_kwh += savings.get("power_saved_kwh") or 0.0
+
+        power_saved_kwh = savings.get("power_saved_kwh") or 0.0
+        if power_saved_kwh <= 0:
+            continue
+        total_power_saved_kwh += power_saved_kwh
         total_cost_won += savings.get("cost_won") or 0
 
     return {
@@ -249,5 +292,5 @@ def get_savings_summary(
 
 
 if __name__ == "__main__":
-    print(estimate_savings("OPEN_WINDOW", 2000, 0.5, 250))
+    print(estimate_savings("OPEN_WINDOW", 2000, 0.5, 250, window_is_open=True, ac_is_on=False))
     print(estimate_savings("USE_AIRCON", 2000, 0.5, 250))

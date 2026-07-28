@@ -46,6 +46,10 @@
   gap: 8px;
   min-width: 108px;
   padding: 0 11px 0 9px;
+  /* jh 수정함 - 버튼(.header-device-action)은 justify-content:center인데
+     여기는 지정이 없어 flex 기본값(flex-start)으로 왼쪽에 몰려 보였음.
+     grid 2열로 칸이 넓어진 뒤로 더 두드러져서 버튼과 정렬을 맞춤. */
+  justify-content: center;
   border: 1px solid #e3ece5;
   background:
     linear-gradient(
@@ -205,13 +209,25 @@
   }
 }
 
-/* jh 수정함 - 카드 안에서 줄바꿈됐을 때(App.css의
-   .recommendation-card-topbar가 560px 이하에서 flex-wrap) 한 줄 전체 폭으로
-   펼쳐서 보기 좋게 정렬한다. */
+/* jh 수정함(불균형 줄바꿈 수정) - 카드 안에서 줄바꿈됐을 때(App.css의
+   .recommendation-card-topbar가 560px 이하에서 flex-wrap) 4칸을 개별
+   flex-wrap에 맡기면 아이템별 min-width가 달라 "창문 2칸 + 에어컨상태 +
+   에어컨버튼"처럼 3줄로 비대칭 분리되는 문제가 있었다. 폭이 좁아지는
+   시점부터는 grid로 전환해 2×2를 강제 고정하고, 상태/버튼 아이템은
+   고정 min-width 대신 각자의 grid 칸을 꽉 채우도록(width:100%) 해서
+   화면이 아무리 줄어도 항상 짝이 맞는 2행으로 유지되게 한다. */
 @media (max-width: 560px) {
   .recommendation-card-topbar .header-device-controls {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
     justify-content: center;
     width: 100%;
+  }
+
+  .recommendation-card-topbar .header-device-controls .header-device-status,
+  .recommendation-card-topbar .header-device-controls .header-device-action {
+    width: 100%;
+    min-width: 0;
   }
 }
 

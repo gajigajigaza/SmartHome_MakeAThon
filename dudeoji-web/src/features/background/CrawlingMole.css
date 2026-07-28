@@ -1,11 +1,15 @@
-/* 배경 장식용 두더지: 흰 카드 위가 아니라 상단 초록 배경 영역에서만 한 마리가 천천히 지나간다. */
+/* 배경 장식용 두더지. 위치/이동 경로는 CrawlingMole.jsx가 JS로 매 프레임
+   계산해서 이 요소들에 인라인 transform/opacity로 직접 적용한다(카드 영역을
+   실시간으로 피해 다녀야 해서 정적 CSS 키프레임으로는 표현이 안 됨). 아래
+   CSS는 두더지의 생김새/제자리 잔동작(몸 흔들림, 발 움직임, 흙 튀김)만 담당. */
 .dudeoji-crawling-mole-layer {
   position: fixed;
   top: 0;
   left: 0;
   z-index: 0;
   width: 100vw;
-  height: clamp(132px, 20vh, 190px);
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   pointer-events: none;
   contain: layout paint;
@@ -13,10 +17,9 @@
 
 .dudeoji-crawling-mole-track {
   position: absolute;
-  left: 0;
-  top: clamp(88px, 12vh, 126px);
+  inset: 0;
   width: 100vw;
-  height: 58px;
+  height: 100%;
   pointer-events: none;
 }
 
@@ -26,10 +29,9 @@
   top: 0;
   width: 92px;
   height: 56px;
+  /* 초기값. JS가 위치를 계산하기 전까지는 숨겨두고, 이후 JS가
+     opacity/transform(위치+회전)을 인라인 스타일로 직접 갱신한다. */
   opacity: 0;
-  transform: translateX(-140px);
-  animation: dudeoji-mole-crawl 68s linear infinite;
-  animation-delay: 3s;
   pointer-events: none;
 }
 
@@ -177,34 +179,6 @@
   animation-delay: 0.48s;
 }
 
-@keyframes dudeoji-mole-crawl {
-  0% {
-    opacity: 0;
-    transform: translateX(-140px) rotate(0deg);
-  }
-
-  12% {
-    opacity: 0;
-  }
-
-  19% {
-    opacity: 0.58;
-  }
-
-  78% {
-    opacity: 0.58;
-  }
-
-  88% {
-    opacity: 0;
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateX(calc(100vw + 140px)) rotate(0deg);
-  }
-}
-
 @keyframes dudeoji-mole-bob {
   0%, 100% {
     transform: translateY(0);
@@ -259,23 +233,6 @@
   z-index: 2;
 }
 
-@media (max-width: 720px) {
-  .dudeoji-crawling-mole-layer {
-    height: 124px;
-  }
-
-  .dudeoji-crawling-mole-track {
-    top: 82px;
-  }
-
-  .dudeoji-crawling-mole {
-    width: 78px;
-    height: 48px;
-    transform: translateX(-120px) scale(0.84);
-    animation-duration: 50s;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .dudeoji-crawling-mole {
     animation: none;
@@ -288,10 +245,6 @@
 .mole-cheek,
 .mole-back {
   display: none !important;
-}
-
-.dudeoji-crawling-mole {
-  animation-duration: 68s !important;
 }
 
 .mole-body {
@@ -333,32 +286,4 @@
 
 .mole-paw {
   background: #c7a07f !important;
-}
-
-@keyframes dudeoji-mole-crawl {
-  0% {
-    opacity: 0;
-    transform: translateX(-150px) rotate(0deg);
-  }
-
-  14% {
-    opacity: 0;
-  }
-
-  22% {
-    opacity: 0.58;
-  }
-
-  76% {
-    opacity: 0.58;
-  }
-
-  88% {
-    opacity: 0;
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateX(calc(100vw + 150px)) rotate(0deg);
-  }
 }

@@ -8,7 +8,7 @@
 // 그 장소의 절감량만 집계해서 보여준다(App.jsx의 DashboardHome이 넘겨줌).
 import { useEffect, useState } from "react";
 
-import { getSavingsSummary } from "../sensors/readingsApi";
+import { getRecommendation, getSavingsSummary } from "../sensors/readingsApi";
 
 const PERIOD_OPTIONS = [
   { value: "day", label: "오늘" },
@@ -29,6 +29,32 @@ export default function SavingsSummary({ placeId = null }) {
   const [summary, setSummary] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  // jh 수정함 - 창문 센서(리드 스위치) 미연결 시 절감액이 항상 0원으로
+  // 나오는데, 이걸 "실제로 0원 절감했다"와 구분하려고 최신 추천의
+  // window_data_available을 따로 확인한다. period가 바뀌어도 센서 연결
+  // 여부는 안 바뀌므로 placeId에만 의존하는 별도 effect로 둔다.
+  const [windowSensorAvailable, setWindowSensorAvailable] = useState(false);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    getRecommendation(placeId)
+      .then((recommendation) => {
+        if (!isCancelled) {
+          setWindowSensorAvailable(recommendation.window_data_available === true);
+        }
+      })
+      .catch(() => {
+        // 기록이 아직 없거나 조회 실패면 "측정 대기 중"과 동일하게 취급한다.
+        if (!isCancelled) {
+          setWindowSensorAvailable(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [placeId]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -108,12 +134,21 @@ export default function SavingsSummary({ placeId = null }) {
           </div>
           <span className="saving-icon">⚠️</span>
         </div>
+      ) : !windowSensorAvailable ? (
+        <div className="saving-box saving-box-pending">
+          <div>
+            <span>{periodLabel} 예상 절감</span>
+            <strong>측정 대기 중</strong>
+            <small>창문 센서가 연결되면 절감량이 계산돼요</small>
+          </div>
+          <span className="saving-icon">🛰️</span>
+        </div>
       ) : (
         <div className="saving-box">
           <div>
             <span>{periodLabel} 예상 절감</span>
-            <strong>{formatWon(summary.cost_won)}원</strong>
-            <small>{summary.power_saved_kwh.toFixed(2)}kWh 절감</small>
+            <strong>{summary.power_saved_kwh.toFixed(2)}kWh</strong>
+            <small>{formatWon(summary.cost_won)}원 절감</small>
           </div>
           <span className="saving-icon">⚡</span>
         </div>

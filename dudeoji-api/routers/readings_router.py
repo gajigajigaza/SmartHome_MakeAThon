@@ -1,12 +1,11 @@
 import asyncio
 import math
-import random
 import time
 from datetime import datetime, timezone
 from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from pydantic import BaseModel, Field
-from auth_utils import get_current_user
+from pydantic import BaseModel, Field, ValidationError
+from auth_utils import execute_supabase_with_retry, get_current_user
 from db import READINGS_TABLE, PLACES_TABLE, supabase
 from device_connection_hub import DeviceConnectionError, device_hub
 from recommendation_engine import LOGIC_THRESHOLDS, determine_action
@@ -138,8 +137,9 @@ def calculate_ac_run_time(
         )
         if place_id is not None:
             query = query.eq("place_id", place_id)
+        query = query.order("measured_at", desc=True).limit(100)
 
-        result = query.order("measured_at", desc=True).limit(100).execute()
+        result = execute_supabase_with_retry(lambda: query.execute())
         started_at = datetime.now(timezone.utc)
 
         for record in result.data or []:
@@ -224,6 +224,14 @@ def _infer_control_context(
     recommendation: Recommendation,
 ) -> str:
     """ENJOY? ??? ??? ???? ??? ?? ??? ??? ?????."""
+    # TODO(정현): 이 docstring과 ENJOY 분기의 키워드 튜플("???", "??", "??")이
+    # 인코딩 깨짐(mojibake)으로 원래 의도한 한글 키워드가 소실된 상태다.
+    # 실제 문자열과 절대 매칭되지 않아서 ENJOY의 control_context는 사실상
+    # 항상 "COMFORT"로만 나온다(ac_is_on/window_is_open 분기 다 죽어있음).
+    # 지금 당장 쓰는 곳은 없어서 안 고쳤지만, 나중에 소비 리포트 등에서
+    # control_context를 쓸 계획이면 원래 의도(ac_is_on=True면 "AIRCON",
+    # window_is_open=True면 "VENTILATION")대로 키워드를 복구하거나, 애초에
+    # 키워드 매칭 없이 ac_is_on/window_is_open만으로 판단하도록 다시 짜야 한다.
     combined_text = " ".join(
         [recommendation.title, recommendation.summary, recommendation.reason]
     )
@@ -370,13 +378,15 @@ def get_place_for_user(
     """요청 장소의 소유권을 확인하고, 미지정 시 기본 장소를 선택합니다."""
     try:
         if place_id is not None:
-            result = (
-                supabase.table(PLACES_TABLE)
-                .select("*")
-                .eq("user_id", user_id)
-                .eq("id", place_id)
-                .limit(1)
-                .execute()
+            result = execute_supabase_with_retry(
+                lambda: (
+                    supabase.table(PLACES_TABLE)
+                    .select("*")
+                    .eq("user_id", user_id)
+                    .eq("id", place_id)
+                    .limit(1)
+                    .execute()
+                )
             )
             if not result.data:
                 raise HTTPException(
@@ -385,24 +395,28 @@ def get_place_for_user(
                 )
             return result.data[0]
 
-        default_result = (
-            supabase.table(PLACES_TABLE)
-            .select("*")
-            .eq("user_id", user_id)
-            .eq("is_default", True)
-            .limit(1)
-            .execute()
+        default_result = execute_supabase_with_retry(
+            lambda: (
+                supabase.table(PLACES_TABLE)
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("is_default", True)
+                .limit(1)
+                .execute()
+            )
         )
         if default_result.data:
             return default_result.data[0]
 
-        first_result = (
-            supabase.table(PLACES_TABLE)
-            .select("*")
-            .eq("user_id", user_id)
-            .order("id")
-            .limit(1)
-            .execute()
+        first_result = execute_supabase_with_retry(
+            lambda: (
+                supabase.table(PLACES_TABLE)
+                .select("*")
+                .eq("user_id", user_id)
+                .order("id")
+                .limit(1)
+                .execute()
+            )
         )
         return first_result.data[0] if first_result.data else None
 
@@ -419,21 +433,19 @@ def get_latest_reading(
     user_id: int,
     place_id: Optional[int] = None,
 ) -> SensorReadingResponse:
-    try:
-        query = (
-            supabase.table(READINGS_TABLE)
-            .select("*")
-            .eq("user_id", user_id)
-        )
-        if place_id is not None:
-            query = query.eq("place_id", place_id)
+    query = (
+        supabase.table(READINGS_TABLE)
+        .select("*")
+        .eq("user_id", user_id)
+    )
+    if place_id is not None:
+        query = query.eq("place_id", place_id)
+    query = query.order("measured_at", desc=True).limit(1)
 
-        result = (
-            query
-            .order("measured_at", desc=True)
-            .limit(1)
-            .execute()
-        )
+    try:
+        result = execute_supabase_with_retry(lambda: query.execute())
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -447,7 +459,18 @@ def get_latest_reading(
             detail=f"{prefix}저장된 센서 기록이 없습니다.",
         )
 
-    return SensorReadingResponse.model_validate(result.data[0])
+    try:
+        return SensorReadingResponse.model_validate(result.data[0])
+    except ValidationError as error:
+        # jh 수정함 - 엔진 재작성 이전 등 구조가 다른 legacy row는 "없는 것"과
+        # 동일하게 404로 취급한다. 그래야 _save_reading_to_place()의 404
+        # 폴백(첫 reading과 동일 취급)이 그대로 재사용되고, 팬아웃 루프
+        # 전체가 이 한 장소의 legacy row 때문에 500으로 죽지 않는다.
+        prefix = "선택한 장소에 " if place_id is not None else ""
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{prefix}저장된 센서 기록의 형식이 올바르지 않습니다.",
+        ) from error
 
 
 def _read_required_weather_number(
@@ -488,12 +511,20 @@ async def _save_reading_to_place(
     place: dict,
     reading_source: str,
     cumulative_kwh_this_month: float,
+    outdoor_overrides: Optional[dict] = None,
 ) -> SensorReadingResponse:
     """실내값 하나를 특정 장소 기준으로 저장한다.
 
     fan-out(모든 장소)/단일 장소 저장 양쪽에서 공유하는 핵심 로직. 장소별로
     실외값·추천·자동제어 모드가 다 다를 수 있어 base_sensor_data를 복사해서
     이 장소 전용으로만 값을 채운다(원본은 다른 장소 처리에 재사용됨).
+
+    jh 수정함 - outdoor_overrides는 /dev/mock-reading(테스트 모드 "실외 직접
+    입력") 전용이다. None(기본)이면 기존과 동일하게 날씨 API 값을 그대로
+    쓴다. 값이 있으면 날씨 API는 그대로 호출하되(미세먼지/풍속/날씨 상태는
+    실데이터 유지) outdoor_temperature/outdoor_humidity만 덮어쓴다. 일반
+    센서(/readings)·MQTT·WebSocket 경로는 이 인자를 안 넘기므로 동작이
+    바뀌지 않는다.
     """
     sensor_data = base_sensor_data.model_copy()
     resolved_place_id = place["id"]
@@ -542,6 +573,12 @@ async def _save_reading_to_place(
     except HTTPException as error:
         raise _PlaceSaveSkipped(resolved_place_id, str(error.detail)) from error
 
+    if outdoor_overrides:
+        if outdoor_overrides.get("outdoor_temperature") is not None:
+            sensor_data.outdoor_temperature = outdoor_overrides["outdoor_temperature"]
+        if outdoor_overrides.get("outdoor_humidity") is not None:
+            sensor_data.outdoor_humidity = outdoor_overrides["outdoor_humidity"]
+
     # jh 수정함 - current_mode는 더 이상 페이로드를 안 믿고, 이 장소의
     # auto_control_enabled 설정으로 서버가 정한다(실외값을 항상 API 값으로
     # 덮어쓰는 것과 같은 원칙). fan-out이면 장소마다 모드가 다를 수 있다.
@@ -551,10 +588,16 @@ async def _save_reading_to_place(
     target_cooldown = place.get("target_cooldown_minutes") or 30
     rated_power_w = get_rated_power(resolved_place_id)
     duration_hours = 0.0
+    # interval closing: 절감 계산은 지금 이 reading이 아니라 직전 reading이
+    # 저장될 때 실제로 확인됐던 상태(window_is_open/ac_is_on)로 정산한다.
+    previous_window_is_open: Optional[bool] = None
+    previous_ac_is_on: Optional[bool] = None
 
     try:
         latest = get_latest_reading(user_id, resolved_place_id)
         previous_action = latest.recommendation.action
+        previous_window_is_open = latest.window_is_open
+        previous_ac_is_on = latest.recommendation.ac_is_on
         elapsed = datetime.now(timezone.utc) - latest.measured_at
         duration_hours = min(max(0.0, elapsed.total_seconds() / 3600), 2.0)
     except HTTPException as error:
@@ -605,10 +648,12 @@ async def _save_reading_to_place(
     recommendation.air_quality_status = weather_status.get("air_quality", {}).get("status", "UNKNOWN")
 
     savings_result = estimate_savings(
-        action=recommendation.action,
+        action=previous_action,
         rated_power_w=rated_power_w,
         duration_hours=duration_hours,
         cumulative_kwh_this_month=cumulative_kwh_this_month,
+        window_is_open=previous_window_is_open,
+        ac_is_on=previous_ac_is_on,
     )
     recommendation.savings = SavingsEstimate(**savings_result)
 
@@ -624,6 +669,10 @@ async def _save_reading_to_place(
         "recommendation": recommendation.model_dump(),
     }
 
+    # jh 수정함 - execute_supabase_with_retry()를 여기(insert)엔 안 씀: 응답을
+    # 돌려받는 도중 소켓 오류(WinError 10035 등)가 나면 서버는 이미 insert에
+    # 성공했을 수 있다. 그 상태에서 재시도하면 같은 reading이 중복 저장돼
+    # savings/누적 kWh가 두 배로 잡힐 위험이 있다 — SELECT류(멱등)만 재시도 대상.
     try:
         result = supabase.table(READINGS_TABLE).insert(reading_data).execute()
     except Exception as error:
@@ -645,12 +694,14 @@ async def _save_reading_to_place(
 
 
 def _get_all_places_for_user(user_id: int) -> list[dict]:
-    result = (
-        supabase.table(PLACES_TABLE)
-        .select("*")
-        .eq("user_id", user_id)
-        .order("id")
-        .execute()
+    result = execute_supabase_with_retry(
+        lambda: (
+            supabase.table(PLACES_TABLE)
+            .select("*")
+            .eq("user_id", user_id)
+            .order("id")
+            .execute()
+        )
     )
     return result.data or []
 
@@ -661,6 +712,7 @@ async def save_reading_for_user(
     place_id: Optional[int] = None,
     reading_source: str = "SENSOR",
     fan_out: bool = True,
+    outdoor_overrides: Optional[dict] = None,
 ) -> SensorReadingResponse:
     """실내값 하나를 저장한다.
 
@@ -675,6 +727,10 @@ async def save_reading_for_user(
     (create_reading/create_mock_reading/realtime_router)의 응답 계약은
     바뀌지 않는다 — fan_out 여부와 무관하게 항상 SensorReadingResponse
     하나를 돌려준다.
+
+    jh 수정함 - outdoor_overrides는 create_mock_reading()만 넘긴다(테스트
+    모드 "실외 직접 입력"). 다른 호출부는 안 넘기므로 기본값 None 그대로라
+    동작이 바뀌지 않는다 — _save_reading_to_place() 참고.
     """
     base_sensor_data = SensorReadingCreate.model_validate(sensor_data_dict)
 
@@ -688,7 +744,12 @@ async def save_reading_for_user(
         cumulative_kwh_this_month = get_cumulative_kwh(user_id)
         try:
             return await _save_reading_to_place(
-                user_id, base_sensor_data, place, reading_source, cumulative_kwh_this_month
+                user_id,
+                base_sensor_data,
+                place,
+                reading_source,
+                cumulative_kwh_this_month,
+                outdoor_overrides,
             )
         except _PlaceSaveSkipped as error:
             status_code = (
@@ -715,7 +776,12 @@ async def save_reading_for_user(
     for place in places:
         try:
             saved = await _save_reading_to_place(
-                user_id, base_sensor_data, place, reading_source, cumulative_kwh_this_month
+                user_id,
+                base_sensor_data,
+                place,
+                reading_source,
+                cumulative_kwh_this_month,
+                outdoor_overrides,
             )
             successes.append((place, saved))
         except _PlaceSaveSkipped as error:
@@ -735,20 +801,19 @@ async def save_reading_for_user(
     return successes[0][1]
 
 
-# jh 수정함 - 프론트 "테스트 모드" 버튼용 가짜 센서값 생성.
-def generate_mock_sensor_reading() -> dict:
-    """실내 테스트값만 만듭니다. 실외값은 저장 단계에서 날씨 API로 채웁니다."""
-    base_temp = 26.0
-    return {
-        "indoor_temperature": round(
-            base_temp + random.uniform(-0.5, 0.5),
-            1,
-        ),
-        "indoor_humidity": random.randint(40, 60),
-        "window_is_open": None,
-        "ac_is_on": None,
-        "current_mode": "MANUAL",
-    }
+# jh 수정함 - 프론트 "테스트 모드" 폼이 직접 입력한 실내값을 받는다(랜덤 생성 제거).
+# window_is_open/ac_is_on의 None은 "센서 미연결" 재현용이라 그대로 저장 경로에
+# 넘긴다 — 여기서 임의 기본값(False 등)으로 채우지 않는다.
+# outdoor_temperature/outdoor_humidity는 "실외 직접 입력(시연용)" 전용 옵션
+# 필드다. None(기본)이면 기존대로 날씨 API 실측값을 그대로 쓴다 — 값을
+# 넣었을 때만 그 필드만 덮어쓰고 미세먼지/풍속 등은 실데이터를 유지한다.
+class MockReadingInput(BaseModel):
+    indoor_temperature: float = Field(ge=-50, le=80)
+    indoor_humidity: float = Field(ge=0, le=100)
+    window_is_open: Optional[bool] = None
+    ac_is_on: Optional[bool] = None
+    outdoor_temperature: Optional[float] = Field(default=None, ge=-50, le=80)
+    outdoor_humidity: Optional[float] = Field(default=None, ge=0, le=100)
 
 
 # ---------------------------------------------------------
@@ -780,12 +845,26 @@ async def create_reading(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_mock_reading(
+    payload: MockReadingInput,
     place_id: Optional[int] = Query(default=None, ge=1),
     test_mode: Literal["manual", "auto"] = Query(default="manual"),
     current_user: dict = Depends(get_current_user),
 ):
-    mock_data = generate_mock_sensor_reading()
+    mock_data = {
+        "indoor_temperature": payload.indoor_temperature,
+        "indoor_humidity": payload.indoor_humidity,
+        "window_is_open": payload.window_is_open,
+        "ac_is_on": payload.ac_is_on,
+        "current_mode": "MANUAL",
+    }
     source = "TEST_AUTO" if test_mode == "auto" else "TEST_MANUAL"
+    # jh 수정함 - "실외 직접 입력(시연용)" 값. 둘 다 비우면(None) 저장 경로가
+    # 기존대로 날씨 API 실측값만 쓴다 — dev 전용 이 엔드포인트에만 있는
+    # 옵션이라 /readings(실제 센서)·MQTT·WebSocket 경로엔 영향 없다.
+    outdoor_overrides = {
+        "outdoor_temperature": payload.outdoor_temperature,
+        "outdoor_humidity": payload.outdoor_humidity,
+    }
     # jh 수정함 - 테스트 버튼은 "선택한 장소 카드 확인" 용도라 팬아웃 대상이
     # 아님(결정사항). fan_out=False로 옛날처럼 지정 place 단일 저장 유지.
     return await save_reading_for_user(
@@ -794,6 +873,7 @@ async def create_mock_reading(
         place_id=place_id,
         reading_source=source,
         fan_out=False,
+        outdoor_overrides=outdoor_overrides,
     )
 
 
