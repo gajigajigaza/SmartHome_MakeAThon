@@ -17,6 +17,10 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from auth_utils import get_current_user
 from device_connection_hub import DeviceConnectionError, device_hub
+from device_state_contract import (
+    DeviceStateContractError,
+    validate_device_state_data,
+)
 from sensor_realtime_hub import reading_hub
 from routers.readings_router import get_place_for_user, save_reading_for_user
 
@@ -245,46 +249,24 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
                 continue
 
             if message_type == "device_state":
-                device_state = message.get("data")
-                if not isinstance(device_state, dict):
-                    await device_hub.send_to_connection(
-                        websocket=websocket,
-                        user_id=user_id,
-                        message={
-                            "type": "error",
-                            "detail": "device_state.data 객체가 필요합니다.",
-                        },
+                try:
+                    device_state = validate_device_state_data(
+                        message.get("data")
                     )
-                    continue
-
-                window_is_open = device_state.get("window_is_open")
-                ac_is_on = device_state.get("ac_is_on")
-                bme_available = device_state.get("bme_available")
-                if (
-                    not isinstance(window_is_open, bool)
-                    or not isinstance(ac_is_on, bool)
-                    or not isinstance(bme_available, bool)
-                ):
+                except DeviceStateContractError as error:
                     await device_hub.send_to_connection(
                         websocket=websocket,
                         user_id=user_id,
                         message={
                             "type": "error",
-                            "detail": (
-                                "device_state에는 window_is_open, ac_is_on, "
-                                "bme_available 불리언 값이 필요합니다."
-                            ),
+                            "detail": str(error),
                         },
                     )
                     continue
 
                 await reading_hub.broadcast_device_state(
                     user_id=user_id,
-                    state={
-                        "window_is_open": window_is_open,
-                        "ac_is_on": ac_is_on,
-                        "bme_available": bme_available,
-                    },
+                    state=device_state,
                 )
                 await device_hub.send_to_connection(
                     websocket=websocket,

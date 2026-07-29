@@ -169,6 +169,52 @@
   display: none;
 }
 
+.header-device-nodes {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 0 4px 1px;
+}
+
+.header-device-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #f0f3f2;
+  color: #73827c;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.header-device-node i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.header-device-node b {
+  color: inherit;
+  font-weight: 900;
+}
+
+.header-device-node.is-connected {
+  background: #e8f7ed;
+  color: #238553;
+}
+
+.header-device-node.is-disconnected {
+  background: #fff0ee;
+  color: #bd554b;
+}
+
 @media (max-width: 1050px) {
   .header-device-controls {
     gap: 7px;
@@ -228,6 +274,10 @@
   .recommendation-card-topbar .header-device-controls .header-device-action {
     width: 100%;
     min-width: 0;
+  }
+
+  .recommendation-card-topbar .header-device-controls .header-device-nodes {
+    grid-column: 1 / -1;
   }
 }
 

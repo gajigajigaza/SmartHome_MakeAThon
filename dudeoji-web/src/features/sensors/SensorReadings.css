@@ -658,6 +658,50 @@
   white-space: nowrap;
 }
 
+.sensor-node-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sensor-node-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #eef2f0;
+  color: #718079;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.sensor-node-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.sensor-node-status b {
+  font-weight: 900;
+}
+
+.sensor-node-status.is-connected {
+  border-color: #cce8d5;
+  background: #e8f7ed;
+  color: #24824d;
+}
+
+.sensor-node-status.is-disconnected {
+  border-color: #f1d1cd;
+  background: #fff0ee;
+  color: #b95349;
+}
+
 .sensor-history-section {
   margin-top: 18px;
   padding: 20px;

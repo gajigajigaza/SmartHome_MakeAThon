@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-#include <Adafruit_BME280.h>
+#include <Adafruit_INA219.h>
 #include <ArduinoJson.h>
 #include <BLE2902.h>
 #include <BLEAdvertising.h>
@@ -11,20 +11,22 @@
 #include <ESP32Servo.h>
 
 // ---------------------------------------------------------------------------
-// 두더지 XIAO ESP32S3: BLE 센서/제어 펌웨어
+// ESP-CONTROL: 리드 스위치 + 서보 + 릴레이/팬 + INA219
 //
 // 데이터 경로:
-//   BME280·리드 스위치 -> XIAO -> BLE Notification -> 노트북/라즈베리파이
-//   노트북/라즈베리파이 -> BLE Write -> XIAO -> 서보·릴레이
+//   리드·릴레이·INA219 -> BLE Notification -> Raspberry Pi 게이트웨이
+//   Raspberry Pi 게이트웨이 -> BLE Write -> 서보·릴레이/팬
 //
-// 이 펌웨어는 Wi-Fi와 WebSocket을 사용하지 않습니다.
+// 중요: 팬과 서보 전원은 XIAO 핀이 아닌 외부 전원에서 공급해야 합니다.
+// XIAO, 서보, 릴레이/팬, INA219 전원의 GND는 공통으로 연결합니다.
 // ---------------------------------------------------------------------------
 
-namespace Dudeoji {
+namespace DudeojiControl {
 
-constexpr char BLE_DEVICE_NAME[] = "DUDEOJI-XIAO";
+constexpr char BLE_DEVICE_NAME[] = "DUDEOJI-CONTROL";
+constexpr char DEVICE_ID[] = "control-01";
 
-// 아래 UUID는 dudeoji-gateway/protocol.py와 반드시 같아야 합니다.
+// dudeoji-gateway/protocol.py와 같은 UUID를 사용합니다.
 constexpr char SERVICE_UUID[] =
     "7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e";
 constexpr char SENSOR_CHARACTERISTIC_UUID[] =
@@ -34,45 +36,40 @@ constexpr char CONTROL_CHARACTERISTIC_UUID[] =
 constexpr char RESULT_CHARACTERISTIC_UUID[] =
     "7d2ea28d-f7bd-485a-bd9d-92ad6ecfe93e";
 
-// XIAO ESP32S3 핀 계획
 constexpr uint8_t SERVO_PIN = D0;
 constexpr uint8_t RELAY_PIN = D1;
 constexpr uint8_t REED_PIN = D2;
-constexpr uint8_t SDA_PIN = D4;
-constexpr uint8_t SCL_PIN = D5;
+constexpr uint8_t INA_SDA_PIN = D4;
+constexpr uint8_t INA_SCL_PIN = D5;
 constexpr uint8_t MANUAL_BUTTON_PIN = D8;
 
-// 릴레이 모듈이 LOW 신호에서 켜지는 일반적인 형태를 기본값으로 사용합니다.
-// 실제 모듈이 HIGH 신호에서 켜지면 false로 변경하세요.
+// 일반적인 LOW 트리거 릴레이 모듈 기준입니다.
+// 사용하는 모듈이 HIGH 트리거라면 false로 변경하세요.
 constexpr bool RELAY_ACTIVE_LOW = true;
 
 constexpr int WINDOW_CLOSED_ANGLE = 20;
 constexpr int WINDOW_OPEN_ANGLE = 100;
 
-constexpr unsigned long SENSOR_INTERVAL_MS = 5000;
+constexpr unsigned long PUBLISH_INTERVAL_MS = 5000;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 50;
 constexpr unsigned long BLE_READVERTISE_DELAY_MS = 500;
 
-// BME280 연결을 해결하기 전 BLE 왕복만 시험할 때 true로 바꾸면
-// 25.0°C / 50.0% 가짜값을 전송합니다. 최종 시연에서는 반드시 false입니다.
-constexpr bool DEMO_USE_FAKE_BME = false;
+}  // namespace DudeojiControl
 
-}  // namespace Dudeoji
-
-Adafruit_BME280 bme;
+Adafruit_INA219 ina219;
 Servo windowServo;
 
 BLEServer* bleServer = nullptr;
-BLECharacteristic* sensorCharacteristic = nullptr;
+BLECharacteristic* stateCharacteristic = nullptr;
 BLECharacteristic* resultCharacteristic = nullptr;
 
 volatile bool bleConnected = false;
 bool wasBleConnected = false;
-bool bmeAvailable = false;
+bool inaAvailable = false;
 bool fanOn = false;
-volatile bool forceSensorPublish = true;
+volatile bool forcePublish = true;
 
-unsigned long lastSensorPublishAt = 0;
+unsigned long lastPublishAt = 0;
 unsigned long disconnectedAt = 0;
 
 bool lastButtonReading = HIGH;
@@ -80,46 +77,47 @@ bool stableButtonState = HIGH;
 unsigned long lastButtonChangeAt = 0;
 
 int relayOnLevel() {
-  return Dudeoji::RELAY_ACTIVE_LOW ? LOW : HIGH;
+  return DudeojiControl::RELAY_ACTIVE_LOW ? LOW : HIGH;
 }
 
 int relayOffLevel() {
-  return Dudeoji::RELAY_ACTIVE_LOW ? HIGH : LOW;
+  return DudeojiControl::RELAY_ACTIVE_LOW ? HIGH : LOW;
 }
 
 bool readWindowOpen() {
-  // N.O. 리드 스위치를 INPUT_PULLUP으로 사용:
-  // 자석이 가까워 접점이 닫히면 LOW = 창문 닫힘
-  return digitalRead(Dudeoji::REED_PIN) == HIGH;
+  // N.O. 리드 스위치 + INPUT_PULLUP:
+  // 자석이 가까워 접점이 닫히면 LOW = 창문 닫힘입니다.
+  return digitalRead(DudeojiControl::REED_PIN) == HIGH;
 }
 
 void setFan(bool enabled) {
   fanOn = enabled;
   digitalWrite(
-      Dudeoji::RELAY_PIN,
+      DudeojiControl::RELAY_PIN,
       enabled ? relayOnLevel() : relayOffLevel());
 }
 
 void setWindowPosition(bool open) {
   windowServo.write(
-      open ? Dudeoji::WINDOW_OPEN_ANGLE : Dudeoji::WINDOW_CLOSED_ANGLE);
+      open
+          ? DudeojiControl::WINDOW_OPEN_ANGLE
+          : DudeojiControl::WINDOW_CLOSED_ANGLE);
 }
 
-bool initializeBme280() {
-  Wire.begin(Dudeoji::SDA_PIN, Dudeoji::SCL_PIN);
+bool initializeIna219() {
+  Wire.begin(
+      DudeojiControl::INA_SDA_PIN,
+      DudeojiControl::INA_SCL_PIN);
 
-  if (bme.begin(0x76, &Wire)) {
-    Serial.println("[BME280] 연결 성공: 0x76");
-    return true;
+  if (!ina219.begin(&Wire)) {
+    Serial.println(
+        "[INA219] 초기화 실패 - 창문·팬 제어는 계속 동작합니다.");
+    return false;
   }
 
-  if (bme.begin(0x77, &Wire)) {
-    Serial.println("[BME280] 연결 성공: 0x77");
-    return true;
-  }
-
-  Serial.println("[BME280] 찾지 못함: 0x76/0x77");
-  return false;
+  ina219.setCalibration_32V_2A();
+  Serial.println("[INA219] 연결 성공");
+  return true;
 }
 
 void notifyJson(BLECharacteristic* characteristic, JsonDocument& doc) {
@@ -129,7 +127,6 @@ void notifyJson(BLECharacteristic* characteristic, JsonDocument& doc) {
 
   String payload;
   serializeJson(doc, payload);
-
   characteristic->setValue(payload.c_str());
   characteristic->notify();
 
@@ -137,37 +134,42 @@ void notifyJson(BLECharacteristic* characteristic, JsonDocument& doc) {
   Serial.println(payload);
 }
 
-void publishSensorReading() {
+void publishControlState() {
   JsonDocument doc;
-  doc["type"] = "sensor";
+  doc["type"] = "control_state";
+  doc["device_id"] = DudeojiControl::DEVICE_ID;
   doc["window_open"] = readWindowOpen();
   doc["fan_on"] = fanOn;
-  doc["bme_ok"] = bmeAvailable;
 
-  if (bmeAvailable) {
-    const float temperature = bme.readTemperature();
-    const float humidity = bme.readHumidity();
+  float busVoltage = NAN;
+  float currentMa = NAN;
+  float powerWatt = NAN;
+  bool measurementValid = false;
 
-    if (isfinite(temperature) && isfinite(humidity)) {
-      doc["temperature"] = roundf(temperature * 10.0f) / 10.0f;
-      doc["humidity"] = roundf(humidity * 10.0f) / 10.0f;
-    } else {
-      doc["bme_ok"] = false;
-      doc["temperature"] = nullptr;
-      doc["humidity"] = nullptr;
-    }
-  } else if (Dudeoji::DEMO_USE_FAKE_BME) {
-    doc["bme_ok"] = true;
-    doc["temperature"] = 25.0;
-    doc["humidity"] = 50.0;
-  } else {
-    doc["temperature"] = nullptr;
-    doc["humidity"] = nullptr;
+  if (inaAvailable) {
+    busVoltage = ina219.getBusVoltage_V();
+    currentMa = ina219.getCurrent_mA();
+    powerWatt = ina219.getPower_mW() / 1000.0f;
+    measurementValid =
+        isfinite(busVoltage) &&
+        isfinite(currentMa) &&
+        isfinite(powerWatt);
   }
 
-  notifyJson(sensorCharacteristic, doc);
-  lastSensorPublishAt = millis();
-  forceSensorPublish = false;
+  doc["ina_available"] = inaAvailable && measurementValid;
+  if (inaAvailable && measurementValid) {
+    doc["bus_voltage"] = roundf(busVoltage * 100.0f) / 100.0f;
+    doc["current_ma"] = roundf(currentMa * 10.0f) / 10.0f;
+    doc["power_watt"] = roundf(powerWatt * 100.0f) / 100.0f;
+  } else {
+    doc["bus_voltage"] = nullptr;
+    doc["current_ma"] = nullptr;
+    doc["power_watt"] = nullptr;
+  }
+
+  notifyJson(stateCharacteristic, doc);
+  lastPublishAt = millis();
+  forcePublish = false;
 }
 
 void publishCommandResult(
@@ -177,6 +179,7 @@ void publishCommandResult(
     const char* detail) {
   JsonDocument doc;
   doc["type"] = "result";
+  doc["device_id"] = DudeojiControl::DEVICE_ID;
   doc["command_id"] = commandId;
   doc["action"] = action;
   doc["success"] = success;
@@ -187,7 +190,8 @@ void publishCommandResult(
 
 void handleControlCommand(const String& rawPayload) {
   JsonDocument doc;
-  const DeserializationError error = deserializeJson(doc, rawPayload);
+  const DeserializationError error =
+      deserializeJson(doc, rawPayload);
 
   if (error) {
     Serial.print("[BLE RX] JSON 오류: ");
@@ -250,16 +254,14 @@ void handleControlCommand(const String& rawPayload) {
     return;
   }
 
-  // 실제 리드·릴레이 상태가 서버와 웹에 곧바로 반영되도록 다음 loop에서
-  // 센서값을 한 번 더 보냅니다.
-  forceSensorPublish = true;
+  forcePublish = true;
 }
 
-class DudeojiServerCallbacks : public BLEServerCallbacks {
+class ControlServerCallbacks : public BLEServerCallbacks {
  public:
   void onConnect(BLEServer* server) override {
     bleConnected = true;
-    forceSensorPublish = true;
+    forcePublish = true;
     Serial.println("[BLE] 게이트웨이 연결됨");
   }
 
@@ -270,7 +272,7 @@ class DudeojiServerCallbacks : public BLEServerCallbacks {
   }
 };
 
-class DudeojiControlCallbacks : public BLECharacteristicCallbacks {
+class ControlCommandCallbacks : public BLECharacteristicCallbacks {
  public:
   void onWrite(BLECharacteristic* characteristic) override {
     const String value = characteristic->getValue();
@@ -281,47 +283,49 @@ class DudeojiControlCallbacks : public BLECharacteristicCallbacks {
 };
 
 void initializeBle() {
-  BLEDevice::init(Dudeoji::BLE_DEVICE_NAME);
+  BLEDevice::init(DudeojiControl::BLE_DEVICE_NAME);
   BLEDevice::setMTU(247);
 
   bleServer = BLEDevice::createServer();
-  bleServer->setCallbacks(new DudeojiServerCallbacks());
+  bleServer->setCallbacks(new ControlServerCallbacks());
 
   BLEService* service =
-      bleServer->createService(Dudeoji::SERVICE_UUID);
+      bleServer->createService(DudeojiControl::SERVICE_UUID);
 
-  sensorCharacteristic = service->createCharacteristic(
-      Dudeoji::SENSOR_CHARACTERISTIC_UUID,
+  stateCharacteristic = service->createCharacteristic(
+      DudeojiControl::SENSOR_CHARACTERISTIC_UUID,
       BLECharacteristic::PROPERTY_READ |
           BLECharacteristic::PROPERTY_NOTIFY);
-  sensorCharacteristic->addDescriptor(new BLE2902());
+  stateCharacteristic->addDescriptor(new BLE2902());
 
   BLECharacteristic* controlCharacteristic =
       service->createCharacteristic(
-          Dudeoji::CONTROL_CHARACTERISTIC_UUID,
+          DudeojiControl::CONTROL_CHARACTERISTIC_UUID,
           BLECharacteristic::PROPERTY_WRITE);
-  controlCharacteristic->setCallbacks(new DudeojiControlCallbacks());
+  controlCharacteristic->setCallbacks(
+      new ControlCommandCallbacks());
 
   resultCharacteristic = service->createCharacteristic(
-      Dudeoji::RESULT_CHARACTERISTIC_UUID,
+      DudeojiControl::RESULT_CHARACTERISTIC_UUID,
       BLECharacteristic::PROPERTY_NOTIFY);
   resultCharacteristic->addDescriptor(new BLE2902());
 
   service->start();
 
   BLEAdvertising* advertising = BLEDevice::getAdvertising();
-  advertising->addServiceUUID(Dudeoji::SERVICE_UUID);
+  advertising->addServiceUUID(DudeojiControl::SERVICE_UUID);
   advertising->setScanResponse(true);
   advertising->setMinPreferred(0x06);
   advertising->setMinPreferred(0x12);
   advertising->start();
 
   Serial.print("[BLE] Advertising 시작: ");
-  Serial.println(Dudeoji::BLE_DEVICE_NAME);
+  Serial.println(DudeojiControl::BLE_DEVICE_NAME);
 }
 
 void handleManualButton() {
-  const bool reading = digitalRead(Dudeoji::MANUAL_BUTTON_PIN);
+  const bool reading =
+      digitalRead(DudeojiControl::MANUAL_BUTTON_PIN);
 
   if (reading != lastButtonReading) {
     lastButtonChangeAt = millis();
@@ -329,13 +333,14 @@ void handleManualButton() {
   }
 
   if (
-      millis() - lastButtonChangeAt >= Dudeoji::BUTTON_DEBOUNCE_MS &&
+      millis() - lastButtonChangeAt >=
+          DudeojiControl::BUTTON_DEBOUNCE_MS &&
       reading != stableButtonState) {
     stableButtonState = reading;
 
     if (stableButtonState == LOW) {
       setFan(!fanOn);
-      forceSensorPublish = true;
+      forcePublish = true;
       Serial.print("[BUTTON] 팬 상태: ");
       Serial.println(fanOn ? "ON" : "OFF");
     }
@@ -348,22 +353,29 @@ void setup() {
 
   Serial.println();
   Serial.println("================================");
-  Serial.println("두더지 XIAO BLE 펌웨어 시작");
+  Serial.println("두더지 ESP-CONTROL BLE 펌웨어 시작");
   Serial.println("================================");
 
   // 부팅 중 릴레이가 순간적으로 켜지지 않도록 OFF 값을 먼저 기록합니다.
-  digitalWrite(Dudeoji::RELAY_PIN, relayOffLevel());
-  pinMode(Dudeoji::RELAY_PIN, OUTPUT);
+  digitalWrite(DudeojiControl::RELAY_PIN, relayOffLevel());
+  pinMode(DudeojiControl::RELAY_PIN, OUTPUT);
   setFan(false);
 
-  pinMode(Dudeoji::REED_PIN, INPUT_PULLUP);
-  pinMode(Dudeoji::MANUAL_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(DudeojiControl::REED_PIN, INPUT_PULLUP);
+  pinMode(
+      DudeojiControl::MANUAL_BUTTON_PIN,
+      INPUT_PULLUP);
 
+  // 서보와 팬의 실제 부하 전류는 외부 전원에서 공급해야 합니다.
   windowServo.setPeriodHertz(50);
-  windowServo.attach(Dudeoji::SERVO_PIN, 500, 2400);
+  windowServo.attach(
+      DudeojiControl::SERVO_PIN,
+      500,
+      2400);
   setWindowPosition(false);
 
-  bmeAvailable = initializeBme280();
+  // 실패해도 아래 BLE/서보/릴레이 초기화와 loop는 계속 진행합니다.
+  inaAvailable = initializeIna219();
   initializeBle();
 }
 
@@ -372,15 +384,17 @@ void loop() {
 
   if (
       bleConnected &&
-      (forceSensorPublish ||
-       millis() - lastSensorPublishAt >= Dudeoji::SENSOR_INTERVAL_MS)) {
-    publishSensorReading();
+      (forcePublish ||
+       millis() - lastPublishAt >=
+           DudeojiControl::PUBLISH_INTERVAL_MS)) {
+    publishControlState();
   }
 
   if (
       !bleConnected &&
       wasBleConnected &&
-      millis() - disconnectedAt >= Dudeoji::BLE_READVERTISE_DELAY_MS) {
+      millis() - disconnectedAt >=
+          DudeojiControl::BLE_READVERTISE_DELAY_MS) {
     bleServer->startAdvertising();
     wasBleConnected = false;
     Serial.println("[BLE] Advertising 재시작");

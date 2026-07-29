@@ -6,6 +6,8 @@ from typing import Any
 
 from fastapi import WebSocket
 
+from device_state_contract import DEVICE_STATE_OPTIONAL_BOOL_FIELDS
+
 
 class SensorReadingHub:
     """사용자·장소별 브라우저 WebSocket 연결을 메모리에서 관리합니다."""
@@ -89,6 +91,10 @@ class SensorReadingHub:
             "gateway_connected": True,
             "received_at": datetime.now(timezone.utc).isoformat(),
         }
+        for field in DEVICE_STATE_OPTIONAL_BOOL_FIELDS:
+            if field in state:
+                normalized_state[field] = state[field]
+
         self._latest_device_states[normalized_user_id] = normalized_state
         await self._broadcast_normalized_device_state(
             user_id=normalized_user_id,
@@ -107,6 +113,9 @@ class SensorReadingHub:
             "window_is_open": None,
             "ac_is_on": None,
             "bme_available": False,
+            "sense_connected": False,
+            "control_connected": False,
+            "ina_available": False,
             "gateway_connected": False,
             "received_at": datetime.now(timezone.utc).isoformat(),
         }

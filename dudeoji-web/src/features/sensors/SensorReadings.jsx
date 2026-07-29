@@ -7,6 +7,7 @@ import {
   getWeatherStatus,
 } from "./readingsApi";
 import LocationSwitcher from "../location/LocationSwitcher";
+import { getNodeConnectionStatus } from "./deviceState";
 import { useSensorRealtimeContext } from "./SensorRealtimeContext";
 import SharedAppSidebar from "../navigation/SharedAppSidebar";
 import { useLocationContext } from "../location/LocationContext";
@@ -24,6 +25,23 @@ const TEST_INTERVAL_MAX_SECONDS = 600;
 const TEST_DURATION_STORAGE_KEY = "dudeoji_sensor_test_duration_seconds";
 const TEST_INTERVAL_STORAGE_KEY = "dudeoji_sensor_test_interval_seconds";
 const HISTORY_LIMIT = 1000;
+const SENSOR_NODE_STATUS_ITEMS = [
+  {
+    key: "sense_connected",
+    label: "환경 ESP",
+    disconnectedLabel: "끊김",
+  },
+  {
+    key: "control_connected",
+    label: "제어 ESP",
+    disconnectedLabel: "끊김",
+  },
+  {
+    key: "ina_available",
+    label: "INA219",
+    disconnectedLabel: "미연결",
+  },
+];
 
 // jh 수정함 - 백엔드가 더 이상 실내값을 랜덤 생성하지 않으므로(readings_router.py의
 // POST /api/dev/mock-reading이 body를 필수로 받게 바뀜), 이 파일의 자동/수동
@@ -687,6 +705,12 @@ function normalizeReading(record) {
     firstDefined(record.wind_speed, record.windSpeed),
   );
   const pm25 = toFiniteNumber(record.pm25);
+  const powerWatt = toFiniteNumber(
+    firstDefined(record.power_watt, record.powerWatt),
+  );
+  const personDetected = toNullableBoolean(
+    firstDefined(record.person_detected, record.personDetected),
+  );
   const measuredAtValue = firstDefined(
     record.measured_at,
     record.recordedAt,
@@ -746,6 +770,8 @@ function normalizeReading(record) {
     outdoorHumidity,
     windSpeed,
     pm25,
+    powerWatt,
+    personDetected,
     weatherCondition: firstDefined(
       record.weather_condition,
       record.weatherCondition,
@@ -1694,6 +1720,7 @@ export default function SensorReadings({
   const selectedPlaceId = selectedLocation?.id ?? null;
   const {
     latestReading: realtimeReading,
+    latestDeviceState: realtimeDeviceState,
     connectionStatus: realtimeConnectionStatus,
   } = useSensorRealtimeContext();
   const [readings, setReadings] = useState([]);
@@ -2297,6 +2324,14 @@ export default function SensorReadings({
 
   const latest = readings.at(-1) || null;
   const outdoorLatest = latest?.outdoorDataValid ? latest : null;
+  const sensorNodeStatuses = SENSOR_NODE_STATUS_ITEMS.map((item) => ({
+    ...item,
+    status: getNodeConnectionStatus(
+      realtimeDeviceState,
+      item.key,
+      selectedPlaceId,
+    ),
+  }));
   const activeRange = RANGE_OPTIONS.find((option) => option.key === rangeKey);
   const displayedReadings = useMemo(() => {
     if (!activeRange?.milliseconds) {
@@ -2708,6 +2743,28 @@ export default function SensorReadings({
               </section>
             )}
 
+            {selectedLocation && (
+              <section
+                className="sensor-node-status-strip"
+                aria-label="ESP와 전력 센서 연결 상태"
+              >
+                {sensorNodeStatuses.map((item) => (
+                  <span
+                    className={`sensor-node-status is-${item.status}`}
+                    key={item.key}
+                  >
+                    <i aria-hidden="true" />
+                    <b>{item.label}</b>
+                    {item.status === "connected"
+                      ? "연결"
+                      : item.status === "disconnected"
+                        ? item.disconnectedLabel
+                        : "상태 미지원"}
+                  </span>
+                ))}
+              </section>
+            )}
+
             {locationLoadError ? (
               <section className="sensor-error-banner" role="alert">
                 <div>
@@ -2943,6 +3000,26 @@ export default function SensorReadings({
                       {latest.outdoorDataValid
                         ? "실외 날씨 API"
                         : "실외 출처 확인 필요"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span aria-hidden="true">⚡</span>
+                    <small>실측 전력</small>
+                    <strong>
+                      {Number.isFinite(latest.powerWatt)
+                        ? `${latest.powerWatt.toFixed(1)} W`
+                        : "INA219 데이터 없음"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span aria-hidden="true">👤</span>
+                    <small>재실 감지</small>
+                    <strong>
+                      {latest.personDetected === true
+                        ? "감지됨"
+                        : latest.personDetected === false
+                          ? "감지 안 됨"
+                          : "데이터 없음"}
                     </strong>
                   </div>
                 </section>

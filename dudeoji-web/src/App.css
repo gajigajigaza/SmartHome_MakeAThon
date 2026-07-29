@@ -386,6 +386,18 @@ body {
   margin: 0;
 }
 
+.environment-sensor-stale {
+  display: inline-flex;
+  align-items: center;
+  margin: 8px 0 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 244, 219, 0.9);
+  color: #9a630f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 /* jh 수정함 - 개발/데모용 "테스트 모드" 토글 + "가짜 데이터 받기" 버튼.
    제목과 같은 줄에 줄바꿈 없이 들어가도록 최대한 컴팩트하게 조정. */
 .environment-test-mode {

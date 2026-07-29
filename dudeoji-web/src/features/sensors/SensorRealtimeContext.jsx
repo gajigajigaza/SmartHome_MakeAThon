@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { API_BASE_URL, getStoredToken } from "../../api";
+import { buildRealtimeDeviceState } from "./deviceState";
 
 const SensorRealtimeContext = createContext(null);
 
@@ -136,10 +137,7 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
           String(message.place_id) === String(selectedPlaceId) &&
           message.data
         ) {
-          setLatestDeviceState({
-            ...message.data,
-            place_id: message.place_id,
-          });
+          setLatestDeviceState(buildRealtimeDeviceState(message));
           setConnectionStatus("connected");
           setConnectionError("");
         }

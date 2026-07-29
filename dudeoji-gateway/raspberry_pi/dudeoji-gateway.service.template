@@ -1,0 +1,17 @@
+[Unit]
+Description=Dudeoji BLE to WebSocket Gateway
+Wants=network-online.target bluetooth.target
+After=network-online.target bluetooth.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__GATEWAY_DIR__
+ExecStartPre=__GATEWAY_DIR__/.venv/bin/python __GATEWAY_DIR__/check_gateway_env.py
+ExecStart=__GATEWAY_DIR__/.venv/bin/python -u __GATEWAY_DIR__/gateway.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
