@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { controlDevice } from "./devicesApi";
 import HeaderQuickControls from "./HeaderQuickControls";
+import SensorNodeStatusBadges from "./SensorNodeStatusBadges";
 
 export const initialRecommendation = {
   type: "maintain",
@@ -154,6 +155,10 @@ export default function RecommendationCard({
   // jh 수정함 - 자동 실행 성공 직후 POST_EXECUTION_DISPLAY로 덮어쓸 멘트.
   // 새 reading이 도착하면(readingKey 변경) null로 되돌아간다.
   const [postExecutionOverride, setPostExecutionOverride] = useState(null);
+  // jh 수정함(2026-07-29) - 수동 모드에서 HeaderQuickControls가 보고하는
+  // 명령 전송 결과/오류 문구. 예전엔 버튼 박스 안에 떠서 지저분했는데,
+  // "직접 창문/에어컨을 조작해 주세요" 라벨 옆에 작게 옮겨서 보여준다.
+  const [manualDeviceFeedback, setManualDeviceFeedback] = useState("");
 
   const displayRecommendation = !hasStarted
     ? { ...initialRecommendation, ...START_PROMPT }
@@ -197,6 +202,7 @@ export default function RecommendationCard({
       setPostExecutionOverride(POST_EXECUTION_DISPLAY[deviceCommand] || null);
     } catch (error) {
       setPhase("manual");
+      setManualDeviceFeedback("");
       setExecutionNote(
         String(error?.message || "자동 실행에 실패했어요. 직접 조작해 주세요."),
       );
@@ -265,6 +271,7 @@ export default function RecommendationCard({
     clearCountdownInterval();
     setPhase("manual");
     setExecutionNote("");
+    setManualDeviceFeedback("");
   }
 
   return (
@@ -326,10 +333,23 @@ export default function RecommendationCard({
 
       {hasStarted && phase === "manual" && (
         <div className="recommendation-manual-controls">
-          <p className="recommendation-manual-controls-label">
-            직접 창문/에어컨을 조작해 주세요
+          <div className="recommendation-manual-controls-heading">
+            <p className="recommendation-manual-controls-label">
+              직접 창문/에어컨을 조작해 주세요
+            </p>
+            <SensorNodeStatusBadges />
+          </div>
+          <p
+            className="recommendation-manual-feedback"
+            role="status"
+            title={manualDeviceFeedback || undefined}
+          >
+            {manualDeviceFeedback}
           </p>
-          <HeaderQuickControls recommendedAction={recommendedAction} />
+          <HeaderQuickControls
+            recommendedAction={recommendedAction}
+            onFeedbackChange={setManualDeviceFeedback}
+          />
         </div>
       )}
 

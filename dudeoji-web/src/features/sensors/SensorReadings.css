@@ -1865,7 +1865,7 @@
 }
 
 /* =========================================================
-   공통 사이드바 + 정확한 수신 상태 + 5초 테스트 자동 기록
+   공통 사이드바 + 정확한 수신 상태
    ========================================================= */
 
 /* 기존 센서 전용 사이드바는 더 이상 렌더하지 않으며, 혹시 남아 있어도 숨깁니다. */
@@ -1912,22 +1912,6 @@
 .sensor-live-badge.is-error {
   background: #fff0ef;
   color: #c04a43;
-}
-
-.sensor-test-record-toggle {
-  border-color: #d8e5f8;
-  background: #f7faff;
-  color: #396896;
-}
-
-.sensor-test-record-toggle.is-active {
-  border-color: #8ab4e6;
-  background: #edf5ff;
-  box-shadow: 0 0 0 3px rgba(73, 132, 197, 0.1);
-}
-
-.sensor-test-record-toggle input:checked + .sensor-auto-toggle__track {
-  background: #4c86c7;
 }
 
 /* 공통 사이드바의 현재 페이지 버튼은 클릭하지 않아도 버튼 모양을 유지합니다. */
@@ -2337,132 +2321,4 @@
 
 .sensor-history-table .sensor-table-time {
   min-width: 112px;
-}
-
-/* =========================================================
-   유한 테스트 세션: 총 시간 + 기록 간격 사용자 설정
-   ========================================================= */
-.sensor-test-session-control {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  min-height: 42px;
-}
-
-.sensor-test-setting-input {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 0 8px 0 12px;
-  border: 1px solid #d7e4dd;
-  border-radius: 12px;
-  background: #fff;
-  color: #49645a;
-  font-size: 11px;
-  font-weight: 850;
-  white-space: nowrap;
-}
-
-.sensor-test-setting-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.sensor-test-setting-field input {
-  width: 58px;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #234a3b;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 900;
-  text-align: right;
-}
-
-.sensor-test-setting-field input:focus {
-  border-radius: 6px;
-  box-shadow: 0 0 0 3px rgba(77, 153, 113, 0.14);
-}
-
-.sensor-test-setting-field input:disabled {
-  color: #8a9993;
-  cursor: not-allowed;
-}
-
-.sensor-test-setting-field em {
-  color: #71857c;
-  font-style: normal;
-  font-size: 11px;
-}
-
-.sensor-test-setting-apply {
-  min-height: 42px;
-  padding: 0 12px;
-  border: 1px solid #cfe0d7;
-  border-radius: 12px;
-  background: #f7fbf8;
-  color: #315f4b;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.sensor-test-setting-apply:hover:not(:disabled) {
-  border-color: #9fc5b1;
-  background: #edf7f1;
-}
-
-.sensor-test-setting-apply:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.sensor-test-session-summary {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 10px;
-  border-radius: 10px;
-  background: #f2f8f4;
-  color: #527064;
-  font-size: 11px;
-  font-weight: 850;
-  white-space: nowrap;
-}
-
-.sensor-test-session-control.is-running .sensor-test-session-summary {
-  background: #f4effb;
-  color: #744ca9;
-}
-
-@media (max-width: 1100px) {
-  .sensor-test-session-control {
-    width: 100%;
-  }
-}
-
-@media (max-width: 760px) {
-  .sensor-test-session-control {
-    align-items: stretch;
-  }
-
-  .sensor-test-setting-input {
-    flex: 1 1 180px;
-    justify-content: space-between;
-  }
-
-  .sensor-test-setting-apply {
-    flex: 0 0 auto;
-  }
-
-  .sensor-test-session-summary {
-    width: 100%;
-    justify-content: center;
-  }
 }

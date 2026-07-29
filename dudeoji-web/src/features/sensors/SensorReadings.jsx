@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  createMockReading,
   getLogicThresholds,
   getReadingHistory,
   getWeatherStatus,
@@ -20,7 +19,6 @@ import {
   HISTORY_LIMIT,
   RANGE_OPTIONS,
   buildAlerts,
-  buildRandomMockReading,
   formatDateTime,
   getConnectionState,
   mergeReadings,
@@ -71,7 +69,6 @@ export default function SensorReadings({
   const [readings, setReadings] = useState([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isCreatingMock, setIsCreatingMock] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const refreshSeconds = LIVE_REFRESH_SECONDS;
@@ -520,45 +517,6 @@ export default function SensorReadings({
   });
   const alerts = buildAlerts(latest, connectionState, logicThresholds);
 
-  async function handleCreateMockReading() {
-    const placeId = selectedPlaceIdRef.current;
-    const version = requestVersionRef.current;
-    if (!placeId) {
-      setToastMessage("먼저 측정할 장소를 선택해 주세요.");
-      return;
-    }
-
-    setIsCreatingMock(true);
-    try {
-      const created = await createMockReading(
-        placeId,
-        "manual",
-        buildRandomMockReading(),
-      );
-      if (
-        String(selectedPlaceIdRef.current) !== String(placeId) ||
-        requestVersionRef.current !== version
-      ) {
-        return;
-      }
-      mergeIntoState([created], {
-        expectedPlaceId: placeId,
-        expectedVersion: version,
-      });
-      consecutiveFailureRef.current = 0;
-      setSyncStatus("connected");
-      setErrorMessage("");
-      setLastSyncedAt(new Date());
-      loadWeatherApiStatus({ placeId, version });
-      setToastMessage("테스트 측정값 1건을 생성했습니다.");
-    } catch (error) {
-      loadWeatherApiStatus({ placeId, version });
-      setToastMessage(error.message || "테스트 측정값 생성에 실패했습니다.");
-    } finally {
-      setIsCreatingMock(false);
-    }
-  }
-
   return (
     <div className="mypage-screen sensor-page-shell">
       <header className="mypage-mobile-topbar sensor-mobile-topbar">
@@ -728,13 +686,6 @@ export default function SensorReadings({
                   실내 센서값과 이 장소 좌표의 날씨 API 조회가 모두 성공하면
                   기록이 저장됩니다.
                 </p>
-                <button
-                  type="button"
-                  onClick={handleCreateMockReading}
-                  disabled={isCreatingMock}
-                >
-                  {isCreatingMock ? "생성 중…" : "테스트 측정값 1건 생성"}
-                </button>
               </section>
             ) : (
               <>
@@ -780,13 +731,6 @@ export default function SensorReadings({
                     데이터를 대신 보여주지 않습니다. 실외값은 날씨 API 성공
                     결과만 저장하며 API 결과는 10분간 재사용합니다.
                   </p>
-                  <button
-                    type="button"
-                    onClick={handleCreateMockReading}
-                    disabled={isCreatingMock}
-                  >
-                    {isCreatingMock ? "생성 중…" : "테스트 측정 추가"}
-                  </button>
                 </section>
               </>
             )}
