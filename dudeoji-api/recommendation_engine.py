@@ -367,7 +367,14 @@ def _determine_action_core(
             "is_auto_triggered": is_auto,
         }
 
-    if is_ac_on and ac_run_time_minutes < target_cooldown_minutes:
+    # jh 수정함 - target_cooldown_minutes는 DB 기본값(30)이 항상 채워져
+    # 있어서, 사용자가 "자동 제어 설정"을 한 번도 연 적 없어도 이 분기가
+    # 타면서 "설정한 최소 가동 시간"이라고 말하는 게 부정확했다.
+    # auto_control_enabled(=is_auto)를 켤 때만 그 폼에서 target_cooldown_
+    # minutes를 같이 저장하므로(AutoControlSettings.jsx handleSave), is_auto로
+    # 게이트하면 "설정한"이 실제로 설정된 경우에만 뜨게 된다. MANUAL 유저는
+    # 그냥 이 분기를 건너뛰고 아래 온도 기준 분기로 정상적으로 떨어진다.
+    if is_auto and is_ac_on and ac_run_time_minutes < target_cooldown_minutes:
         if indoor_temp >= thresholds["ac_cooldown_min_temperature"]:
             return {
                 "action": "ENJOY",
