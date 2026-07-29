@@ -17,8 +17,12 @@ import RecommendationCard, {
 import EnvironmentCard from "./features/location/EnvironmentCard";
 import SavingsSummary from "./features/location/SavingsSummary";
 import LocationSwitcher from "./features/location/LocationSwitcher";
-// jh 수정함 - HeaderQuickControls는 이제 헤더가 아니라 RecommendationCard
-// 우측 상단에서 렌더링됨(2026-07-26, 팀 결정). 여기서 직접 안 씀.
+// jh 수정함(2026-07-30) - "추천 시작" 전에도 하드웨어(ESP32 → 라즈베리파이 →
+// 서버) 파이프라인을 바로 테스트할 수 있어야 해서, 헤더에도 다시 상시
+// 노출한다. RecommendationCard 우측 상단(거절 후 수동 조작 영역)의
+// HeaderQuickControls는 그대로 유지 — 같은 컴포넌트를 두 곳에서 각자
+// 독립적으로 마운트하는 것뿐이라 상태 충돌은 없다.
+import HeaderQuickControls from "./features/dashboard/HeaderQuickControls";
 // jh 수정함 - LocationSwitcher/EnvironmentCard가 각자 useSelectedLocation()을
 // 따로 호출해서 서로 다른 위치를 가리키던 문제를 고치려고 Context를 추가했다.
 import {
@@ -452,6 +456,8 @@ function DashboardHome({
           isLoggingOut={isLoggingOut}
           isTutorialTarget={isIconTutorialStep}
         />
+
+        <HeaderQuickControls />
 
         <LocationSwitcher />
       </header>
