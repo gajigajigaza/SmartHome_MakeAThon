@@ -38,17 +38,22 @@
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  height: 46px;
   border-radius: 14px;
 }
 
+.header-device-action {
+  height: 46px;
+}
+
+/* jh 수정함(2026-07-29) - "창문 상태"/"에어컨 상태" 소제목 줄을 없애고
+   이모지 + 한 줄 상태 텍스트만 남기면서, 버튼(46px)보다 얇게 만들었다
+   (예전엔 두 줄짜리 콘텐츠 때문에 버튼과 같은 46px이었음 — 2x2 그리드에서
+   위/아래 칸 비율이 1:1로 보이던 것을 얇게/두껍게 구분). */
 .header-device-status {
-  gap: 10px;
-  min-width: 134px;
-  padding: 0 14px 0 11px;
-  /* jh 수정함 - 버튼(.header-device-action)은 justify-content:center인데
-     여기는 지정이 없어 flex 기본값(flex-start)으로 왼쪽에 몰려 보였음.
-     grid 2열로 칸이 넓어진 뒤로 더 두드러져서 버튼과 정렬을 맞춤. */
+  height: 30px;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 10px;
   justify-content: center;
   border: 1px solid #e3ece5;
   background:
@@ -61,51 +66,19 @@
 }
 
 .header-device-status__icon {
-  display: inline-grid;
-  place-items: center;
   flex: 0 0 auto;
-  width: 29px;
-  height: 29px;
-  border: 1px solid rgba(35, 143, 97, 0.1);
-  border-radius: 9px;
-  background: #edf8f1;
-  color: #238f61;
-}
-
-.header-device-status__icon svg {
-  width: 19px;
-  height: 19px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.header-device-status__copy {
-  min-width: 0;
+  font-size: 14px;
   line-height: 1;
 }
 
-.header-device-status__copy small {
-  display: block;
-  color: #8a9a94;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-.header-device-status__copy strong {
-  display: block;
-  max-width: 92px;
-  margin-top: 5px;
+.header-device-status strong {
   overflow: hidden;
   color: #2c5547;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
-  font-weight: 950;
-  letter-spacing: -0.03em;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
 }
 
 .header-device-action {
@@ -221,20 +194,14 @@
     padding: 6px;
   }
 
-  .header-device-status {
-    min-width: 122px;
-    padding: 0 11px 0 9px;
-  }
-
   .header-device-action {
     min-width: 94px;
     padding: 0 12px;
     font-size: 13px;
   }
 
-  .header-device-status__copy strong {
-    max-width: 82px;
-    font-size: 13px;
+  .header-device-status strong {
+    font-size: 11px;
   }
 }
 

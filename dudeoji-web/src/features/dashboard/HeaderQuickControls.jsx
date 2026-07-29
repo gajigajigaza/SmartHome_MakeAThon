@@ -8,10 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useLocationContext } from "../location/LocationContext";
-import {
-  areDeviceControlsDisabled,
-  getNodeConnectionStatus,
-} from "../sensors/deviceState";
+import { areDeviceControlsDisabled } from "../sensors/deviceState";
 import { getLatestReading } from "../sensors/readingsApi";
 import { useSensorRealtimeContext } from "../sensors/SensorRealtimeContext";
 import { controlDevice } from "./devicesApi";
@@ -19,25 +16,6 @@ import { controlDevice } from "./devicesApi";
 import "./HeaderQuickControls.css";
 
 const STATUS_REFRESH_INTERVAL_MS = 2000;
-
-function WindowIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="4" y="3.75" width="16" height="16.5" rx="2.2" />
-      <path d="M12 4.2v15.6M4.6 12h14.8" />
-    </svg>
-  );
-}
-
-function AirconIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="3.5" y="5" width="17" height="8.5" rx="2.2" />
-      <path d="M7 9.2h10M7 13.5v1.3M10.5 13.5v2.2M14 13.5v1.3M17.5 13.5v2.2" />
-      <path d="M8 19c.7-.65.7-1.35 0-2M12 19c.7-.65.7-1.35 0-2M16 19c.7-.65.7-1.35 0-2" />
-    </svg>
-  );
-}
 
 function extractDeviceState(reading) {
   const recommendation = reading?.recommendation ?? {};
@@ -94,7 +72,10 @@ function getStatusText({
 // 현재 추천의 action(예: "OPEN_WINDOW")을 그대로 받는다. 스타일 강조만
 // 하고 버튼 활성/비활성에는 관여하지 않는다(추천은 강제가 아니라는
 // 서비스 철학 — 아래 disabled 로직은 그대로 controlsDisabled만 따름).
-export default function HeaderQuickControls({ recommendedAction = null }) {
+export default function HeaderQuickControls({
+  recommendedAction = null,
+  onFeedbackChange,
+}) {
   const { selectedLocation } = useLocationContext();
   const selectedPlaceId = selectedLocation?.id ?? null;
   const {
@@ -212,6 +193,14 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
     setPendingDevice("");
   }, [selectedPlaceId]);
 
+  // jh 수정함(2026-07-29) - 명령 전송 결과/오류 문구를 이 컴포넌트 안(버튼
+  // 박스 안)에 안 띄우고, 부모(RecommendationCard)가 라벨 옆에 작게 띄울 수
+  // 있도록 콜백으로 올려보낸다. 아래 렌더에서는 더 이상 이 텍스트를 직접
+  // 그리지 않는다.
+  useEffect(() => {
+    onFeedbackChange?.(feedback || statusError);
+  }, [feedback, statusError, onFeedbackChange]);
+
   async function sendControlCommand(device, action) {
     if (!selectedPlaceId || pendingDevice) return;
 
@@ -260,8 +249,8 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
     hasError: Boolean(statusError),
     isAvailable: deviceState.windowAvailable,
     isOn: deviceState.windowIsOpen,
-    onText: "열려 있음",
-    offText: "닫혀 있음",
+    onText: "창문 열림",
+    offText: "창문 닫힘",
   });
 
   const airconStatusText = getStatusText({
@@ -269,8 +258,8 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
     hasError: Boolean(statusError),
     isAvailable: deviceState.airconAvailable,
     isOn: deviceState.airconIsOn,
-    onText: "작동 중",
-    offText: "정지됨",
+    onText: "에어컨 켜짐",
+    offText: "에어컨 꺼짐",
   });
 
   const windowAction =
@@ -300,30 +289,6 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
     pendingDevice,
     state: realtimeDeviceState,
   });
-  const nodeStatuses = [
-    {
-      key: "sense_connected",
-      label: "Sense",
-      disconnectedLabel: "끊김",
-    },
-    {
-      key: "control_connected",
-      label: "Control",
-      disconnectedLabel: "끊김",
-    },
-    {
-      key: "ina_available",
-      label: "INA219",
-      disconnectedLabel: "미연결",
-    },
-  ].map((item) => ({
-    ...item,
-    status: getNodeConnectionStatus(
-      realtimeDeviceState,
-      item.key,
-      selectedPlaceId,
-    ),
-  }));
 
   // jh 수정함 - 버튼이 지금 제안하는 동작(windowAction/airconAction)이
   // 추천의 action과 같을 때만 강조한다. 창문은 OPEN_WINDOW/CLOSE_WINDOW를
@@ -341,12 +306,9 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
     >
       <div className="header-device-status">
         <span className="header-device-status__icon" aria-hidden="true">
-          <WindowIcon />
+          🪟
         </span>
-        <span className="header-device-status__copy">
-          <small>창문 상태</small>
-          <strong>{windowStatusText}</strong>
-        </span>
+        <strong>{windowStatusText}</strong>
       </div>
 
       <button
@@ -362,12 +324,9 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
 
       <div className="header-device-status">
         <span className="header-device-status__icon" aria-hidden="true">
-          <AirconIcon />
+          ❄️
         </span>
-        <span className="header-device-status__copy">
-          <small>에어컨 상태</small>
-          <strong>{airconStatusText}</strong>
-        </span>
+        <strong>{airconStatusText}</strong>
       </div>
 
       <button
@@ -380,37 +339,6 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
       >
         {airconButtonText}
       </button>
-
-      <div className="header-device-nodes" aria-label="센서 노드 연결 상태">
-        {nodeStatuses.map((item) => (
-          <span
-            className={`header-device-node is-${item.status}`}
-            title={
-              item.status === "unknown"
-                ? "구버전 게이트웨이이거나 아직 상태를 받지 못했습니다."
-                : undefined
-            }
-            key={item.key}
-          >
-            <i aria-hidden="true" />
-            <b>{item.label}</b>
-            {item.status === "connected"
-              ? "연결"
-              : item.status === "disconnected"
-                ? item.disconnectedLabel
-                : "상태 미지원"}
-          </span>
-        ))}
-      </div>
-
-      <span
-        className="header-device-controls__feedback"
-        role="status"
-        aria-live="polite"
-        title={feedback || statusError}
-      >
-        {feedback || statusError}
-      </span>
     </section>
   );
 }

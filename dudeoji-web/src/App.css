@@ -138,6 +138,30 @@ body {
   gap: 22px;
 }
 
+/* jh 수정함(2026-07-29) - .dashboard-main-grid가 align-items:stretch라서
+   RecommendationCard가 커지면(카운트다운/수동 조작/경고 박스 등) 옆 칸
+   (.flex-layout-column)도 같이 늘어나긴 하는데, 그 안의 EnvironmentCard는
+   flex-grow가 없어서 늘어난 칸의 나머지가 빈 여백으로만 남고 카드 박스
+   아래쪽 끝이 안 맞았다. EnvironmentCard를 flex:1로 채우고, 그 안에서도
+   맨 아래 절감 리포트(.saving-summary → .saving-box)가 남는 세로 공간을
+   흡수하도록 해서 빈 흰 여백 대신 초록 박스 자체가 길어지게 한다. */
+.flex-layout-column > .environment-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+
+.flex-layout-column > .environment-card > .saving-summary {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+
+.flex-layout-column > .environment-card > .saving-summary .saving-box {
+  flex: 1 1 auto;
+  align-items: center;
+}
+
 /* 아래쪽 카드 두 개 배치 */
 .bottom-grid {
   display: grid;
@@ -343,12 +367,55 @@ body {
   background: #f7faf8;
 }
 
+.recommendation-manual-controls-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .recommendation-manual-controls-label {
-  margin: 0 0 12px;
+  margin: 0;
 
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
+}
+
+/* jh 수정함(2026-07-29) - 예전엔 HeaderQuickControls 안 큰 칩(.header-device-node)
+   으로 있던 센서 보드 연결 상태를, "직접 창문/에어컨을 조작해 주세요" 라벨
+   옆으로 옮기면서 더 작게 배치. 칩 자체 스타일(.header-device-node*)은
+   HeaderQuickControls.css를 그대로 재사용하고, 여기서는 줄바꿈/간격만 담당. */
+.sensor-node-badges-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sensor-node-badges-inline .header-device-node {
+  font-size: 9px;
+  min-height: 18px;
+  padding: 2px 6px;
+}
+
+/* jh 수정함(2026-07-29) - 명령 전송 결과/오류 문구. 예전엔 HeaderQuickControls
+   버튼 박스 안(.header-device-controls__feedback)에 떠서 지저분했는데,
+   라벨 아래에 작게 옮겼다. 문구가 있든 없든 항상 같은 높이 한 줄만
+   차지하도록 고정해서(줄바꿈 없이 말줄임), 뜨고 사라질 때 카드 크기가
+   바뀌지 않게 한다. */
+.recommendation-manual-feedback {
+  height: 15px;
+  margin: -6px 0 8px;
+  overflow: hidden;
+
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .recommendation-manual-controls .header-device-controls {
