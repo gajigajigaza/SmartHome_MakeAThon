@@ -26,6 +26,7 @@ ALLOWED_ACTIONS = frozenset(
         "TURN_OFF_AIRCON",
     }
 )
+RESULT_ONLY_ACTIONS = frozenset({"WINDOW_VERIFY"})
 
 
 class ProtocolError(ValueError):
@@ -186,6 +187,7 @@ def control_ble_to_state(
         "device_id": CONTROL_DEVICE_ID,
         "window_open": _require_bool(message, "window_open"),
         "fan_on": _require_bool(message, "fan_on"),
+        "fan_error": _require_bool(message, "fan_error"),
         "ina_available": _require_bool(message, "ina_available"),
         "bus_voltage": _require_optional_number(
             message,
@@ -216,6 +218,7 @@ def combined_sensor_to_server(
             "indoor_humidity": normalized_environment["humidity"],
             "window_is_open": normalized_control["window_open"],
             "ac_is_on": normalized_control["fan_on"],
+            "fan_error": normalized_control["fan_error"],
             "power_watt": normalized_control["power_watt"],
             "person_detected": normalized_environment["person_detected"],
         },
@@ -243,6 +246,7 @@ def environment_ble_to_server(
             "window_is_open": None,
             "ac_is_on": None,
             "power_watt": None,
+            "fan_error": None,
             "person_detected": normalized["person_detected"],
         },
     }
@@ -264,6 +268,7 @@ def control_state_to_device_state(
         "data": {
             "window_is_open": normalized_control["window_open"],
             "ac_is_on": normalized_control["fan_on"],
+            "fan_error": normalized_control["fan_error"],
             "bme_available": bme_available,
         },
     }
@@ -400,7 +405,7 @@ def result_ble_to_server(message: dict[str, Any]) -> dict[str, Any]:
 
     if not isinstance(command_id, str):
         raise ProtocolError("command_id는 문자열이어야 합니다.")
-    if action not in ALLOWED_ACTIONS and action != "":
+    if action not in ALLOWED_ACTIONS and action not in RESULT_ONLY_ACTIONS and action != "":
         raise ProtocolError("지원하지 않는 결과 action입니다.")
     if not isinstance(success, bool):
         raise ProtocolError("success는 true 또는 false여야 합니다.")

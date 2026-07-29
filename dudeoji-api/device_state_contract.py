@@ -13,6 +13,7 @@ DEVICE_STATE_OPTIONAL_BOOL_FIELDS = (
     "sense_connected",
     "control_connected",
     "ina_available",
+    "fan_error",
 )
 
 

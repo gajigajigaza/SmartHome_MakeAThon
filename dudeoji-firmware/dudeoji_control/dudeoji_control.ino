@@ -67,10 +67,18 @@ volatile bool bleConnected = false;
 bool wasBleConnected = false;
 bool inaAvailable = false;
 bool fanOn = false;
+bool fanError = false;
+uint8_t lowCurrentStreak = 0;
 volatile bool forcePublish = true;
 
 unsigned long lastPublishAt = 0;
 unsigned long disconnectedAt = 0;
+unsigned long lastFanCheckAt = 0;
+
+bool pendingWindowVerify = false;
+bool pendingWindowOpen = false;
+String pendingWindowCommandId;
+unsigned long pendingWindowVerifyAt = 0;
 
 bool lastButtonReading = HIGH;
 bool stableButtonState = HIGH;
@@ -92,6 +100,10 @@ bool readWindowOpen() {
 
 void setFan(bool enabled) {
   fanOn = enabled;
+  if (!enabled) {
+    lowCurrentStreak = 0;
+    fanError = false;
+  }
   digitalWrite(
       DudeojiControl::RELAY_PIN,
       enabled ? relayOnLevel() : relayOffLevel());
@@ -140,6 +152,7 @@ void publishControlState() {
   doc["device_id"] = DudeojiControl::DEVICE_ID;
   doc["window_open"] = readWindowOpen();
   doc["fan_on"] = fanOn;
+  doc["fan_error"] = fanError;
 
   float busVoltage = NAN;
   float currentMa = NAN;
@@ -170,6 +183,42 @@ void publishControlState() {
   notifyJson(stateCharacteristic, doc);
   lastPublishAt = millis();
   forcePublish = false;
+}
+
+void scheduleWindowVerify(const String& commandId, bool expectedOpen) {
+  pendingWindowCommandId = commandId;
+  pendingWindowOpen = expectedOpen;
+  pendingWindowVerifyAt = millis() + 600;
+  pendingWindowVerify = true;
+}
+
+void processWindowVerify() {
+  if (!pendingWindowVerify || millis() < pendingWindowVerifyAt) return;
+  const bool actualOpen = readWindowOpen();
+  const bool success = actualOpen == pendingWindowOpen;
+  publishCommandResult(
+      pendingWindowCommandId,
+      "WINDOW_VERIFY",
+      success,
+      success ? "reed_switch_verified" : "reed_switch_mismatch");
+  pendingWindowVerify = false;
+}
+
+void updateFanError() {
+  if (millis() - lastFanCheckAt < DudeojiControl::PUBLISH_INTERVAL_MS) return;
+  lastFanCheckAt = millis();
+  if (!fanOn || !inaAvailable) {
+    lowCurrentStreak = 0;
+    fanError = false;
+    return;
+  }
+  const float currentMa = ina219.getCurrent_mA();
+  if (isfinite(currentMa) && currentMa < 50.0f) {
+    if (lowCurrentStreak < 255) ++lowCurrentStreak;
+  } else {
+    lowCurrentStreak = 0;
+  }
+  fanError = lowCurrentStreak >= 3;
 }
 
 void publishCommandResult(
@@ -224,6 +273,7 @@ void handleControlCommand(const String& rawPayload) {
         action,
         true,
         "servo_open_commanded");
+    scheduleWindowVerify(commandId, true);
   } else if (action == "CLOSE_WINDOW") {
     setWindowPosition(false);
     publishCommandResult(
@@ -231,6 +281,7 @@ void handleControlCommand(const String& rawPayload) {
         action,
         true,
         "servo_close_commanded");
+    scheduleWindowVerify(commandId, false);
   } else if (action == "TURN_ON_AIRCON") {
     setFan(true);
     publishCommandResult(
@@ -376,11 +427,14 @@ void setup() {
 
   // 실패해도 아래 BLE/서보/릴레이 초기화와 loop는 계속 진행합니다.
   inaAvailable = initializeIna219();
+  lastFanCheckAt = millis();
   initializeBle();
 }
 
 void loop() {
   handleManualButton();
+  processWindowVerify();
+  updateFanError();
 
   if (
       bleConnected &&

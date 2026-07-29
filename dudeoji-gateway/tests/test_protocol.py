@@ -49,6 +49,7 @@ class ProtocolTests(unittest.TestCase):
                 "device_id": "control-01",
                 "window_open": True,
                 "fan_on": False,
+                "fan_error": False,
                 "ina_available": True,
                 "bus_voltage": 12.1,
                 "current_ma": 320.0,
@@ -68,6 +69,7 @@ class ProtocolTests(unittest.TestCase):
                     "device_id": "control-01",
                     "window_open": False,
                     "fan_on": False,
+                    "fan_error": False,
                     "ina_available": True,
                     "bus_voltage": 12.0,
                     "current_ma": -10.0,
@@ -91,6 +93,7 @@ class ProtocolTests(unittest.TestCase):
                 "device_id": "control-01",
                 "window_open": False,
                 "fan_on": True,
+                "fan_error": True,
                 "ina_available": True,
                 "bus_voltage": 12.0,
                 "current_ma": 500.0,
@@ -102,6 +105,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(result["data"]["indoor_temperature"], 24.8)
         self.assertIs(result["data"]["window_is_open"], False)
         self.assertIs(result["data"]["ac_is_on"], True)
+        self.assertIs(result["data"]["fan_error"], True)
         self.assertEqual(result["data"]["power_watt"], 6.0)
         self.assertIs(result["data"]["person_detected"], True)
 
@@ -122,6 +126,7 @@ class ProtocolTests(unittest.TestCase):
                     "device_id": "control-01",
                     "window_open": False,
                     "fan_on": False,
+                    "fan_error": False,
                     "ina_available": False,
                     "bus_voltage": None,
                     "current_ma": None,
@@ -136,6 +141,7 @@ class ProtocolTests(unittest.TestCase):
                 "device_id": "control-01",
                 "window_open": True,
                 "fan_on": False,
+                "fan_error": False,
                 "ina_available": False,
                 "bus_voltage": None,
                 "current_ma": None,
@@ -253,6 +259,33 @@ class ProtocolTests(unittest.TestCase):
 
         self.assertEqual(result["type"], "command_result")
         self.assertIs(result["success"], True)
+
+    def test_result_allows_window_verify(self) -> None:
+        result = result_ble_to_server(
+            {
+                "type": "result",
+                "command_id": "abc123",
+                "action": "WINDOW_VERIFY",
+                "success": False,
+                "detail": "reed_switch_mismatch",
+            }
+        )
+        self.assertIs(result["success"], False)
+
+    def test_control_state_requires_fan_error(self) -> None:
+        with self.assertRaises(ProtocolError):
+            control_ble_to_state(
+                {
+                    "type": "control_state",
+                    "device_id": "control-01",
+                    "window_open": False,
+                    "fan_on": False,
+                    "ina_available": False,
+                    "bus_voltage": None,
+                    "current_ma": None,
+                    "power_watt": None,
+                }
+            )
 
     def test_decode_rejects_non_object(self) -> None:
         with self.assertRaises(ProtocolError):
