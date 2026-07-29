@@ -27,6 +27,48 @@ LOGIC_THRESHOLDS = {
 # 한다. savings.py가 절감 판정에 import해서 사용한다.
 VENTILATION_ACTIONS = ("OPEN_WINDOW", "ENJOY")
 
+# 액션(+상태)별 통일된 제목 문구. 예전엔 브랜치마다(자동/수동, 창문 상태
+# 앎/모름 등) 제목이 15개 넘게 갈라져 있었는데, 그 뉘앙스는 summary/reason
+# 텍스트로 넘기고 제목은 이 표 하나로만 정한다 — determine_action()이 어떤
+# 브랜치를 타든 마지막에 이 표로 title을 덮어써서 불일치가 구조적으로
+# 불가능하게 만든다(아래 _resolve_title/determine_action 참고).
+_TITLES = {
+    "USE_AIRCON": "에어컨 켤 타이밍이에요!",
+    "OPEN_WINDOW": "지금은 창문 열 타이밍이에요!",
+    "CLOSE_WINDOW": "창문 닫을 타이밍이에요!",
+    "ENJOY_AIRCON": "에어컨이 켜져 있어요! 시원한 바람 즐기는 중",
+    "ENJOY_WINDOW": "창문이 열려 있어요! 자연 바람 즐기는 중",
+    "MAINTAIN": "딱 좋은 상태 유지 중",
+    # jh 수정함 - 재실 낭비 방지(사람 없음)와 환기 충분(바람 좋음) 두 트리거가
+    # 결과적으로 같은 조치(에어컨 끄기)라 액션/제목을 하나로 합쳤다. 왜
+    # 끄라는 건지는 summary/reason에서만 갈린다.
+    "TURN_OFF_AIRCON": "에어컨 끌 타이밍이에요!",
+    "ERROR": "어라, 센서가 이상해요!",
+}
+
+
+def _resolve_title(
+    action: str,
+    is_ac_on: Optional[bool],
+    window_is_open: Optional[bool],
+) -> str:
+    """액션(+ENJOY의 경우 실제 에어컨/창문 상태)으로 통일된 제목을 고른다.
+
+    ENJOY는 에어컨 유지 중/창문 유지 중/그냥 쾌적함(할 일 없음) 세 가지
+    서로 다른 상황을 하나의 action으로 묶어서 반환하므로, 제목만은
+    is_ac_on/window_is_open을 보고 그중 하나로 갈라준다. 둘 다 True인
+    드문 경우(에어컨 켠 채로 창문도 열어둔 경우)는 에너지 낭비 쪽을
+    먼저 알려주는 게 유용해서 에어컨 문구를 우선한다.
+    """
+    if action == "ENJOY":
+        if is_ac_on is True:
+            return _TITLES["ENJOY_AIRCON"]
+        if window_is_open is True:
+            return _TITLES["ENJOY_WINDOW"]
+        return _TITLES["MAINTAIN"]
+
+    return _TITLES.get(action, _TITLES["MAINTAIN"])
+
 
 def calculate_thi(temp: float, humidity: float) -> float:
     return (
@@ -37,6 +79,51 @@ def calculate_thi(temp: float, humidity: float) -> float:
 
 
 def determine_action(
+    indoor_temp: float,
+    outdoor_temp: float,
+    indoor_humidity: float = 50.0,
+    outdoor_humidity: float = 50.0,
+    pm25: float = 0.0,
+    wind_speed: float = 0.0,
+    weather_condition: str = "맑음",
+    window_is_open: Optional[bool] = None,
+    is_ac_on: Optional[bool] = None,
+    current_mode: str = "MANUAL",
+    ac_run_time_minutes: int = 0,
+    target_cooldown_minutes: int = 30,
+    occupancy_signal: Optional[dict] = None,
+):
+    """_determine_action_core()의 결과에 통일된 title을 덮어써서 반환한다.
+
+    핵심 판단 로직(action/summary/reason/popup 등)은 그대로 _determine_action_core
+    쪽에 있고, 여기서는 그 결과의 title 필드만 _resolve_title()로 교체한다
+    — 브랜치가 몇 개든 새로 추가되든 title 문구가 갈라질 일이 구조적으로
+    없어진다.
+    """
+    result = _determine_action_core(
+        indoor_temp=indoor_temp,
+        outdoor_temp=outdoor_temp,
+        indoor_humidity=indoor_humidity,
+        outdoor_humidity=outdoor_humidity,
+        pm25=pm25,
+        wind_speed=wind_speed,
+        weather_condition=weather_condition,
+        window_is_open=window_is_open,
+        is_ac_on=is_ac_on,
+        current_mode=current_mode,
+        ac_run_time_minutes=ac_run_time_minutes,
+        target_cooldown_minutes=target_cooldown_minutes,
+        occupancy_signal=occupancy_signal,
+    )
+    result["title"] = _resolve_title(
+        result["action"],
+        is_ac_on=is_ac_on,
+        window_is_open=window_is_open,
+    )
+    return result
+
+
+def _determine_action_core(
     indoor_temp: float,
     outdoor_temp: float,
     indoor_humidity: float = 50.0,
@@ -162,8 +249,8 @@ def determine_action(
     if is_ac_on and occupancy_signal and occupancy_signal.get("present") is False:
         occupancy_source = occupancy_signal.get("source")
         return {
-            "action": "TURN_OFF_AIRCON_UNOCCUPIED",
-            "title": "빈 방 감지, 에어컨 자동 종료! 🔌" if is_auto else "빈 방 냉방 중단 제안 🔌",
+            "action": "TURN_OFF_AIRCON",
+            "title": "에어컨 끌 타이밍이에요!",
             "summary": "지금 이 장소에는 아무도 없는 것 같아요.",
             "reason": (
                 (
@@ -175,6 +262,55 @@ def determine_action(
             ),
             "show_popup": not is_auto,
             "popup_message": "지금 자리를 비우신 것 같아요. 에어컨을 끌까요?",
+            "is_auto_triggered": is_auto,
+        }
+
+    # jh 추가 - 에어컨 켜진 채 창문도 열려 있으면 냉기가 그대로 새는
+    # 낭비 상황이다. 재실 낭비 방지(위 분기)보다는 덜 급하지만(사람은
+    # 있으니까), 쿨다운 유지 로직보다는 먼저 잡아야 한다 — 쿨다운 중이라고
+    # 이 낭비를 눈감아주면 오히려 더 오래 새게 두는 꼴이라서.
+    #
+    # jh 수정함 - 무조건 "창문을 닫으라"고 하면 안 된다. 바람이 좋거나
+    # 애초에 안 더운 날은 자연환기만으로 충분한데 에어컨까지 켜둔 거라
+    # "에어컨을 끄라"고 해야 맞다(창문은 이미 잘 열어둔 상태니까). 반대로
+    # 정말 더워서(그리고 습해서) 에어컨이 필요한 상황이면 "창문을 닫으라"고
+    # 해야 한다 — 아래 hot/humidity/wind 분기와 같은 기준으로 판단한다.
+    if is_ac_on and window_open:
+        is_hot = indoor_temp >= thresholds["indoor_hot"] or thi >= thresholds["thi_high"]
+        humidity_high = indoor_humidity >= thresholds["indoor_humidity_high"]
+        wind_is_helpful_now = (
+            wind_speed >= thresholds["wind_ventilation"]
+            and outdoor_temp <= indoor_temp + thresholds["outdoor_temperature_margin"]
+        )
+        outdoor_cooler_now = outdoor_temp < indoor_temp
+        ventilation_sufficient = not is_hot or (
+            not humidity_high and (wind_is_helpful_now or outdoor_cooler_now)
+        )
+
+        if ventilation_sufficient:
+            return {
+                "action": "TURN_OFF_AIRCON",
+                "title": "에어컨 끌 타이밍이에요!",
+                "summary": "지금은 자연 바람만으로 충분히 시원해요.",
+                "reason": (
+                    "실외 조건이 좋아 창문만으로도 충분한데 에어컨도 같이 "
+                    "켜져 있어요. 에어컨을 끄고 자연 바람을 즐겨보세요."
+                ),
+                "show_popup": not is_auto,
+                "popup_message": "자연 바람으로 충분해요. 에어컨을 끌까요?",
+                "is_auto_triggered": is_auto,
+            }
+
+        return {
+            "action": "CLOSE_WINDOW",
+            "title": "창문 닫을 타이밍이에요!",
+            "summary": "에어컨이 켜진 채 창문이 열려 있어요.",
+            "reason": (
+                "냉방한 공기가 열린 창문으로 빠져나가 전력이 낭비되고 "
+                "있어요. 창문을 닫아 주세요."
+            ),
+            "show_popup": not is_auto,
+            "popup_message": "에어컨이 켜진 채 창문이 열려 있어요. 창문을 닫을까요?",
             "is_auto_triggered": is_auto,
         }
 
