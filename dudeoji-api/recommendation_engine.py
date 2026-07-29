@@ -39,7 +39,10 @@ _TITLES = {
     "ENJOY_AIRCON": "에어컨이 켜져 있어요! 시원한 바람 즐기는 중",
     "ENJOY_WINDOW": "창문이 열려 있어요! 자연 바람 즐기는 중",
     "MAINTAIN": "딱 좋은 상태 유지 중",
-    "TURN_OFF_AIRCON_UNOCCUPIED": "자리를 비우셨나요? 에어컨을 끌 타이밍이에요!",
+    # jh 수정함 - 재실 낭비 방지(사람 없음)와 환기 충분(바람 좋음) 두 트리거가
+    # 결과적으로 같은 조치(에어컨 끄기)라 액션/제목을 하나로 합쳤다. 왜
+    # 끄라는 건지는 summary/reason에서만 갈린다.
+    "TURN_OFF_AIRCON": "에어컨 끌 타이밍이에요!",
     "ERROR": "어라, 센서가 이상해요!",
 }
 
@@ -246,8 +249,8 @@ def _determine_action_core(
     if is_ac_on and occupancy_signal and occupancy_signal.get("present") is False:
         occupancy_source = occupancy_signal.get("source")
         return {
-            "action": "TURN_OFF_AIRCON_UNOCCUPIED",
-            "title": "빈 방 감지, 에어컨 자동 종료! 🔌" if is_auto else "빈 방 냉방 중단 제안 🔌",
+            "action": "TURN_OFF_AIRCON",
+            "title": "에어컨 끌 타이밍이에요!",
             "summary": "지금 이 장소에는 아무도 없는 것 같아요.",
             "reason": (
                 (
@@ -266,7 +269,38 @@ def _determine_action_core(
     # 낭비 상황이다. 재실 낭비 방지(위 분기)보다는 덜 급하지만(사람은
     # 있으니까), 쿨다운 유지 로직보다는 먼저 잡아야 한다 — 쿨다운 중이라고
     # 이 낭비를 눈감아주면 오히려 더 오래 새게 두는 꼴이라서.
+    #
+    # jh 수정함 - 무조건 "창문을 닫으라"고 하면 안 된다. 바람이 좋거나
+    # 애초에 안 더운 날은 자연환기만으로 충분한데 에어컨까지 켜둔 거라
+    # "에어컨을 끄라"고 해야 맞다(창문은 이미 잘 열어둔 상태니까). 반대로
+    # 정말 더워서(그리고 습해서) 에어컨이 필요한 상황이면 "창문을 닫으라"고
+    # 해야 한다 — 아래 hot/humidity/wind 분기와 같은 기준으로 판단한다.
     if is_ac_on and window_open:
+        is_hot = indoor_temp >= thresholds["indoor_hot"] or thi >= thresholds["thi_high"]
+        humidity_high = indoor_humidity >= thresholds["indoor_humidity_high"]
+        wind_is_helpful_now = (
+            wind_speed >= thresholds["wind_ventilation"]
+            and outdoor_temp <= indoor_temp + thresholds["outdoor_temperature_margin"]
+        )
+        outdoor_cooler_now = outdoor_temp < indoor_temp
+        ventilation_sufficient = not is_hot or (
+            not humidity_high and (wind_is_helpful_now or outdoor_cooler_now)
+        )
+
+        if ventilation_sufficient:
+            return {
+                "action": "TURN_OFF_AIRCON",
+                "title": "에어컨 끌 타이밍이에요!",
+                "summary": "지금은 자연 바람만으로 충분히 시원해요.",
+                "reason": (
+                    "실외 조건이 좋아 창문만으로도 충분한데 에어컨도 같이 "
+                    "켜져 있어요. 에어컨을 끄고 자연 바람을 즐겨보세요."
+                ),
+                "show_popup": not is_auto,
+                "popup_message": "자연 바람으로 충분해요. 에어컨을 끌까요?",
+                "is_auto_triggered": is_auto,
+            }
+
         return {
             "action": "CLOSE_WINDOW",
             "title": "창문 닫을 타이밍이에요!",

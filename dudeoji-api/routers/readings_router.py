@@ -25,7 +25,7 @@ RecommendationAction = Literal[
     "CLOSE_WINDOW",
     "ENJOY",
     "ERROR",
-    "TURN_OFF_AIRCON_UNOCCUPIED",
+    "TURN_OFF_AIRCON",
 ]
 class SensorReadingCreate(BaseModel):
     # 실내값은 센서 또는 테스트 생성기가 제공합니다.

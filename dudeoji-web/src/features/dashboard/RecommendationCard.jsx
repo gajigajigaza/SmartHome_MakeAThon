@@ -43,7 +43,7 @@ function convertActionToType(action) {
   if (action === "CLOSE_WINDOW") return "close-window";
   if (action === "ENJOY") return "enjoy";
   if (action === "ERROR") return "error";
-  if (action === "TURN_OFF_AIRCON_UNOCCUPIED") return "aircon-off";
+  if (action === "TURN_OFF_AIRCON") return "aircon-off";
   return "maintain";
 }
 
@@ -53,7 +53,7 @@ function getRecommendationIcon(action) {
   if (action === "CLOSE_WINDOW") return "🚪";
   if (action === "ENJOY") return "🍃";
   if (action === "ERROR") return "🚨";
-  if (action === "TURN_OFF_AIRCON_UNOCCUPIED") return "🔌";
+  if (action === "TURN_OFF_AIRCON") return "🔌";
   return "✅";
 }
 
