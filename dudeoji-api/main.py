@@ -10,6 +10,7 @@
 - 판단 규칙 엔진 → recommendation_engine.py (민주)
 - 절감량 계산 → savings.py (정현)
 - MQTT 게이트웨이 수신 → mqtt_handler.py (민주)
+- 재실 감지 이력/패턴 학습 → routers/occupancy_router.py + occupancy_engine.py (정현)
 """
 import os
 
@@ -19,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from db import READINGS_TABLE, supabase
 from routers.auth_router import router as auth_router
 from routers.places_router import router as places_router
+from routers.occupancy_router import router as occupancy_router
 from routers.readings_router import router as readings_router
 from routers.realtime_router import router as realtime_router
 from routers.readings_router import save_reading_for_user
@@ -60,6 +62,7 @@ app.include_router(places_router)
 app.include_router(readings_router)
 app.include_router(realtime_router)
 app.include_router(weather_router)
+app.include_router(occupancy_router)
 
 
 @app.get("/")
