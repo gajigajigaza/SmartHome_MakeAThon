@@ -11,7 +11,11 @@ sys.path.insert(0, str(GATEWAY_DIR))
 
 from protocol import (  # noqa: E402
     ProtocolError,
+    combined_sensor_to_server,
+    control_ble_to_state,
+    control_state_to_device_state,
     decode_json_message,
+    environment_ble_to_state,
     result_ble_to_server,
     sensor_ble_to_device_state,
     sensor_ble_to_server,
@@ -20,6 +24,129 @@ from protocol import (  # noqa: E402
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_environment_ble_to_state(self) -> None:
+        result = environment_ble_to_state(
+            {
+                "type": "environment",
+                "device_id": "sense-01",
+                "temperature": 24.8,
+                "humidity": 51.3,
+                "bme_ok": True,
+                "camera_ready": True,
+                "person_detected": False,
+            }
+        )
+
+        self.assertEqual(result["device_id"], "sense-01")
+        self.assertEqual(result["temperature"], 24.8)
+        self.assertIs(result["camera_ready"], True)
+        self.assertIs(result["person_detected"], False)
+
+    def test_control_ble_to_state(self) -> None:
+        result = control_ble_to_state(
+            {
+                "type": "control_state",
+                "device_id": "control-01",
+                "window_open": True,
+                "fan_on": False,
+                "ina_available": True,
+                "bus_voltage": 12.1,
+                "current_ma": 320.0,
+                "power_watt": 3.87,
+            }
+        )
+
+        self.assertEqual(result["device_id"], "control-01")
+        self.assertIs(result["window_open"], True)
+        self.assertEqual(result["power_watt"], 3.87)
+
+    def test_control_rejects_negative_power(self) -> None:
+        with self.assertRaises(ProtocolError):
+            control_ble_to_state(
+                {
+                    "type": "control_state",
+                    "device_id": "control-01",
+                    "window_open": False,
+                    "fan_on": False,
+                    "ina_available": True,
+                    "bus_voltage": 12.0,
+                    "current_ma": -10.0,
+                    "power_watt": -0.12,
+                }
+            )
+
+    def test_combines_sense_and_control_for_server(self) -> None:
+        result = combined_sensor_to_server(
+            {
+                "type": "environment",
+                "device_id": "sense-01",
+                "temperature": 24.8,
+                "humidity": 51.3,
+                "bme_ok": True,
+                "camera_ready": True,
+                "person_detected": True,
+            },
+            {
+                "type": "control_state",
+                "device_id": "control-01",
+                "window_open": False,
+                "fan_on": True,
+                "ina_available": True,
+                "bus_voltage": 12.0,
+                "current_ma": 500.0,
+                "power_watt": 6.0,
+            },
+        )
+
+        self.assertEqual(result["type"], "sensor_reading")
+        self.assertEqual(result["data"]["indoor_temperature"], 24.8)
+        self.assertIs(result["data"]["window_is_open"], False)
+        self.assertIs(result["data"]["ac_is_on"], True)
+        self.assertEqual(result["data"]["power_watt"], 6.0)
+        self.assertIs(result["data"]["person_detected"], True)
+
+    def test_combined_reading_rejects_missing_bme(self) -> None:
+        with self.assertRaises(ProtocolError):
+            combined_sensor_to_server(
+                {
+                    "type": "environment",
+                    "device_id": "sense-01",
+                    "temperature": None,
+                    "humidity": None,
+                    "bme_ok": False,
+                    "camera_ready": True,
+                    "person_detected": None,
+                },
+                {
+                    "type": "control_state",
+                    "device_id": "control-01",
+                    "window_open": False,
+                    "fan_on": False,
+                    "ina_available": False,
+                    "bus_voltage": None,
+                    "current_ma": None,
+                    "power_watt": None,
+                },
+            )
+
+    def test_control_state_builds_device_state_without_bme(self) -> None:
+        result = control_state_to_device_state(
+            {
+                "type": "control_state",
+                "device_id": "control-01",
+                "window_open": True,
+                "fan_on": False,
+                "ina_available": False,
+                "bus_voltage": None,
+                "current_ma": None,
+                "power_watt": None,
+            },
+            bme_available=False,
+        )
+
+        self.assertIs(result["data"]["window_is_open"], True)
+        self.assertIs(result["data"]["bme_available"], False)
+
     def test_sensor_ble_to_server(self) -> None:
         result = sensor_ble_to_server(
             {

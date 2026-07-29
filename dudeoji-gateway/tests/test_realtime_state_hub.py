@@ -23,6 +23,8 @@ def load_realtime_hub_module():
     fake_fastapi = types.ModuleType("fastapi")
     fake_fastapi.WebSocket = FakeWebSocket
     previous = sys.modules.get("fastapi")
+    api_directory = str(MODULE_PATH.parent)
+    sys.path.insert(0, api_directory)
     sys.modules["fastapi"] = fake_fastapi
     try:
         spec = importlib.util.spec_from_file_location(
@@ -40,6 +42,7 @@ def load_realtime_hub_module():
             sys.modules.pop("fastapi", None)
         else:
             sys.modules["fastapi"] = previous
+        sys.path.remove(api_directory)
 
 
 class DeviceStateHubTests(unittest.IsolatedAsyncioTestCase):

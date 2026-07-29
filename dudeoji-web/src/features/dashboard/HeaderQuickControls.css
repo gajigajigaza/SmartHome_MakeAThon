@@ -11,13 +11,13 @@
   align-items: center;
   flex: 0 1 auto;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  min-height: 48px;
-  padding: 5px;
+  min-height: 62px;
+  padding: 7px;
   /* jh 수정함 - 그라데이션 제거 + 테두리를 더 연하게(요청 반영) */
   border: 1px solid rgba(184, 211, 194, 0.5);
-  border-radius: 17px;
+  border-radius: 20px;
   background: rgba(255, 255, 255, 0.88);
   box-shadow:
     0 8px 20px rgba(32, 70, 45, 0.05),
@@ -38,14 +38,14 @@
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  height: 36px;
-  border-radius: 12px;
+  height: 46px;
+  border-radius: 14px;
 }
 
 .header-device-status {
-  gap: 8px;
-  min-width: 108px;
-  padding: 0 11px 0 9px;
+  gap: 10px;
+  min-width: 134px;
+  padding: 0 14px 0 11px;
   /* jh 수정함 - 버튼(.header-device-action)은 justify-content:center인데
      여기는 지정이 없어 flex 기본값(flex-start)으로 왼쪽에 몰려 보였음.
      grid 2열로 칸이 넓어진 뒤로 더 두드러져서 버튼과 정렬을 맞춤. */
@@ -64,17 +64,17 @@
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 21px;
-  height: 21px;
+  width: 29px;
+  height: 29px;
   border: 1px solid rgba(35, 143, 97, 0.1);
-  border-radius: 8px;
+  border-radius: 9px;
   background: #edf8f1;
   color: #238f61;
 }
 
 .header-device-status__icon svg {
-  width: 14px;
-  height: 14px;
+  width: 19px;
+  height: 19px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.7;
@@ -90,33 +90,33 @@
 .header-device-status__copy small {
   display: block;
   color: #8a9a94;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: -0.02em;
 }
 
 .header-device-status__copy strong {
   display: block;
-  max-width: 72px;
-  margin-top: 4px;
+  max-width: 92px;
+  margin-top: 5px;
   overflow: hidden;
   color: #2c5547;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 950;
   letter-spacing: -0.03em;
 }
 
 .header-device-action {
   justify-content: center;
-  min-width: 78px;
-  padding: 0 12px;
+  min-width: 104px;
+  padding: 0 16px;
   border: 1px solid rgba(35, 143, 97, 0.3);
   background: #f8fcf9;
   color: #247956;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 950;
   letter-spacing: -0.03em;
   cursor: pointer;
@@ -169,26 +169,72 @@
   display: none;
 }
 
+.header-device-nodes {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 0 4px 1px;
+}
+
+.header-device-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #f0f3f2;
+  color: #73827c;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.header-device-node i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.header-device-node b {
+  color: inherit;
+  font-weight: 900;
+}
+
+.header-device-node.is-connected {
+  background: #e8f7ed;
+  color: #238553;
+}
+
+.header-device-node.is-disconnected {
+  background: #fff0ee;
+  color: #bd554b;
+}
+
 @media (max-width: 1050px) {
   .header-device-controls {
-    gap: 5px;
-    padding: 4px;
+    gap: 7px;
+    padding: 6px;
   }
 
   .header-device-status {
-    min-width: 98px;
-    padding: 0 9px 0 8px;
+    min-width: 122px;
+    padding: 0 11px 0 9px;
   }
 
   .header-device-action {
-    min-width: 72px;
-    padding: 0 10px;
-    font-size: 10px;
+    min-width: 94px;
+    padding: 0 12px;
+    font-size: 13px;
   }
 
   .header-device-status__copy strong {
-    max-width: 62px;
-    font-size: 10px;
+    max-width: 82px;
+    font-size: 13px;
   }
 }
 
@@ -199,7 +245,7 @@
    버튼 최소폭만 좁은 화면에서 살짝 키워 터치 영역을 유지한다. */
 @media (max-width: 390px) {
   .header-device-action {
-    min-width: 88px;
+    min-width: 0;
   }
 }
 
@@ -228,6 +274,10 @@
   .recommendation-card-topbar .header-device-controls .header-device-action {
     width: 100%;
     min-width: 0;
+  }
+
+  .recommendation-card-topbar .header-device-controls .header-device-nodes {
+    grid-column: 1 / -1;
   }
 }
 

@@ -60,6 +60,19 @@ def main() -> None:
         "DUDEOJI_BLE_DEVICE_NAME",
         "DUDEOJI-XIAO",
     )
+    sense_ble_name = entries.get("DUDEOJI_SENSE_BLE_NAME", "")
+    control_ble_name = entries.get("DUDEOJI_CONTROL_BLE_NAME", "")
+    dual_ble_enabled = bool(sense_ble_name and control_ble_name)
+    dual_ble_partial = bool(sense_ble_name) != bool(control_ble_name)
+    duplicate_ble_names = bool(
+        dual_ble_enabled and sense_ble_name == control_ble_name
+    )
+    try:
+        stale_seconds = float(
+            entries.get("DUDEOJI_BLE_STATE_STALE_SECONDS", "30")
+        )
+    except ValueError:
+        stale_seconds = 0.0
 
     print(f"ENV_FILE = {ENV_PATH}")
     print(f"MISSING_KEYS = {','.join(missing) if missing else 'NONE'}")
@@ -69,12 +82,20 @@ def main() -> None:
     )
     print(f"PLACE_ID = {place_id if place_id > 0 else 'INVALID'}")
     print(f"TOKEN_CONFIGURED = {bool(token) and not token_is_placeholder}")
-    print(f"TOKEN_LENGTH = {len(token)}")
     print(
         "WEBSOCKET_URL_VALID = "
         f"{websocket_url.startswith(('ws://', 'wss://'))}"
     )
-    print(f"BLE_DEVICE_NAME = {ble_name or 'MISSING'}")
+    print(f"BLE_MODE = {'2-ESP' if dual_ble_enabled else '1-ESP'}")
+    if dual_ble_enabled:
+        print(f"SENSE_BLE_NAME = {sense_ble_name}")
+        print(f"CONTROL_BLE_NAME = {control_ble_name}")
+    else:
+        print(f"BLE_DEVICE_NAME = {ble_name or 'MISSING'}")
+    print(
+        "BLE_STATE_STALE_SECONDS = "
+        f"{stale_seconds if stale_seconds > 0 else 'INVALID'}"
+    )
 
     if (
         missing
@@ -82,6 +103,10 @@ def main() -> None:
         or place_id < 1
         or token_is_placeholder
         or not websocket_url.startswith(("ws://", "wss://"))
+        or dual_ble_partial
+        or duplicate_ble_names
+        or (not dual_ble_enabled and not ble_name)
+        or stale_seconds <= 0
     ):
         raise SystemExit("GATEWAY_ENV_CHECK_FAILED")
 

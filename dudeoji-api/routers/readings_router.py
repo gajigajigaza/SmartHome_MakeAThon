@@ -98,6 +98,17 @@ class SensorReadingResponse(SensorReadingCreate):
     recommendation: Recommendation
 
 
+def _build_reading_insert_payload(
+    sensor_data: SensorReadingCreate,
+) -> dict:
+    """DB top-level 센서 필드를 만들되 기존 ac_is_on 저장 방식을 유지합니다."""
+
+    reading_payload = sensor_data.model_dump(exclude={"ac_is_on"})
+    if reading_payload.get("window_is_open") is None:
+        reading_payload["window_is_open"] = False
+    return reading_payload
+
+
 # 기기 제어를 위한 데이터 모델
 DeviceControlAction = Literal[
     "OPEN_WINDOW",
@@ -658,9 +669,7 @@ async def _save_reading_to_place(
     recommendation.savings = SavingsEstimate(**savings_result)
 
     # ac_is_on은 기존 readings 테이블에 새 열을 만들지 않고 recommendation JSONB에만 저장합니다.
-    reading_payload = sensor_data.model_dump(exclude={"ac_is_on"})
-    if reading_payload.get("window_is_open") is None:
-        reading_payload["window_is_open"] = False
+    reading_payload = _build_reading_insert_payload(sensor_data)
 
     reading_data = {
         **reading_payload,

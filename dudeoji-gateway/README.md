@@ -1,159 +1,116 @@
-# 두더지 BLE ↔ WebSocket 게이트웨이
+# 두더지 다중 BLE ↔ WebSocket 게이트웨이
 
-이 프로그램은 XIAO ESP32S3와 Render FastAPI 사이를 연결합니다.
+Windows 또는 Raspberry Pi 한 대가 두 ESP의 BLE 연결을 독립적으로
+관리하면서 Render FastAPI에는 WebSocket 하나만 유지합니다.
 
 ```text
-센서·서보·릴레이
-  ↕ GPIO / I2C
-XIAO ESP32S3
-  ↕ BLE
-Windows 노트북 또는 Raspberry Pi
-  ↕ 인터넷 WebSocket
-Render FastAPI
-  ↕ WebSocket
-두더지 React 웹
+ESP-SENSE (DUDEOJI-SENSE, sense-01)
+  ├─ XIAO ESP32S3 Sense 내장 카메라
+  └─ BME280
+            ↘ BLE
+              Raspberry Pi 또는 Windows 게이트웨이
+            ↗ BLE                  ↕ WebSocket 1개
+ESP-CONTROL (DUDEOJI-CONTROL, control-01)          Render
+  ├─ 리드 스위치
+  ├─ 서보
+  ├─ 릴레이
+  ├─ INA219
+  └─ 팬
 ```
 
-XIAO는 Wi-Fi를 사용하지 않습니다. 게이트웨이 장치에는 Render 접속을
-위한 인터넷이 필요하므로 Wi-Fi를 쓰지 않을 경우 유선 LAN 또는 USB
-테더링을 사용합니다.
+두 BLE 장치는 별도 asyncio 작업으로 검색·연결·재연결됩니다. 한 장치가
+끊겨도 다른 장치와 Render WebSocket 연결은 유지됩니다.
 
-## 구현된 통신
+## 2-ESP 설정
 
-| 방향 | 내용 |
-|---|---|
-| XIAO → 게이트웨이 | 온습도, 리드 스위치, 릴레이 상태 BLE Notification |
-| 게이트웨이 → FastAPI | `sensor_reading`, `device_state`, `command_result` |
-| 웹 → FastAPI → 게이트웨이 | 창문·에어컨 제어 명령 |
-| 게이트웨이 → XIAO | BLE Write |
-| XIAO → 게이트웨이 → FastAPI → 웹 요청 | 동일 `command_id` 결과 확인 |
-
-BLE와 WebSocket은 각각 자동 재연결합니다. 서버가 잠시 끊기면 주기
-센서값과 기기 상태는 종류별 최신 1건만 남기고, 명령 결과는 제거하지
-않습니다.
-
-## BME280가 없을 때
-
-BME280가 없어도 다음은 계속 동작합니다.
-
-- XIAO ↔ 게이트웨이 BLE 연결
-- 리드 스위치와 릴레이 상태
-- 창문·에어컨 명령
-- XIAO 명령 결과
-
-온도·습도 DB 기록만 만들지 않습니다. 새 FastAPI와 웹이 배포되면
-`device_state` 메시지로 창문·에어컨 상태를 별도로 표시합니다.
-
-## Windows 설치
-
-PowerShell:
-
-```powershell
-cd C:\Users\rrkdf\makerthon\dudeoji-gateway
-.\install_gateway.cmd
-```
-
-직접 PowerShell 스크립트를 실행하려면:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install_gateway.ps1
-```
-
-생성된 `.env`에서 실제 값을 설정합니다.
+`.env`에 두 이름을 모두 설정하면 2-ESP 모드가 활성화됩니다.
 
 ```dotenv
+DUDEOJI_WEBSOCKET_URL=wss://dudeoji-makerthon.onrender.com/ws/sensors
 DUDEOJI_PLACE_ID=54
 DUDEOJI_AUTH_TOKEN=실제_로그인_토큰
+
+DUDEOJI_SENSE_BLE_NAME=DUDEOJI-SENSE
+DUDEOJI_CONTROL_BLE_NAME=DUDEOJI-CONTROL
+DUDEOJI_BLE_STATE_STALE_SECONDS=30
 ```
 
-`.env`와 토큰은 GitHub, 채팅, 화면 공유에 올리지 않습니다.
+두 이름 중 하나만 설정하면 구성 오류로 종료합니다. 같은 이름도 허용하지
+않습니다. 실제 토큰은 `.env`에만 저장하고 GitHub, 로그, 채팅, 화면 공유에
+노출하지 않습니다.
 
-## 설정 확인과 실행
+`DUDEOJI_BLE_STATE_STALE_SECONDS`보다 오래된 장치 상태는 다른 장치의
+새 데이터와 합치지 않습니다.
 
-```powershell
-.\.venv\Scripts\python.exe .\check_gateway_env.py
-.\run_gateway.cmd
-```
+## 1-ESP 하위 호환
 
-`run_gateway.cmd`는 PowerShell 실행 정책의 영향을 받지 않습니다.
-
-정상 연결 핵심 로그:
-
-```text
-GATEWAY_ENV_CHECK_OK
-FastAPI WebSocket 인증 완료
-XIAO BLE 연결 완료
-BLE 센서 상태 수신
-```
-
-웹에서 제어 버튼을 누른 뒤 다음 세 로그가 같은 `command_id`로 나와야
-완전한 왕복입니다.
-
-```text
-BLE 제어 명령 전달
-XIAO BLE 명령 결과 수신
-명령 결과 WebSocket 전달 완료
-```
-
-상세 실기 순서는 `WINDOWS_LIVE_TEST.md`를 따릅니다.
-
-## BME 저장 경로의 임시 시연
-
-BME280 없이 온습도 저장·웹 표시 경로를 확인할 때만 `.env`에서:
+새 이름 두 개를 모두 설정하지 않으면 기존 이름을 사용합니다.
 
 ```dotenv
-DUDEOJI_DEMO_FALLBACK_BME=true
-DUDEOJI_DEMO_TEMPERATURE=25.0
-DUDEOJI_DEMO_HUMIDITY=50.0
+DUDEOJI_BLE_DEVICE_NAME=DUDEOJI-XIAO
 ```
 
-게이트웨이를 재시작하면 펌웨어 재업로드 없이 시연할 수 있습니다. 이 값은
-실제 센서값이 아니므로 시험 후 반드시
-`DUDEOJI_DEMO_FALLBACK_BME=false`로 되돌립니다.
-
-## 현재 Render와 새 코드의 차이
-
-게이트웨이는 현재 배포된 구버전 서버와도 연결됩니다. 구버전 인증 응답에
-`capabilities`가 없으면 `sensor_reading`과 `command_result`만 사용합니다.
-
-이 수정본의 FastAPI가 배포되면 인증 로그에 다음이 표시됩니다.
-
-```text
-capabilities=command_result,device_state,sensor_reading
-```
-
-`device_state`와 HTTP 제어 요청의 XIAO 결과 대기는 백엔드·웹 배포 후
-활성화됩니다. 로컬 파일 적용만으로 이미 실행 중인 Render가 바뀌지는
+기존 `sensor` BLE 메시지, BME 시연값, 명령·결과 왕복과 sensorless 라이브
+테스트는 그대로 유지됩니다. `DUDEOJI_BLE_DEVICE_NAME`은 아직 제거하지
 않습니다.
 
-## Raspberry Pi
+## BLE 입력
 
-Pi 준비 파일은 `raspberry_pi/README.md`에 있습니다.
-
-```bash
-bash install_gateway_linux.sh
-bash run_gateway_linux.sh
-```
-
-실기 왕복을 먼저 확인한 뒤 `raspberry_pi/install_service.sh`로 부팅 자동
-실행을 등록합니다.
-
-## 메시지 예
-
-XIAO BLE:
+ESP-SENSE:
 
 ```json
 {
-  "type": "sensor",
-  "temperature": null,
-  "humidity": null,
-  "window_open": false,
-  "fan_on": true,
-  "bme_ok": false
+  "type": "environment",
+  "device_id": "sense-01",
+  "temperature": 25.2,
+  "humidity": 48.5,
+  "bme_ok": true,
+  "camera_ready": true,
+  "person_detected": false
 }
 ```
 
-BME와 독립적인 FastAPI WebSocket 상태:
+ESP-CONTROL:
+
+```json
+{
+  "type": "control_state",
+  "device_id": "control-01",
+  "window_open": false,
+  "fan_on": true,
+  "ina_available": true,
+  "bus_voltage": 12.0,
+  "current_ma": 500.0,
+  "power_watt": 6.0
+}
+```
+
+ESP-SENSE는 센서 Notification만 구독합니다. ESP-CONTROL은 상태와 명령
+결과 Notification을 구독하고 제어 명령 Write를 받습니다. 두 장치가 같은
+Service UUID를 사용하므로 2-ESP 모드 검색은 광고 이름이 정확히 일치하는
+장치만 선택합니다.
+
+## Render 데이터 통합
+
+Sense와 Control의 최신 상태가 모두 연결 상태이고 stale이 아니며 BME 값이
+유효할 때 다음 `sensor_reading`을 전송합니다.
+
+```json
+{
+  "type": "sensor_reading",
+  "data": {
+    "indoor_temperature": 25.2,
+    "indoor_humidity": 48.5,
+    "window_is_open": false,
+    "ac_is_on": true,
+    "power_watt": 6.0,
+    "person_detected": false
+  }
+}
+```
+
+Control 상태가 들어오면 BME 유무와 관계없이 `device_state`를 즉시
+전송합니다.
 
 ```json
 {
@@ -166,27 +123,75 @@ BME와 독립적인 FastAPI WebSocket 상태:
 }
 ```
 
-현재 백엔드 계약에서 `ac_is_on`은 시연용 팬 릴레이 상태입니다.
+BME가 없거나 Sense 캐시가 stale이면 `sensor_reading`은 만들지 않지만,
+Control의 `device_state`는 계속 전송합니다. 서버가 잠시 끊겼을 때 대기열은
+메시지 type만 보지 않고 장치 ID와 데이터 종류별 최신값을 보존합니다.
+`command_result`는 최신값 정리 대상에서 제외됩니다.
 
-## 실물 센서 없이 Render ↔ 웹 확인
+## 명령 라우팅
 
-XIAO나 BME280을 연결하지 않고도 센서 역할 WebSocket 인증과
-`device_state`의 웹 전달을 한 번에 확인할 수 있습니다.
+다음 네 명령은 전부 `control-01`로만 전송됩니다.
+
+- `OPEN_WINDOW`
+- `CLOSE_WINDOW`
+- `TURN_ON_AIRCON`
+- `TURN_OFF_AIRCON`
+
+Sense에는 제어 Write를 하지 않습니다. Control BLE가 끊겼으면 동일한
+`command_id`를 가진 실패 `command_result`를 Render에 돌려줍니다.
+
+## Windows 설치와 실행
+
+```powershell
+cd C:\Users\rrkdf\makerthon\dudeoji-gateway
+.\install_gateway.cmd
+.\.venv\Scripts\python.exe .\check_gateway_env.py
+.\run_gateway.cmd
+```
+
+정상 2-ESP 시작 로그의 핵심:
+
+```text
+BLE_MODE = 2-ESP
+FastAPI WebSocket 인증 완료
+BLE 연결 완료: device_id=sense-01
+BLE 연결 완료: device_id=control-01
+```
+
+자세한 실기 순서는 `WINDOWS_LIVE_TEST.md`를 따릅니다.
+
+## Raspberry Pi
+
+```bash
+cd ~/makerthon/dudeoji-gateway
+bash install_gateway_linux.sh
+nano .env
+bash run_gateway_linux.sh
+```
+
+전면 실행으로 두 ESP와 명령 왕복을 확인한 뒤에만 systemd 서비스를
+설치합니다.
+
+```bash
+bash raspberry_pi/install_service.sh
+sudo journalctl -u dudeoji-gateway.service -f
+```
+
+상세 내용은 `raspberry_pi/README.md`를 확인합니다.
+
+## 테스트
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+실물 없이 가능한 테스트는 프로토콜 변환, 독립 연결 상태, Control 전용
+명령, 캐시 통합·stale, 대기열 병합과 1-ESP 하위 호환입니다. BLE 광고,
+실제 GATT Notification/Write, Raspberry Pi Bluetooth와 장시간 재연결은
+실물에서 별도로 확인해야 합니다.
+
+기존 1-ESP sensorless Render ↔ 웹 검사는 다음과 같습니다.
 
 ```powershell
 .\run_sensorless_live_test.cmd
 ```
-
-정상 결과:
-
-```text
-WEB_WEBSOCKET_OK role=web place_id=54
-RENDER_SENSOR_WEBSOCKET_OK role=sensor place_id=54 capability=device_state
-WEB_DEVICE_STATE_OK ... gateway_connected=true
-SENSORLESS_LIVE_TEST_OK db_sensor_reading_created=false
-```
-
-이 검사는 가상 `device_state`만 전송하므로 DB 온습도 기록을 생성하지
-않습니다. 센서 역할 연결은 사용자당 하나이므로, 실행 중인 실제
-게이트웨이 연결이 있다면 검사 중 잠시 교체될 수 있습니다. 일반
-게이트웨이는 연결이 끊기면 자동으로 재접속합니다.

@@ -9,6 +9,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { request } from "../../api";
 import { useLocationContext } from "../location/LocationContext";
+import {
+  areDeviceControlsDisabled,
+  getNodeConnectionStatus,
+} from "../sensors/deviceState";
 import { getLatestReading } from "../sensors/readingsApi";
 import { useSensorRealtimeContext } from "../sensors/SensorRealtimeContext";
 
@@ -54,10 +58,15 @@ function extractDeviceState(reading) {
 
 function extractRealtimeDeviceState(state) {
   const gatewayConnected = state?.gateway_connected !== false;
+  const controlConnected = state?.control_connected !== false;
   const windowAvailable =
-    gatewayConnected && typeof state?.window_is_open === "boolean";
+    gatewayConnected &&
+    controlConnected &&
+    typeof state?.window_is_open === "boolean";
   const airconAvailable =
-    gatewayConnected && typeof state?.ac_is_on === "boolean";
+    gatewayConnected &&
+    controlConnected &&
+    typeof state?.ac_is_on === "boolean";
 
   return {
     windowAvailable,
@@ -293,13 +302,35 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
         ? "에어컨 끄기"
         : "에어컨 틀기";
 
-  const gatewayKnownDisconnected =
-    String(realtimeDeviceState?.place_id) === String(selectedPlaceId) &&
-    realtimeDeviceState?.gateway_connected === false;
-  const controlsDisabled =
-    !selectedPlaceId ||
-    Boolean(pendingDevice) ||
-    gatewayKnownDisconnected;
+  const controlsDisabled = areDeviceControlsDisabled({
+    selectedPlaceId,
+    pendingDevice,
+    state: realtimeDeviceState,
+  });
+  const nodeStatuses = [
+    {
+      key: "sense_connected",
+      label: "환경 ESP",
+      disconnectedLabel: "끊김",
+    },
+    {
+      key: "control_connected",
+      label: "제어 ESP",
+      disconnectedLabel: "끊김",
+    },
+    {
+      key: "ina_available",
+      label: "INA219",
+      disconnectedLabel: "미연결",
+    },
+  ].map((item) => ({
+    ...item,
+    status: getNodeConnectionStatus(
+      realtimeDeviceState,
+      item.key,
+      selectedPlaceId,
+    ),
+  }));
 
   // jh 수정함 - 버튼이 지금 제안하는 동작(windowAction/airconAction)이
   // 추천의 action과 같을 때만 강조한다. 창문은 OPEN_WINDOW/CLOSE_WINDOW를
@@ -356,6 +387,28 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
       >
         {airconButtonText}
       </button>
+
+      <div className="header-device-nodes" aria-label="센서 노드 연결 상태">
+        {nodeStatuses.map((item) => (
+          <span
+            className={`header-device-node is-${item.status}`}
+            title={
+              item.status === "unknown"
+                ? "구버전 게이트웨이이거나 아직 상태를 받지 못했습니다."
+                : undefined
+            }
+            key={item.key}
+          >
+            <i aria-hidden="true" />
+            <b>{item.label}</b>
+            {item.status === "connected"
+              ? "연결"
+              : item.status === "disconnected"
+                ? item.disconnectedLabel
+                : "상태 미지원"}
+          </span>
+        ))}
+      </div>
 
       <span
         className="header-device-controls__feedback"
