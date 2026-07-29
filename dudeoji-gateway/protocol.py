@@ -222,6 +222,32 @@ def combined_sensor_to_server(
     }
 
 
+def environment_ble_to_server(
+    environment: dict[str, Any],
+) -> dict[str, Any]:
+    """Convert a Sense-only environment message to sensor_reading.
+
+    Control fields remain ``None`` because no control ESP is connected.
+    The API contract treats those optional fields as unavailable.
+    """
+
+    normalized = environment_ble_to_state(environment)
+    if not normalized["bme_ok"]:
+        raise ProtocolError("BME280 측정값이 없어 sensor_reading을 만들 수 없습니다.")
+
+    return {
+        "type": "sensor_reading",
+        "data": {
+            "indoor_temperature": normalized["temperature"],
+            "indoor_humidity": normalized["humidity"],
+            "window_is_open": None,
+            "ac_is_on": None,
+            "power_watt": None,
+            "person_detected": normalized["person_detected"],
+        },
+    }
+
+
 def control_state_to_device_state(
     control: dict[str, Any],
     *,
