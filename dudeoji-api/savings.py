@@ -60,6 +60,7 @@ def estimate_savings(
     cumulative_kwh_this_month: Optional[float] = None,
     window_is_open: Optional[bool] = None,
     ac_is_on: Optional[bool] = None,
+    current_ac_is_on: Optional[bool] = None,
 ) -> dict:
     """구간 시작 시점(직전 reading)의 상태로, 그 구간(duration_hours) 동안의
     절감/소비 총량을 정산한다(interval closing).
@@ -79,6 +80,14 @@ def estimate_savings(
     이므로 ENJOY도 인정 대상에 포함한다. window_is_open이 True이고
     ac_is_on이 False로 실제 확인됐을 때만 절감으로 인정하는 건 그대로다
     (추천만 됐고 실제로 창문을 열었는지는 모를 수 있어서).
+
+    jh 수정함 - TURN_OFF_AIRCON은 그 정의상 구간이 "시작될 때" 항상
+    ac_is_on=True다(모든 TURN_OFF_AIRCON 분기가 is_ac_on=True를 전제로
+    함) — 그래서 ENJOY처럼 "구간 시작 상태로 이미 확인된 절감"을 못 쓴다.
+    이 액션만 예외적으로 current_ac_is_on(구간이 끝나는 지금 이 reading에서
+    새로 확인된 실제 에어컨 상태)을 받아서, "꺼라고 추천했고 실제로 꺼진
+    게 지금 확인됐다"를 그 구간(duration_hours) 전체의 절감으로 인정한다.
+    창문을 열 필요가 없는 상황(재실 없음 등)이라 window_is_open은 안 본다.
     """
     power_w = rated_power_w if rated_power_w is not None else DEFAULT_POWER_W
     cumulative_kwh = (
@@ -96,6 +105,12 @@ def estimate_savings(
     ):
         power_saved_kwh = kwh_total
         message = "환기로 에어컨 가동을 대체했어요"
+    elif action == "TURN_OFF_AIRCON" and current_ac_is_on is False:
+        power_saved_kwh = kwh_total
+        message = "에어컨을 꺼서 전력 낭비를 막았어요"
+    elif action == "TURN_OFF_AIRCON":
+        power_saved_kwh = 0.0
+        message = "에어컨 끄기를 추천했지만 아직 꺼지지 않았어요"
     elif action == "OPEN_WINDOW":
         power_saved_kwh = 0.0
         message = "창문 열기를 추천했지만 실제 환기 상태가 확인되지 않았어요"
