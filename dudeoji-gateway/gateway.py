@@ -595,11 +595,17 @@ class DudeojiGateway:
                 self.ina_available = normalized["ina_available"]
                 LOGGER.info(
                     "Control 상태 수신: window_open=%s fan_on=%s "
-                    "ina_available=%s",
+                    "fan_error=%s ina_available=%s",
                     normalized["window_open"],
                     normalized["fan_on"],
+                    normalized["fan_error"],
                     self.ina_available,
                 )
+                if normalized["fan_error"]:
+                    LOGGER.warning(
+                        "Control fan_error 감지: 팬을 켜라고 했는데 "
+                        "전류가 감지되지 않는 상태가 지속됨"
+                    )
             else:
                 raise ProtocolError(
                     f"알 수 없는 BLE device_id입니다: {device_id}"

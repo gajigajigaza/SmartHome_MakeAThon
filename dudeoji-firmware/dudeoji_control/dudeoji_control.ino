@@ -54,6 +54,14 @@ constexpr unsigned long PUBLISH_INTERVAL_MS = 5000;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 50;
 constexpr unsigned long BLE_READVERTISE_DELAY_MS = 500;
 
+// 팬을 켜라고 했는데 이 전류(mA) 미만이면 "실제로는 안 돌고 있다"고 본다.
+constexpr float FAN_CURRENT_THRESHOLD_MA = 50.0f;
+// publishControlState()가 도는 주기(PUBLISH_INTERVAL_MS) 기준으로 이 횟수만큼
+// 연속 불일치면 fan_error를 세운다.
+constexpr int FAN_ERROR_STREAK_LIMIT = 3;
+// 서보로 창문을 움직인 뒤 리드 스위치를 다시 읽기까지 기다리는 시간.
+constexpr unsigned long WINDOW_RECHECK_DELAY_MS = 600;
+
 }  // namespace DudeojiControl
 
 Adafruit_INA219 ina219;
@@ -71,6 +79,16 @@ volatile bool forcePublish = true;
 
 unsigned long lastPublishAt = 0;
 unsigned long disconnectedAt = 0;
+
+// fanOn(명령)인데 전류가 임계치 미만인 상태가 몇 번 연속됐는지.
+int fanMismatchStreak = 0;
+bool fanError = false;
+
+// 서보 구동 명령 뒤 리드 스위치 재확인을 기다리는 중인지.
+bool pendingWindowCheck = false;
+unsigned long pendingWindowCheckAt = 0;
+bool pendingWindowCheckExpectedOpen = false;
+String pendingWindowCheckCommandId;
 
 bool lastButtonReading = HIGH;
 bool stableButtonState = HIGH;
@@ -134,6 +152,29 @@ void notifyJson(BLECharacteristic* characteristic, JsonDocument& doc) {
   Serial.println(payload);
 }
 
+// fanOn(명령)인데 실제 전류가 임계치 미만인 상태가 FAN_ERROR_STREAK_LIMIT회
+// 연속되면 fanError를 세운다. INA219가 없으면 판단할 수 없으므로 항상 false.
+void updateFanError(bool measurementValid, float currentMa) {
+  if (!inaAvailable || !measurementValid) {
+    fanMismatchStreak = 0;
+    fanError = false;
+    return;
+  }
+
+  const bool actualOn = currentMa >= DudeojiControl::FAN_CURRENT_THRESHOLD_MA;
+  if (fanOn && !actualOn) {
+    fanMismatchStreak++;
+  } else {
+    fanMismatchStreak = 0;
+  }
+  fanError = fanMismatchStreak >= DudeojiControl::FAN_ERROR_STREAK_LIMIT;
+
+  if (fanError) {
+    Serial.println(
+        "[FAN] 경고: 켜라는 명령인데 전류가 감지되지 않는 상태 지속 (fan_error)");
+  }
+}
+
 void publishControlState() {
   JsonDocument doc;
   doc["type"] = "control_state";
@@ -155,6 +196,9 @@ void publishControlState() {
         isfinite(currentMa) &&
         isfinite(powerWatt);
   }
+
+  updateFanError(measurementValid, currentMa);
+  doc["fan_error"] = fanError;
 
   doc["ina_available"] = inaAvailable && measurementValid;
   if (inaAvailable && measurementValid) {
@@ -224,6 +268,10 @@ void handleControlCommand(const String& rawPayload) {
         action,
         true,
         "servo_open_commanded");
+    pendingWindowCheck = true;
+    pendingWindowCheckAt = millis() + DudeojiControl::WINDOW_RECHECK_DELAY_MS;
+    pendingWindowCheckExpectedOpen = true;
+    pendingWindowCheckCommandId = commandId;
   } else if (action == "CLOSE_WINDOW") {
     setWindowPosition(false);
     publishCommandResult(
@@ -231,6 +279,10 @@ void handleControlCommand(const String& rawPayload) {
         action,
         true,
         "servo_close_commanded");
+    pendingWindowCheck = true;
+    pendingWindowCheckAt = millis() + DudeojiControl::WINDOW_RECHECK_DELAY_MS;
+    pendingWindowCheckExpectedOpen = false;
+    pendingWindowCheckCommandId = commandId;
   } else if (action == "TURN_ON_AIRCON") {
     setFan(true);
     publishCommandResult(
@@ -323,6 +375,31 @@ void initializeBle() {
   Serial.println(DudeojiControl::BLE_DEVICE_NAME);
 }
 
+// setWindowPosition() 명령 후 WINDOW_RECHECK_DELAY_MS가 지나면 리드 스위치를
+// 다시 읽어, 명령대로 실제 창문 상태가 바뀌었는지 별도 Result로 보고한다.
+// BLE onWrite 콜백 안에서 delay()로 기다리면 BLE 스택이 막힐 수 있어
+// loop()에서 시간이 다 됐는지만 확인하는 논블로킹 방식으로 처리한다.
+void checkPendingWindowVerification() {
+  if (!pendingWindowCheck || millis() < pendingWindowCheckAt) {
+    return;
+  }
+  pendingWindowCheck = false;
+
+  const bool actualOpen = readWindowOpen();
+  const bool verified = (actualOpen == pendingWindowCheckExpectedOpen);
+
+  publishCommandResult(
+      pendingWindowCheckCommandId,
+      "WINDOW_VERIFY",
+      verified,
+      verified ? "window_state_verified" : "window_state_mismatch");
+
+  if (!verified) {
+    Serial.println(
+        "[WINDOW] 재확인 실패: 리드스위치가 명령과 다름 (기구/배선 확인 필요)");
+  }
+}
+
 void handleManualButton() {
   const bool reading =
       digitalRead(DudeojiControl::MANUAL_BUTTON_PIN);
@@ -381,6 +458,7 @@ void setup() {
 
 void loop() {
   handleManualButton();
+  checkPendingWindowVerification();
 
   if (
       bleConnected &&

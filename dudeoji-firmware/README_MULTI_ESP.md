@@ -59,9 +59,17 @@ BME280은 부팅할 때 `0x76`, `0x77` 순서로 탐색합니다. 둘 다 실패
 `bme_ok=false`, `temperature=null`, `humidity=null`을 전송하지만
 카메라와 BLE는 계속 동작합니다.
 
-카메라는 부팅할 때 초기화한 뒤 QVGA JPEG 시험 프레임 한 장을 획득하고 즉시
-반환합니다. 프레임을 BLE 또는 microSD로 전송·저장하지 않습니다. 사람 감지
-모델이 아직 없으므로 `person_detected`는 추정값 `false`가 아니라 `null`입니다.
+카메라는 사람 감지 모델 입력 규격(96x96 그레이스케일)으로 초기화합니다.
+부팅할 때 시험 프레임 한 장을 획득해 즉시 반환하고, 이후 5초 주기로도
+프레임을 캡처해 온디바이스로 사람 유무만 추론합니다. 프레임 자체는 BLE나
+microSD로 전송·저장하지 않고, 추론에 쓴 즉시 버립니다.
+
+사람 감지는 Google TensorFlow 팀이 Visual Wake Words 데이터셋으로 학습해
+공개한 사전학습 `person_detect` 모델(int8 양자화, notperson/person 2클래스)을
+그대로 사용합니다. 별도로 학습하지 않았습니다. 카메라 또는 모델 초기화가
+실패하면(`cameraReady`/`tfliteReady`가 false) 추정값을 만들지 않고 계약대로
+`person_detected: null`을 그대로 보냅니다. 실제 추론 코드는
+`dudeoji_sense/person_detector.h`/`.cpp` 참고.
 
 5초 주기 메시지:
 
@@ -73,7 +81,7 @@ BME280은 부팅할 때 `0x76`, `0x77` 순서로 탐색합니다. 둘 다 실패
   "humidity": 48.2,
   "bme_ok": true,
   "camera_ready": true,
-  "person_detected": null
+  "person_detected": true
 }
 ```
 
@@ -108,7 +116,12 @@ GPIO9(D10/MOSI), GPIO21(CS)을 사용합니다. 위 카메라 신호 핀과 직�
 연결합니다. INA219는 팬 전원 경로에 직렬로 배치합니다.
 
 INA219 초기화가 실패해도 리드 스위치, 서보, 릴레이/팬, 수동 버튼, BLE 명령은
-계속 동작합니다. 이 경우 `ina_available=false`이고 세 측정값은 `null`입니다.
+계속 동작합니다. 이 경우 `ina_available=false`이고 세 측정값은 `null`이며
+`fan_error`는 판단할 수 없으므로 항상 `false`입니다.
+
+팬을 켜라고 지시했는데(`fan_on=true`) INA219 전류가 50mA 미만인 상태가
+5초 주기 발행 기준 3회 연속되면 `fan_error=true`를 보냅니다(배선 문제,
+팬 고장, 릴레이 접점 불량 등을 의심할 수 있는 신호입니다).
 
 5초 주기 상태:
 
@@ -118,6 +131,7 @@ INA219 초기화가 실패해도 리드 스위치, 서보, 릴레이/팬, 수동
   "device_id": "control-01",
   "window_open": false,
   "fan_on": true,
+  "fan_error": false,
   "ina_available": true,
   "bus_voltage": 5.02,
   "current_ma": 310.0,
@@ -137,6 +151,23 @@ INA219 초기화가 실패해도 리드 스위치, 서보, 릴레이/팬, 수동
   "action": "OPEN_WINDOW",
   "success": true,
   "detail": "servo_open_commanded"
+}
+```
+
+`OPEN_WINDOW`/`CLOSE_WINDOW`는 서보를 구동한 직후 위 결과를 먼저 보내고,
+600ms 뒤(BLE 콜백을 막지 않도록 `loop()`에서 논블로킹으로 처리) 리드
+스위치를 다시 읽어 같은 `command_id`로 재확인 결과를 한 번 더
+Notification합니다. `action`은 `WINDOW_VERIFY`이고, 실제 상태가 명령과
+다르면 `success=false`로 배선/기구 이상을 알 수 있습니다.
+
+```json
+{
+  "type": "result",
+  "device_id": "control-01",
+  "command_id": "example-command-id",
+  "action": "WINDOW_VERIFY",
+  "success": false,
+  "detail": "window_state_mismatch"
 }
 ```
 
@@ -161,13 +192,27 @@ arduino-cli lib install "ESP32Servo"
 
 BLE와 `esp_camera.h`는 `esp32:esp32` 보드 코어에 포함되어 있습니다.
 
+사람 감지에 쓰는 `Arduino_TensorFlowLite`(TensorFlow Lite Micro 엔진 +
+사전학습 person_detect 모델)는 Arduino 라이브러리 매니저에 없어서
+`dudeoji-firmware/libraries/Arduino_TensorFlowLite`에 저장소째로 같이
+커밋해 뒀습니다. 별도 설치 없이 아래 컴파일 명령의 `--libraries` 옵션만
+그대로 쓰면 됩니다.
+
+(원본: [tensorflow/tflite-micro-arduino-examples](https://github.com/tensorflow/tflite-micro-arduino-examples),
+Apache-2.0. Nano 33 BLE Sense 전용 마이크/오디오 코덱 드라이버(`src/peripherals`
+중 nRF52840 관련 파일)는 ESP32와 무관하고 컴파일도 안 돼서 제외했습니다.)
+
 ## 컴파일
 
-저장소 루트에서 각각 실행합니다.
+저장소 루트에서 각각 실행합니다. `dudeoji_sense`는 카메라 프레임 버퍼와
+TensorFlow Lite Micro의 텐서 연산 공간을 PSRAM에 두므로 `PSRAM=opi`
+옵션과 벤더링해 둔 라이브러리 경로가 모두 필요합니다.
 
 ```powershell
 arduino-cli compile `
   --fqbn esp32:esp32:XIAO_ESP32S3 `
+  --board-options PSRAM=opi `
+  --libraries "dudeoji-firmware\libraries" `
   "dudeoji-firmware\dudeoji_sense"
 
 arduino-cli compile `

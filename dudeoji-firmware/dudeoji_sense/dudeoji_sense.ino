@@ -17,14 +17,19 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 
+#include "person_detector.h"
+
 // ---------------------------------------------------------------------------
 // ESP-SENSE: XIAO ESP32S3 Sense 카메라 + BME280
 //
 // 데이터 경로:
-//   카메라 준비 상태·BME280 -> BLE Notification -> Raspberry Pi 게이트웨이
+//   카메라 준비 상태·BME280·사람 감지 -> BLE Notification -> Raspberry Pi 게이트웨이
 //
-// 카메라 프레임은 BLE로 보내지 않습니다. 사람 감지 모델을 붙이기 전까지
-// person_detected는 JSON null로 전송합니다.
+// 카메라 프레임은 BLE나 microSD로 전송·저장하지 않습니다. person_detected는
+// Google TensorFlow 팀이 공개한 사전학습 person_detect 모델(Visual Wake
+// Words 데이터셋, int8, 96x96 그레이스케일)로 온디바이스 추론한 값입니다.
+// 카메라나 모델 초기화가 실패한 경우에만 계약값 그대로 null을 보냅니다.
+// 실제 추론 코드는 person_detector.h/.cpp 참고.
 // ---------------------------------------------------------------------------
 
 namespace DudeojiSense {
@@ -75,6 +80,7 @@ volatile bool bleConnected = false;
 bool wasBleConnected = false;
 bool bmeAvailable = false;
 bool cameraReady = false;
+bool tfliteReady = false;
 volatile bool forcePublish = true;
 
 unsigned long lastPublishAt = 0;
@@ -120,11 +126,13 @@ bool initializeCamera() {
   config.pin_pwdn = DudeojiSense::CAMERA_PWDN_PIN;
   config.pin_reset = DudeojiSense::CAMERA_RESET_PIN;
   config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_QVGA;
-  config.jpeg_quality = 15;
+  // 사람 감지 모델 입력(96x96 그레이스케일)에 맞춘다. JPEG로는 사람 감지를
+  // 못 붙이고, person_detect 모델도 이 해상도/포맷을 그대로 요구하기 때문에
+  // 카메라를 처음부터 이 설정으로 초기화한다.
+  config.pixel_format = PIXFORMAT_GRAYSCALE;
+  config.frame_size = FRAMESIZE_96X96;
   config.fb_count = 1;
-  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+  config.grab_mode = CAMERA_GRAB_LATEST;
   config.fb_location =
       psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
 
@@ -182,8 +190,13 @@ void publishEnvironment() {
   }
 
   doc["camera_ready"] = cameraReady;
-  // 사람 감지 모델 연결 전 계약값입니다. 임의의 false로 추정하지 않습니다.
-  doc["person_detected"] = nullptr;
+  // 카메라/모델이 준비되지 않았으면 임의의 false로 추정하지 않고 계약대로
+  // null을 보낸다. 준비됐으면 온디바이스 추론 결과를 그대로 보낸다.
+  if (cameraReady && tfliteReady) {
+    doc["person_detected"] = personDetectorRunInference();
+  } else {
+    doc["person_detected"] = nullptr;
+  }
 
   String payload;
   serializeJson(doc, payload);
@@ -251,6 +264,13 @@ void setup() {
   Serial.println("================================");
 
   cameraReady = initializeCamera();
+  if (cameraReady) {
+    tfliteReady = personDetectorSetup();
+    if (!tfliteReady) {
+      Serial.println(
+          "[TFLite] 모델 초기화 실패, person_detected는 계속 null로 전송");
+    }
+  }
   bmeAvailable = initializeBme280();
   initializeBle();
 }

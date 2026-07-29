@@ -57,6 +57,7 @@ def control_message() -> dict:
         "device_id": "control-01",
         "window_open": False,
         "fan_on": True,
+        "fan_error": False,
         "ina_available": True,
         "bus_voltage": 12.0,
         "current_ma": 500.0,

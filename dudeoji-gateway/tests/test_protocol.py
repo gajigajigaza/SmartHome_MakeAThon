@@ -49,6 +49,7 @@ class ProtocolTests(unittest.TestCase):
                 "device_id": "control-01",
                 "window_open": True,
                 "fan_on": False,
+                "fan_error": False,
                 "ina_available": True,
                 "bus_voltage": 12.1,
                 "current_ma": 320.0,
@@ -68,6 +69,7 @@ class ProtocolTests(unittest.TestCase):
                     "device_id": "control-01",
                     "window_open": False,
                     "fan_on": False,
+                    "fan_error": False,
                     "ina_available": True,
                     "bus_voltage": 12.0,
                     "current_ma": -10.0,
@@ -91,6 +93,7 @@ class ProtocolTests(unittest.TestCase):
                 "device_id": "control-01",
                 "window_open": False,
                 "fan_on": True,
+                "fan_error": False,
                 "ina_available": True,
                 "bus_voltage": 12.0,
                 "current_ma": 500.0,
@@ -122,6 +125,7 @@ class ProtocolTests(unittest.TestCase):
                     "device_id": "control-01",
                     "window_open": False,
                     "fan_on": False,
+                    "fan_error": False,
                     "ina_available": False,
                     "bus_voltage": None,
                     "current_ma": None,
@@ -136,6 +140,7 @@ class ProtocolTests(unittest.TestCase):
                 "device_id": "control-01",
                 "window_open": True,
                 "fan_on": False,
+                "fan_error": False,
                 "ina_available": False,
                 "bus_voltage": None,
                 "current_ma": None,
@@ -257,6 +262,63 @@ class ProtocolTests(unittest.TestCase):
     def test_decode_rejects_non_object(self) -> None:
         with self.assertRaises(ProtocolError):
             decode_json_message(b"[]")
+
+    def test_control_ble_to_state_carries_fan_error(self) -> None:
+        result = control_ble_to_state(
+            {
+                "type": "control_state",
+                "device_id": "control-01",
+                "window_open": False,
+                "fan_on": True,
+                "fan_error": True,
+                "ina_available": True,
+                "bus_voltage": 12.0,
+                "current_ma": 0.0,
+                "power_watt": 0.0,
+            }
+        )
+
+        self.assertIs(result["fan_error"], True)
+
+    def test_combined_reading_carries_fan_error(self) -> None:
+        result = combined_sensor_to_server(
+            {
+                "type": "environment",
+                "device_id": "sense-01",
+                "temperature": 24.8,
+                "humidity": 51.3,
+                "bme_ok": True,
+                "camera_ready": True,
+                "person_detected": False,
+            },
+            {
+                "type": "control_state",
+                "device_id": "control-01",
+                "window_open": False,
+                "fan_on": True,
+                "fan_error": True,
+                "ina_available": True,
+                "bus_voltage": 12.0,
+                "current_ma": 0.0,
+                "power_watt": 0.0,
+            },
+        )
+
+        self.assertIs(result["data"]["fan_error"], True)
+
+    def test_result_ble_to_server_accepts_window_verify(self) -> None:
+        result = result_ble_to_server(
+            {
+                "type": "result",
+                "command_id": "abc123",
+                "action": "WINDOW_VERIFY",
+                "success": False,
+                "detail": "window_state_mismatch",
+            }
+        )
+
+        self.assertEqual(result["action"], "WINDOW_VERIFY")
+        self.assertIs(result["success"], False)
 
 
 if __name__ == "__main__":
