@@ -268,6 +268,126 @@ body {
   background: var(--green-dark);
 }
 
+/* jh 수정함(2026-07-29) - 추천 실행 전 5초 확인 카운트다운 박스.
+   자동 실행 중(auto-executing)에도 같은 클래스를 재사용한다(문구만 바뀜). */
+.recommendation-countdown-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 22px;
+  padding: 16px 20px;
+
+  border: 1px solid var(--border);
+  border-radius: 18px;
+
+  background: var(--green-light);
+}
+
+.recommendation-countdown-copy strong {
+  display: block;
+  color: var(--green-dark);
+  font-size: 16px;
+}
+
+.recommendation-countdown-copy p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.recommendation-countdown-bar {
+  flex: 1 1 140px;
+  height: 6px;
+  overflow: hidden;
+
+  border-radius: 999px;
+
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.recommendation-countdown-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--green);
+  transition: width 1s linear;
+}
+
+.recommendation-reject-button {
+  flex: 0 0 auto;
+  padding: 10px 18px;
+
+  border: 1px solid var(--green);
+  border-radius: 12px;
+
+  background: #fff;
+  color: var(--green-dark);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.recommendation-reject-button:hover {
+  background: var(--green-light);
+}
+
+/* jh 수정함(2026-07-29) - 거절 후 수동 조작 모드. 카드를 반으로 나눠
+   창문/에어컨 버튼(HeaderQuickControls)을 보여준다. */
+.recommendation-manual-controls {
+  margin-top: 22px;
+  padding: 16px 20px;
+
+  border: 1px solid var(--border);
+  border-radius: 18px;
+
+  background: #f7faf8;
+}
+
+.recommendation-manual-controls-label {
+  margin: 0 0 12px;
+
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.recommendation-manual-controls .header-device-controls {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: auto auto;
+  gap: 10px;
+  width: 100%;
+}
+
+.recommendation-manual-controls .header-device-controls .header-device-status,
+.recommendation-manual-controls .header-device-controls .header-device-action {
+  width: 100%;
+  min-width: 0;
+}
+
+.recommendation-manual-controls .header-device-controls .header-device-nodes,
+.recommendation-manual-controls .header-device-controls .header-device-controls__feedback {
+  grid-column: 1 / -1;
+  position: static;
+  margin-top: 4px;
+  overflow: visible;
+  text-align: center;
+  white-space: normal;
+}
+
+.recommendation-execution-note {
+  margin-top: 14px;
+  padding: 10px 16px;
+
+  border-radius: 12px;
+
+  background: var(--green-light);
+  color: var(--green-dark);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 /* 추천 이유를 보여주는 박스 */
 .reason-box {
   display: flex;

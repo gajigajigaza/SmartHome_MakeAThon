@@ -463,6 +463,8 @@ function DashboardHome({
             isTutorialTarget={isTutorialOpen && tutorialStepIndex === 1}
             hasStarted={hasStartedRecommendation}
             onStart={() => setHasStartedRecommendation(true)}
+            placeId={selectedPlaceId}
+            readingKey={updatedAt ? updatedAt.getTime() : null}
           />
 
           <div className="flex-layout-column" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
