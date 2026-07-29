@@ -16,3 +16,8 @@ CREATE TABLE IF NOT EXISTS public.occupancy_logs (
 
 CREATE INDEX IF NOT EXISTS occupancy_logs_place_time_idx
   ON public.occupancy_logs (place_id, detected_at DESC);
+
+-- readings/places와 동일한 패턴: RLS는 켜두고 정책은 만들지 않는다 ->
+-- anon/authenticated 키로는 전부 막히고, 백엔드가 쓰는 service role
+-- (RLS를 우회함)만 접근 가능하다.
+ALTER TABLE public.occupancy_logs ENABLE ROW LEVEL SECURITY;

@@ -11,3 +11,8 @@ CREATE TABLE IF NOT EXISTS public.occupancy_models (
   trained_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (place_id, day_type)
 );
+
+-- readings/places와 동일한 패턴: RLS는 켜두고 정책은 만들지 않는다 ->
+-- anon/authenticated 키로는 전부 막히고, 백엔드가 쓰는 service role
+-- (RLS를 우회함)만 접근 가능하다.
+ALTER TABLE public.occupancy_models ENABLE ROW LEVEL SECURITY;

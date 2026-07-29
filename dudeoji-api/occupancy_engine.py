@@ -122,6 +122,41 @@ def _to_kst(raw_timestamp: str) -> datetime:
     return detected_at.astimezone(KST)
 
 
+_FETCH_PAGE_SIZE = 1000
+
+
+def _fetch_all_occupancy_logs(place_id: int) -> list[dict]:
+    """occupancy_logs를 페이지네이션으로 전부 가져온다.
+
+    PostgREST(Supabase)는 .select()에 명시적 range를 안 주면 기본 최대
+    행 수(보통 1000)에서 응답을 조용히 잘라낸다 — 명시하지 않으면 이력이
+    많은 장소는 최근 몇 주 중 일부만 보고 학습하게 되는 심각한 버그가
+    생긴다. 그래서 빈 페이지가 나올 때까지 range를 밀어가며 반복 조회한다.
+    """
+    all_logs: list[dict] = []
+    start = 0
+
+    while True:
+        end = start + _FETCH_PAGE_SIZE - 1
+        result = execute_supabase_with_retry(
+            lambda start=start, end=end: (
+                supabase.table(OCCUPANCY_LOGS_TABLE)
+                .select("person_detected, detected_at")
+                .eq("place_id", place_id)
+                .range(start, end)
+                .execute()
+            )
+        )
+        page = result.data or []
+        all_logs.extend(page)
+
+        if len(page) < _FETCH_PAGE_SIZE:
+            break
+        start += _FETCH_PAGE_SIZE
+
+    return all_logs
+
+
 def train_occupancy_pattern(place_id: int) -> dict:
     """occupancy_logs 전체를 조회해 평일/주말 모델을 각각 학습하고
     occupancy_models에 저장한다(재학습은 delete-then-reinsert로 멱등).
@@ -129,15 +164,7 @@ def train_occupancy_pattern(place_id: int) -> dict:
     타임존 주의: 반드시 KST로 변환한 뒤 요일/시간을 뽑는다 — UTC 그대로
     쓰면 "평일 9~12시" 같은 시나리오가 실제로는 몇 시간 밀려서 학습된다.
     """
-    result = execute_supabase_with_retry(
-        lambda: (
-            supabase.table(OCCUPANCY_LOGS_TABLE)
-            .select("person_detected, detected_at")
-            .eq("place_id", place_id)
-            .execute()
-        )
-    )
-    logs = result.data or []
+    logs = _fetch_all_occupancy_logs(place_id)
 
     if not logs:
         return {"place_id": place_id, "day_types_trained": [], "total_logs": 0}
