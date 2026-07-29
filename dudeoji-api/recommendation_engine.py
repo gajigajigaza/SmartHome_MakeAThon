@@ -49,6 +49,7 @@ def determine_action(
     current_mode: str = "MANUAL",
     ac_run_time_minutes: int = 0,
     target_cooldown_minutes: int = 30,
+    occupancy_signal: Optional[dict] = None,
 ):
     """현재 환경을 기준으로 추천 동작을 반환합니다.
 
@@ -56,6 +57,12 @@ def determine_action(
     is_ac_on=None은 에어컨 전원 센서가 연결되지 않았거나 값을 받지 못한 상태입니다.
     추천 action으로 에어컨 전원 상태를 추정하지 않습니다.
     이 경우 닫힘으로 단정하지 않고, 필요한 동작은 조건부 문구로 안내합니다.
+
+    occupancy_signal은 occupancy_engine.resolve_occupancy_signal()이 미리
+    구해서 넘기는 값(이 함수 자체는 DB에 접근하지 않음)입니다.
+    {"present": bool, "source": "LIVE"|"PATTERN"} 또는 None(재실 신호 없음/
+    콜드스타트). "present": False일 때만 의미가 있으며, "present": True는
+    현재 로직에서 별도 분기가 없습니다(기존 엔진이 이미 재실을 기본 가정).
     """
     thresholds = LOGIC_THRESHOLDS
     thi = calculate_thi(indoor_temp, indoor_humidity)
@@ -150,6 +157,25 @@ def determine_action(
             "show_popup": False,
             "popup_message": None,
             "is_auto_triggered": False,
+        }
+
+    if is_ac_on and occupancy_signal and occupancy_signal.get("present") is False:
+        occupancy_source = occupancy_signal.get("source")
+        return {
+            "action": "TURN_OFF_AIRCON_UNOCCUPIED",
+            "title": "빈 방 감지, 에어컨 자동 종료! 🔌" if is_auto else "빈 방 냉방 중단 제안 🔌",
+            "summary": "지금 이 장소에는 아무도 없는 것 같아요.",
+            "reason": (
+                (
+                    "실시간 재실 감지 결과 사람이 없습니다."
+                    if occupancy_source == "LIVE"
+                    else "이 시간대에는 평소 자리를 비우는 패턴이 학습되었습니다."
+                )
+                + " 에어컨을 꺼서 전력 낭비를 줄일까요?"
+            ),
+            "show_popup": not is_auto,
+            "popup_message": "지금 자리를 비우신 것 같아요. 에어컨을 끌까요?",
+            "is_auto_triggered": is_auto,
         }
 
     if is_ac_on and ac_run_time_minutes < target_cooldown_minutes:

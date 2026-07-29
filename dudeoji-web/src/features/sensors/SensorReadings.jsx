@@ -133,6 +133,7 @@ const ACTION_LABELS = {
   CLOSE_WINDOW: "창문 닫기",
   ENJOY: "쾌적 상태",
   ERROR: "센서 점검",
+  TURN_OFF_AIRCON_UNOCCUPIED: "빈 방 냉방 중단",
 };
 
 const READING_SOURCE_LABELS = {
@@ -957,7 +958,7 @@ function getComfortStatus(metricKey, value, latest, thresholds) {
 
 function getActionTone(action) {
   if (action === "OPEN_WINDOW") return "ventilation";
-  if (action === "USE_AIRCON") return "aircon";
+  if (action === "USE_AIRCON" || action === "TURN_OFF_AIRCON_UNOCCUPIED") return "aircon";
   if (action === "CLOSE_WINDOW" || action === "ERROR") return "danger";
   if (action === "ENJOY") return "enjoy";
   return "maintain";

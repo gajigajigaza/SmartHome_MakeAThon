@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, ValidationError
 from auth_utils import execute_supabase_with_retry, get_current_user
 from db import READINGS_TABLE, PLACES_TABLE, supabase
 from device_connection_hub import DeviceConnectionError, device_hub
+from occupancy_engine import resolve_occupancy_signal
 from recommendation_engine import LOGIC_THRESHOLDS, determine_action
 from sensor_realtime_hub import reading_hub
 from weather import fetch_air_pollution, fetch_current_weather
@@ -24,6 +25,7 @@ RecommendationAction = Literal[
     "CLOSE_WINDOW",
     "ENJOY",
     "ERROR",
+    "TURN_OFF_AIRCON_UNOCCUPIED",
 ]
 class SensorReadingCreate(BaseModel):
     # 실내값은 센서 또는 테스트 생성기가 제공합니다.
@@ -78,6 +80,11 @@ class Recommendation(BaseModel):
     window_data_available: bool = False
     ac_data_available: bool = False
     ac_is_on: Optional[bool] = None
+    # occupancy_engine.resolve_occupancy_signal()의 결과를 그대로 투명하게
+    # 노출 — 데모/디버깅 시 "지금 이 판단이 실측(LIVE)인지 학습된 패턴
+    # (PATTERN)인지" 바로 확인할 수 있다.
+    occupancy_present: Optional[bool] = None
+    occupancy_source: Literal["LIVE", "PATTERN", "UNKNOWN"] = "UNKNOWN"
     control_context: Literal[
         "AIRCON", "VENTILATION", "COMFORT", "SAFETY", "UNKNOWN"
     ] = "UNKNOWN"
@@ -174,6 +181,7 @@ def calculate_recommendation(
     target_cooldown_minutes: int = 30,
     is_ac_on: Optional[bool] = None,
     ac_run_time_minutes: int = 0,
+    occupancy_signal: Optional[dict] = None,
 ) -> Recommendation:
     """recommendation_engine의 단일 기준으로 추천 결과를 생성합니다."""
     if (
@@ -201,6 +209,7 @@ def calculate_recommendation(
         current_mode=sensor_data.current_mode,
         ac_run_time_minutes=ac_run_time_minutes,
         target_cooldown_minutes=target_cooldown_minutes,
+        occupancy_signal=occupancy_signal,
     )
 
     savings_obj = None
@@ -609,6 +618,7 @@ async def _save_reading_to_place(
         resolved_place_id,
         sensor_data.ac_is_on,
     )
+    occupancy_signal = resolve_occupancy_signal(resolved_place_id)
 
     try:
         recommendation = calculate_recommendation(
@@ -617,6 +627,7 @@ async def _save_reading_to_place(
             target_cooldown_minutes=target_cooldown,
             is_ac_on=actual_ac_state,
             ac_run_time_minutes=ac_run_time_minutes,
+            occupancy_signal=occupancy_signal,
         )
     except HTTPException as error:
         # calculate_recommendation()도 실외값 불완전 시 503을 던질 수 있음
@@ -635,6 +646,12 @@ async def _save_reading_to_place(
     recommendation.window_data_available = sensor_data.window_is_open is not None
     recommendation.ac_data_available = sensor_data.ac_is_on is not None
     recommendation.ac_is_on = sensor_data.ac_is_on
+    recommendation.occupancy_present = (
+        occupancy_signal.get("present") if occupancy_signal else None
+    )
+    recommendation.occupancy_source = (
+        occupancy_signal.get("source") if occupancy_signal else "UNKNOWN"
+    )
     recommendation.control_context = _infer_control_context(
         recommendation.action,
         sensor_data,

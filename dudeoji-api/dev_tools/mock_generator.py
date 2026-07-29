@@ -10,6 +10,49 @@
 #   history = generate_mock_history(hours=24, interval_min=30)
 import random
 from datetime import datetime, timedelta
+from typing import Optional
+from zoneinfo import ZoneInfo
+
+KST = ZoneInfo("Asia/Seoul")
+
+
+def generate_mock_occupancy_history(
+    occupied_windows,
+    days: int = 21,
+    interval_minutes: int = 15,
+    end_time_kst: Optional[datetime] = None,
+):
+    """place_id 없이 (person_detected, detected_at) 쌍만 만든다.
+
+    occupancy_router.seed_occupancy_history()가 place_id를 채워
+    occupancy_logs에 그대로 insert하는 용도. detected_at은 KST 기준으로
+    생성한다(occupancy_engine.train_occupancy_pattern()이 학습 시 KST로
+    변환하는 것과 같은 타임존 기준을 맞추기 위함 — UTC로 만들면 "평일
+    9~12시" 같은 시나리오가 학습 시점엔 다른 시간대로 밀려서 틀어진다).
+
+    occupied_windows: [{"weekdays": [0..6], "start_hour": 9, "end_hour": 12}, ...]
+    (weekday: 월=0 ... 일=6, start_hour <= 재실 시각 < end_hour)
+    """
+    end = end_time_kst or datetime.now(KST)
+    start = end - timedelta(days=days)
+
+    logs = []
+    current_time = start
+    while current_time < end:
+        is_occupied = any(
+            current_time.weekday() in window["weekdays"]
+            and window["start_hour"] <= current_time.hour < window["end_hour"]
+            for window in occupied_windows
+        )
+        logs.append(
+            {
+                "person_detected": is_occupied,
+                "detected_at": current_time.isoformat(),
+            }
+        )
+        current_time += timedelta(minutes=interval_minutes)
+
+    return logs
 
 
 def generate_mock_history(hours=24, interval_min=30):
