@@ -310,12 +310,12 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
   const nodeStatuses = [
     {
       key: "sense_connected",
-      label: "환경 ESP",
+      label: "Sense",
       disconnectedLabel: "끊김",
     },
     {
       key: "control_connected",
-      label: "제어 ESP",
+      label: "Control",
       disconnectedLabel: "끊김",
     },
     {
