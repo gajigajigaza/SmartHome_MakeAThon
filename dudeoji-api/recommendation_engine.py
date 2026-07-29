@@ -27,6 +27,45 @@ LOGIC_THRESHOLDS = {
 # 한다. savings.py가 절감 판정에 import해서 사용한다.
 VENTILATION_ACTIONS = ("OPEN_WINDOW", "ENJOY")
 
+# 액션(+상태)별 통일된 제목 문구. 예전엔 브랜치마다(자동/수동, 창문 상태
+# 앎/모름 등) 제목이 15개 넘게 갈라져 있었는데, 그 뉘앙스는 summary/reason
+# 텍스트로 넘기고 제목은 이 표 하나로만 정한다 — determine_action()이 어떤
+# 브랜치를 타든 마지막에 이 표로 title을 덮어써서 불일치가 구조적으로
+# 불가능하게 만든다(아래 _resolve_title/determine_action 참고).
+_TITLES = {
+    "USE_AIRCON": "에어컨 켤 타이밍이에요!",
+    "OPEN_WINDOW": "지금은 창문 열 타이밍이에요!",
+    "CLOSE_WINDOW": "창문 닫을 타이밍이에요!",
+    "ENJOY_AIRCON": "에어컨이 켜져 있어요! 시원한 바람 즐기는 중",
+    "ENJOY_WINDOW": "창문이 열려 있어요! 자연 바람 즐기는 중",
+    "MAINTAIN": "딱 좋은 상태 유지 중",
+    "TURN_OFF_AIRCON_UNOCCUPIED": "자리를 비우셨나요? 에어컨을 끌 타이밍이에요!",
+    "ERROR": "어라, 센서가 이상해요!",
+}
+
+
+def _resolve_title(
+    action: str,
+    is_ac_on: Optional[bool],
+    window_is_open: Optional[bool],
+) -> str:
+    """액션(+ENJOY의 경우 실제 에어컨/창문 상태)으로 통일된 제목을 고른다.
+
+    ENJOY는 에어컨 유지 중/창문 유지 중/그냥 쾌적함(할 일 없음) 세 가지
+    서로 다른 상황을 하나의 action으로 묶어서 반환하므로, 제목만은
+    is_ac_on/window_is_open을 보고 그중 하나로 갈라준다. 둘 다 True인
+    드문 경우(에어컨 켠 채로 창문도 열어둔 경우)는 에너지 낭비 쪽을
+    먼저 알려주는 게 유용해서 에어컨 문구를 우선한다.
+    """
+    if action == "ENJOY":
+        if is_ac_on is True:
+            return _TITLES["ENJOY_AIRCON"]
+        if window_is_open is True:
+            return _TITLES["ENJOY_WINDOW"]
+        return _TITLES["MAINTAIN"]
+
+    return _TITLES.get(action, _TITLES["MAINTAIN"])
+
 
 def calculate_thi(temp: float, humidity: float) -> float:
     return (
@@ -37,6 +76,51 @@ def calculate_thi(temp: float, humidity: float) -> float:
 
 
 def determine_action(
+    indoor_temp: float,
+    outdoor_temp: float,
+    indoor_humidity: float = 50.0,
+    outdoor_humidity: float = 50.0,
+    pm25: float = 0.0,
+    wind_speed: float = 0.0,
+    weather_condition: str = "맑음",
+    window_is_open: Optional[bool] = None,
+    is_ac_on: Optional[bool] = None,
+    current_mode: str = "MANUAL",
+    ac_run_time_minutes: int = 0,
+    target_cooldown_minutes: int = 30,
+    occupancy_signal: Optional[dict] = None,
+):
+    """_determine_action_core()의 결과에 통일된 title을 덮어써서 반환한다.
+
+    핵심 판단 로직(action/summary/reason/popup 등)은 그대로 _determine_action_core
+    쪽에 있고, 여기서는 그 결과의 title 필드만 _resolve_title()로 교체한다
+    — 브랜치가 몇 개든 새로 추가되든 title 문구가 갈라질 일이 구조적으로
+    없어진다.
+    """
+    result = _determine_action_core(
+        indoor_temp=indoor_temp,
+        outdoor_temp=outdoor_temp,
+        indoor_humidity=indoor_humidity,
+        outdoor_humidity=outdoor_humidity,
+        pm25=pm25,
+        wind_speed=wind_speed,
+        weather_condition=weather_condition,
+        window_is_open=window_is_open,
+        is_ac_on=is_ac_on,
+        current_mode=current_mode,
+        ac_run_time_minutes=ac_run_time_minutes,
+        target_cooldown_minutes=target_cooldown_minutes,
+        occupancy_signal=occupancy_signal,
+    )
+    result["title"] = _resolve_title(
+        result["action"],
+        is_ac_on=is_ac_on,
+        window_is_open=window_is_open,
+    )
+    return result
+
+
+def _determine_action_core(
     indoor_temp: float,
     outdoor_temp: float,
     indoor_humidity: float = 50.0,
