@@ -7,7 +7,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { request } from "../../api";
 import { useLocationContext } from "../location/LocationContext";
 import {
   areDeviceControlsDisabled,
@@ -15,6 +14,7 @@ import {
 } from "../sensors/deviceState";
 import { getLatestReading } from "../sensors/readingsApi";
 import { useSensorRealtimeContext } from "../sensors/SensorRealtimeContext";
+import { controlDevice } from "./devicesApi";
 
 import "./HeaderQuickControls.css";
 
@@ -219,14 +219,7 @@ export default function HeaderQuickControls({ recommendedAction = null }) {
     setFeedback("");
 
     try {
-      const response = await request("/api/devices/control", {
-        method: "POST",
-        auth: true,
-        body: JSON.stringify({
-          place_id: selectedPlaceId,
-          action,
-        }),
-      });
+      const response = await controlDevice(selectedPlaceId, action);
 
       if (response?.result_received === true) {
         setFeedback(
