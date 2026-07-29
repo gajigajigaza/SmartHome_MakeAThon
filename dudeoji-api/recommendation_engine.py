@@ -262,6 +262,24 @@ def _determine_action_core(
             "is_auto_triggered": is_auto,
         }
 
+    # jh 추가 - 에어컨 켜진 채 창문도 열려 있으면 냉기가 그대로 새는
+    # 낭비 상황이다. 재실 낭비 방지(위 분기)보다는 덜 급하지만(사람은
+    # 있으니까), 쿨다운 유지 로직보다는 먼저 잡아야 한다 — 쿨다운 중이라고
+    # 이 낭비를 눈감아주면 오히려 더 오래 새게 두는 꼴이라서.
+    if is_ac_on and window_open:
+        return {
+            "action": "CLOSE_WINDOW",
+            "title": "창문 닫을 타이밍이에요!",
+            "summary": "에어컨이 켜진 채 창문이 열려 있어요.",
+            "reason": (
+                "냉방한 공기가 열린 창문으로 빠져나가 전력이 낭비되고 "
+                "있어요. 창문을 닫아 주세요."
+            ),
+            "show_popup": not is_auto,
+            "popup_message": "에어컨이 켜진 채 창문이 열려 있어요. 창문을 닫을까요?",
+            "is_auto_triggered": is_auto,
+        }
+
     if is_ac_on and ac_run_time_minutes < target_cooldown_minutes:
         if indoor_temp >= thresholds["ac_cooldown_min_temperature"]:
             return {
