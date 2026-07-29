@@ -417,11 +417,18 @@ class GatewaySettingsTests(unittest.IsolatedAsyncioTestCase):
         )
         await asyncio.sleep(0)
 
-        item = gateway.outbound_queue.get_nowait()
-        gateway.outbound_queue.task_done()
-        self.assertEqual(item.message["type"], "sensor_reading")
-        self.assertIsNone(item.message["data"]["window_is_open"])
-        self.assertIsNone(item.message["data"]["ac_is_on"])
+        items = []
+        while not gateway.outbound_queue.empty():
+            item = gateway.outbound_queue.get_nowait()
+            gateway.outbound_queue.task_done()
+            items.append(item.message)
+
+        reading = next(item for item in items if item["type"] == "sensor_reading")
+        state = next(item for item in items if item["type"] == "device_state")
+        self.assertIsNone(reading["data"]["window_is_open"])
+        self.assertIsNone(reading["data"]["ac_is_on"])
+        self.assertTrue(state["data"]["sense_connected"])
+        self.assertFalse(state["data"]["control_connected"])
 
 
 if __name__ == "__main__":

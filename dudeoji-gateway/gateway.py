@@ -519,6 +519,22 @@ class DudeojiGateway:
             return
 
         if device_id == SENSE_DEVICE_ID:
+            self._enqueue_from_ble_callback(
+                {
+                    "type": "device_state",
+                    "data": {
+                        "window_is_open": False,
+                        "ac_is_on": False,
+                        "bme_available": bool(snapshot.data["bme_ok"]),
+                        "sense_connected": True,
+                        "control_connected": False,
+                        "ina_available": False,
+                        "gateway_connected": True,
+                    },
+                },
+                source_id=SENSE_DEVICE_ID,
+                data_kind="device_state",
+            )
             if not snapshot.data["bme_ok"]:
                 return
             message = environment_ble_to_server(snapshot.data)
@@ -530,12 +546,19 @@ class DudeojiGateway:
             return
 
         if device_id == CONTROL_DEVICE_ID:
-            message = control_state_to_device_state(
-                snapshot.data,
-                bme_available=False,
-            )
             self._enqueue_from_ble_callback(
-                message,
+                {
+                    "type": "device_state",
+                    "data": {
+                        "window_is_open": snapshot.data["window_open"],
+                        "ac_is_on": snapshot.data["fan_on"],
+                        "bme_available": False,
+                        "sense_connected": False,
+                        "control_connected": True,
+                        "ina_available": snapshot.data["ina_available"],
+                        "gateway_connected": True,
+                    },
+                },
                 source_id=CONTROL_DEVICE_ID,
                 data_kind="device_state",
             )
