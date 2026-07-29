@@ -1,0 +1,156 @@
+<svg width="120" height="76" viewBox="0 0 120 76" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="body" x1="28" y1="24" x2="89" y2="68" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#71605A" />
+      <stop offset=".52" stop-color="#594C48" />
+      <stop offset="1" stop-color="#3F3838" />
+    </linearGradient>
+    <radialGradient id="backGlow" cx="0" cy="0" r="1" gradientTransform="translate(43 38) rotate(32) scale(43 21)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#78645D" stop-opacity=".62" />
+      <stop offset=".72" stop-color="#5D4C47" stop-opacity=".12" />
+      <stop offset="1" stop-color="#3B3230" stop-opacity="0" />
+    </radialGradient>
+    <filter id="softFur" x="-8%" y="-18%" width="116%" height="136%" color-interpolation-filters="sRGB">
+      <feTurbulence
+        type="fractalNoise"
+        baseFrequency=".28 .42"
+        numOctaves="3"
+        seed="17"
+        result="furNoise"
+      />
+      <feDisplacementMap
+        in="SourceGraphic"
+        in2="furNoise"
+        scale="1.16"
+        xChannelSelector="R"
+        yChannelSelector="G"
+        result="ruffledBody"
+      />
+      <feGaussianBlur in="ruffledBody" stdDeviation=".08" />
+    </filter>
+    <pattern
+      id="denseFur"
+      width="7"
+      height="5"
+      patternUnits="userSpaceOnUse"
+      patternTransform="rotate(-10)"
+    >
+      <path
+        d="M.5 4L3.2 3.1"
+        stroke="#C3B0A8"
+        stroke-width=".65"
+        stroke-linecap="round"
+        opacity=".52"
+      />
+      <path
+        d="M4.2 1.8L6.5 1.1"
+        stroke="#2F2929"
+        stroke-width=".55"
+        stroke-linecap="round"
+        opacity=".32"
+      />
+    </pattern>
+  </defs>
+
+  <ellipse
+    cx="65"
+    cy="52"
+    rx="43"
+    ry="16.5"
+    fill="url(#body)"
+    filter="url(#softFur)"
+  />
+  <g
+    stroke="#65534D"
+    stroke-width=".9"
+    stroke-linecap="round"
+    opacity=".68"
+  >
+    <path d="M30.5 42.2L29.2 40.7" />
+    <path d="M36.5 39.2L35.7 37.4" />
+    <path d="M43 37.3L42.5 35.5" />
+    <path d="M50 36L49.7 34.2" />
+    <path d="M57 35.6L57.3 33.8" />
+    <path d="M64.5 35.5L65 33.7" />
+    <path d="M72 36L72.8 34.3" />
+    <path d="M79 37.2L80.1 35.7" />
+    <path d="M85.5 39.3L86.8 37.9" />
+    <path d="M91 42L92.5 40.8" />
+    <path d="M97 46L98.6 45" />
+    <path d="M31 62L29.8 63.5" />
+    <path d="M38 65L37.3 66.7" />
+    <path d="M46 67L45.7 68.8" />
+    <path d="M55 68.1L55 69.9" />
+    <path d="M64 68.5L64.5 70.2" />
+    <path d="M73 68L73.8 69.6" />
+    <path d="M81 66.7L82.2 68.1" />
+    <path d="M89 64.5L90.4 65.7" />
+  </g>
+  <ellipse
+    cx="52"
+    cy="46.5"
+    rx="29"
+    ry="9"
+    fill="url(#backGlow)"
+  />
+  <ellipse
+    cx="65"
+    cy="52"
+    rx="41.5"
+    ry="15"
+    fill="url(#denseFur)"
+    opacity=".34"
+  />
+  <path
+    d="M38 42.4C46 40 56.2 39.8 66 41.2"
+    stroke="#8B746A"
+    stroke-width="3.5"
+    stroke-linecap="round"
+    opacity=".16"
+  />
+  <path
+    d="M42 46C51 44 61.7 43.8 71.3 45"
+    stroke="#A0877C"
+    stroke-width="2.4"
+    stroke-linecap="round"
+    opacity=".1"
+  />
+  <g
+    stroke="#B29C92"
+    stroke-width=".75"
+    stroke-linecap="round"
+    opacity=".24"
+  >
+    <path d="M32 47L35 46" />
+    <path d="M36 51L39 49.8" />
+    <path d="M39 44.5L42 43.7" />
+    <path d="M42 55L45 53.8" />
+    <path d="M45 48L48.2 47" />
+    <path d="M48 42.5L51 42" />
+    <path d="M49 58L52 56.8" />
+    <path d="M53 51L56 49.9" />
+    <path d="M55 45L58 44.4" />
+    <path d="M57 60L60 58.8" />
+    <path d="M60 54L63 52.8" />
+    <path d="M62 42.7L65 42.5" />
+    <path d="M65 48L68 47.2" />
+    <path d="M66 58L69 56.8" />
+    <path d="M70 52L73 50.8" />
+    <path d="M72 45L75 44.7" />
+    <path d="M75 56L78 54.8" />
+    <path d="M78 49L81 48.2" />
+    <path d="M82 53L85 52" />
+    <path d="M84 46L87 45.8" />
+  </g>
+
+  <ellipse cx="96" cy="54" rx="4.2" ry="2.5" fill="#C58E8B" opacity=".3" />
+  <ellipse cx="96" cy="47" rx="2.2" ry="2" fill="#111011" />
+  <circle cx="96.7" cy="46.4" r=".65" fill="#E9E5DE" opacity=".78" />
+  <ellipse cx="108.2" cy="50.8" rx="3.4" ry="2.9" fill="#171617" />
+  <ellipse cx="107.3" cy="50" rx="1.1" ry=".7" fill="#777071" opacity=".54" />
+  <path d="M101 55.5C102.5 57 104.5 57 106 55.4" stroke="#80615E" stroke-width="1.1" stroke-linecap="round" opacity=".7" />
+
+  <path d="M100 52.7L111 55.5" stroke="#756762" stroke-width="1" stroke-linecap="round" opacity=".45" />
+  <path d="M99.8 54L109.8 58" stroke="#756762" stroke-width="1" stroke-linecap="round" opacity=".34" />
+
+</svg>
