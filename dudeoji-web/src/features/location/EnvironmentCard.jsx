@@ -334,7 +334,7 @@ export default function EnvironmentCard({
           </p>
           {senseNodeDisconnected && (
             <p className="environment-sensor-stale" role="status">
-              환경 ESP 끊김 · 마지막 수신값
+              Sense 끊김 · 마지막 수신값
             </p>
           )}
         </div>

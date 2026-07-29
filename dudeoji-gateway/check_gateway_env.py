@@ -63,7 +63,8 @@ def main() -> None:
     sense_ble_name = entries.get("DUDEOJI_SENSE_BLE_NAME", "")
     control_ble_name = entries.get("DUDEOJI_CONTROL_BLE_NAME", "")
     dual_ble_enabled = bool(sense_ble_name and control_ble_name)
-    dual_ble_partial = bool(sense_ble_name) != bool(control_ble_name)
+    sense_only_enabled = bool(sense_ble_name) and not bool(control_ble_name)
+    control_only_enabled = bool(control_ble_name) and not bool(sense_ble_name)
     duplicate_ble_names = bool(
         dual_ble_enabled and sense_ble_name == control_ble_name
     )
@@ -86,9 +87,21 @@ def main() -> None:
         "WEBSOCKET_URL_VALID = "
         f"{websocket_url.startswith(('ws://', 'wss://'))}"
     )
-    print(f"BLE_MODE = {'2-ESP' if dual_ble_enabled else '1-ESP'}")
+    if dual_ble_enabled:
+        ble_mode = "2-ESP"
+    elif sense_only_enabled:
+        ble_mode = "Sense-only"
+    elif control_only_enabled:
+        ble_mode = "Control-only"
+    else:
+        ble_mode = "1-ESP-compatible"
+    print(f"BLE_MODE = {ble_mode}")
     if dual_ble_enabled:
         print(f"SENSE_BLE_NAME = {sense_ble_name}")
+        print(f"CONTROL_BLE_NAME = {control_ble_name}")
+    elif sense_only_enabled:
+        print(f"SENSE_BLE_NAME = {sense_ble_name}")
+    elif control_only_enabled:
         print(f"CONTROL_BLE_NAME = {control_ble_name}")
     else:
         print(f"BLE_DEVICE_NAME = {ble_name or 'MISSING'}")
@@ -103,7 +116,6 @@ def main() -> None:
         or place_id < 1
         or token_is_placeholder
         or not websocket_url.startswith(("ws://", "wss://"))
-        or dual_ble_partial
         or duplicate_ble_names
         or (not dual_ble_enabled and not ble_name)
         or stale_seconds <= 0

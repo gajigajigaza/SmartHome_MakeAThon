@@ -35,6 +35,7 @@ from protocol import (
     control_ble_to_state,
     control_state_to_device_state,
     decode_json_message,
+    environment_ble_to_server,
     environment_ble_to_state,
     failed_command_result,
     result_ble_to_server,
@@ -153,11 +154,6 @@ class Settings:
             raise RuntimeError(
                 "DUDEOJI_BLE_DEVICE_NAME이 비어 있습니다."
             )
-        if bool(sense_ble_name) != bool(control_ble_name):
-            raise RuntimeError(
-                "2-ESP 모드는 DUDEOJI_SENSE_BLE_NAME과 "
-                "DUDEOJI_CONTROL_BLE_NAME을 모두 설정해야 합니다."
-            )
         if (
             sense_ble_name is not None
             and sense_ble_name == control_ble_name
@@ -203,6 +199,18 @@ class Settings:
             and self.control_ble_name is not None
         )
 
+    @property
+    def sense_only_enabled(self) -> bool:
+        return self.sense_ble_name is not None and self.control_ble_name is None
+
+    @property
+    def control_only_enabled(self) -> bool:
+        return self.control_ble_name is not None and self.sense_ble_name is None
+
+    @property
+    def single_ble_enabled(self) -> bool:
+        return self.sense_only_enabled or self.control_only_enabled
+
     def ble_devices(self) -> tuple[BleDeviceSpec, ...]:
         if self.dual_ble_enabled:
             return (
@@ -211,6 +219,26 @@ class Settings:
                     ble_name=self.sense_ble_name or SENSE_BLE_DEVICE_NAME,
                     role="sense",
                 ),
+                BleDeviceSpec(
+                    device_id=CONTROL_DEVICE_ID,
+                    ble_name=(
+                        self.control_ble_name or CONTROL_BLE_DEVICE_NAME
+                    ),
+                    role="control",
+                ),
+            )
+
+        if self.sense_only_enabled:
+            return (
+                BleDeviceSpec(
+                    device_id=SENSE_DEVICE_ID,
+                    ble_name=self.sense_ble_name or SENSE_BLE_DEVICE_NAME,
+                    role="sense",
+                ),
+            )
+
+        if self.control_only_enabled:
+            return (
                 BleDeviceSpec(
                     device_id=CONTROL_DEVICE_ID,
                     ble_name=(
@@ -300,6 +328,7 @@ class DudeojiGateway:
         self._last_bme_available: bool | None = None
         self._device_state_unsupported_logged = False
         self._demo_fallback_logged = False
+        self._ble_scan_lock = asyncio.Lock()
 
     async def run(self) -> None:
         self.event_loop = asyncio.get_running_loop()
@@ -310,6 +339,18 @@ class DudeojiGateway:
                 "게이트웨이 시작: mode=2-ESP, sense=%s, control=%s, "
                 "Service=%s",
                 self.settings.sense_ble_name,
+                self.settings.control_ble_name,
+                SERVICE_UUID,
+            )
+        elif self.settings.sense_only_enabled:
+            LOGGER.info(
+                "게이트웨이 시작: mode=Sense-only, sense=%s, Service=%s",
+                self.settings.sense_ble_name,
+                SERVICE_UUID,
+            )
+        elif self.settings.control_only_enabled:
+            LOGGER.info(
+                "게이트웨이 시작: mode=Control-only, control=%s, Service=%s",
                 self.settings.control_ble_name,
                 SERVICE_UUID,
             )
@@ -472,6 +513,56 @@ class DudeojiGateway:
             data_kind="combined_sensor_reading",
         )
 
+    def _emit_single_state_message(self, device_id: str) -> None:
+        snapshot = self._fresh_snapshot(device_id)
+        if snapshot is None:
+            return
+
+        if device_id == SENSE_DEVICE_ID:
+            self._enqueue_from_ble_callback(
+                {
+                    "type": "device_state",
+                    "data": {
+                        "window_is_open": False,
+                        "ac_is_on": False,
+                        "bme_available": bool(snapshot.data["bme_ok"]),
+                        "sense_connected": True,
+                        "control_connected": False,
+                        "ina_available": False,
+                        "gateway_connected": True,
+                    },
+                },
+                source_id=SENSE_DEVICE_ID,
+                data_kind="device_state",
+            )
+            if not snapshot.data["bme_ok"]:
+                return
+            message = environment_ble_to_server(snapshot.data)
+            self._enqueue_from_ble_callback(
+                message,
+                source_id=SENSE_DEVICE_ID,
+                data_kind="sensor_reading",
+            )
+            return
+
+        if device_id == CONTROL_DEVICE_ID:
+            self._enqueue_from_ble_callback(
+                {
+                    "type": "device_state",
+                    "data": {
+                        "window_is_open": snapshot.data["window_open"],
+                        "ac_is_on": snapshot.data["fan_on"],
+                        "bme_available": False,
+                        "sense_connected": False,
+                        "control_connected": True,
+                        "ina_available": snapshot.data["ina_available"],
+                        "gateway_connected": True,
+                    },
+                },
+                source_id=CONTROL_DEVICE_ID,
+                data_kind="device_state",
+            )
+
     def _handle_device_disconnected(
         self,
         spec: BleDeviceSpec,
@@ -567,7 +658,7 @@ class DudeojiGateway:
         _: Any,
         data: bytearray,
     ) -> None:
-        if not self.settings.dual_ble_enabled:
+        if not self.settings.dual_ble_enabled and not self.settings.single_ble_enabled:
             self._on_legacy_sensor_notification(data)
             return
 
@@ -612,7 +703,10 @@ class DudeojiGateway:
             )
             return
 
-        self._emit_dual_state_messages()
+        if self.settings.dual_ble_enabled:
+            self._emit_dual_state_messages()
+        else:
+            self._emit_single_state_message(device_id)
 
     def _on_result_notification(
         self,
@@ -621,7 +715,7 @@ class DudeojiGateway:
         data: bytearray,
     ) -> None:
         if (
-            self.settings.dual_ble_enabled
+            (self.settings.dual_ble_enabled or self.settings.control_only_enabled)
             and device_id != CONTROL_DEVICE_ID
         ):
             LOGGER.warning(
@@ -704,23 +798,24 @@ class DudeojiGateway:
         expected_name = spec.ble_name
         allow_service_fallback = spec.role == "legacy"
 
-        return await BleakScanner.find_device_by_filter(
-            lambda found, advertisement: (
-                found.name == expected_name
-                or advertisement.local_name == expected_name
-                or (
-                    allow_service_fallback
-                    and SERVICE_UUID.lower()
-                    in {
-                        uuid.lower()
-                        for uuid in (
-                            advertisement.service_uuids or []
-                        )
-                    }
-                )
-            ),
-            timeout=self.settings.ble_scan_timeout,
-        )
+        async with self._ble_scan_lock:
+            return await BleakScanner.find_device_by_filter(
+                lambda found, advertisement: (
+                    found.name == expected_name
+                    or advertisement.local_name == expected_name
+                    or (
+                        allow_service_fallback
+                        and SERVICE_UUID.lower()
+                        in {
+                            uuid.lower()
+                            for uuid in (
+                                advertisement.service_uuids or []
+                            )
+                        }
+                    )
+                ),
+                timeout=self.settings.ble_scan_timeout,
+            )
 
     async def _run_ble_forever(
         self,
@@ -833,9 +928,15 @@ class DudeojiGateway:
             )
             return
 
+        if self.settings.sense_only_enabled:
+            await self._put_command_result(
+                failed_command_result(command, "control_ble_not_configured")
+            )
+            return
+
         target_device_id = (
             CONTROL_DEVICE_ID
-            if self.settings.dual_ble_enabled
+            if self.settings.dual_ble_enabled or self.settings.control_only_enabled
             else LEGACY_DEVICE_ID
         )
         client = self.ble_clients.get(target_device_id)
@@ -851,7 +952,7 @@ class DudeojiGateway:
                     command,
                     (
                         "control_ble_not_connected"
-                        if self.settings.dual_ble_enabled
+                        if self.settings.dual_ble_enabled or self.settings.control_only_enabled
                         else "xiao_ble_not_connected"
                     ),
                 )

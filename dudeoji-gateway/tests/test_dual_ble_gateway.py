@@ -317,7 +317,7 @@ class DualBleGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sensor_item.message["data"]["value"], 3)
 
 
-class GatewaySettingsTests(unittest.TestCase):
+class GatewaySettingsTests(unittest.IsolatedAsyncioTestCase):
     def test_dual_settings_create_two_named_devices(self) -> None:
         settings = make_settings()
 
@@ -352,7 +352,7 @@ class GatewaySettingsTests(unittest.TestCase):
         self.assertEqual(len(devices), 1)
         self.assertEqual(devices[0].ble_name, "DUDEOJI-XIAO")
 
-    def test_partial_dual_environment_is_rejected(self) -> None:
+    def test_sense_only_environment_creates_sense_device(self) -> None:
         environment = {
             "DUDEOJI_WEBSOCKET_URL": (
                 "wss://example.test/ws/sensors"
@@ -364,12 +364,71 @@ class GatewaySettingsTests(unittest.TestCase):
             "DUDEOJI_CONTROL_BLE_NAME": "",
         }
 
-        with (
-            patch.dict(os.environ, environment, clear=True),
-            patch("gateway.load_dotenv"),
-            self.assertRaises(RuntimeError),
-        ):
-            Settings.from_environment()
+        with patch.dict(os.environ, environment, clear=True), patch("gateway.load_dotenv"):
+            settings = Settings.from_environment()
+
+        self.assertTrue(settings.sense_only_enabled)
+        self.assertFalse(settings.control_only_enabled)
+        devices = settings.ble_devices()
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0].device_id, SENSE_DEVICE_ID)
+
+    def test_control_only_environment_creates_control_device(self) -> None:
+        environment = {
+            "DUDEOJI_WEBSOCKET_URL": "wss://example.test/ws/sensors",
+            "DUDEOJI_PLACE_ID": "54",
+            "DUDEOJI_AUTH_TOKEN": "test-token",
+            "DUDEOJI_BLE_DEVICE_NAME": "DUDEOJI-XIAO",
+            "DUDEOJI_SENSE_BLE_NAME": "",
+            "DUDEOJI_CONTROL_BLE_NAME": "DUDEOJI-CONTROL",
+        }
+
+        with patch.dict(os.environ, environment, clear=True), patch("gateway.load_dotenv"):
+            settings = Settings.from_environment()
+
+        self.assertTrue(settings.control_only_enabled)
+        devices = settings.ble_devices()
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0].device_id, CONTROL_DEVICE_ID)
+
+    async def test_sense_only_emits_sensor_reading(self) -> None:
+        settings = Settings(
+            websocket_url="wss://example.test/ws/sensors",
+            place_id=54,
+            auth_token="test-token",
+            ble_device_name="DUDEOJI-XIAO",
+            ble_scan_timeout=1.0,
+            demo_fallback_bme=False,
+            demo_temperature=25.0,
+            demo_humidity=50.0,
+            sense_ble_name="DUDEOJI-SENSE",
+        )
+        gateway = DudeojiGateway(settings)
+        gateway.event_loop = asyncio.get_running_loop()
+        gateway._set_device_connected(
+            gateway.device_specs[SENSE_DEVICE_ID],
+            True,
+        )
+
+        gateway._on_sensor_notification(
+            SENSE_DEVICE_ID,
+            None,
+            bytearray(json.dumps(sense_message()).encode("utf-8")),
+        )
+        await asyncio.sleep(0)
+
+        items = []
+        while not gateway.outbound_queue.empty():
+            item = gateway.outbound_queue.get_nowait()
+            gateway.outbound_queue.task_done()
+            items.append(item.message)
+
+        reading = next(item for item in items if item["type"] == "sensor_reading")
+        state = next(item for item in items if item["type"] == "device_state")
+        self.assertIsNone(reading["data"]["window_is_open"])
+        self.assertIsNone(reading["data"]["ac_is_on"])
+        self.assertTrue(state["data"]["sense_connected"])
+        self.assertFalse(state["data"]["control_connected"])
 
 
 if __name__ == "__main__":
