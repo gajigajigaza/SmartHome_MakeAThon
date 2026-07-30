@@ -6,7 +6,16 @@ import secrets
 from datetime import timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from pydantic import BaseModel, Field
 
 from auth_utils import (
@@ -15,13 +24,22 @@ from auth_utils import (
     get_bearer_token,
     get_current_user,
     hash_secret,
+    invalidate_session_cache_token,
+    invalidate_session_cache_user,
     parse_supabase_datetime,
+    password_hash_needs_upgrade,
     token_hash,
     utc_now,
     verify_current_password,
     verify_secret,
 )
 from db import PLACES_TABLE, RESET_TOKENS_TABLE, SESSIONS_TABLE, USERS_TABLE, supabase
+from rate_limit import (
+    check_login_allowed,
+    client_ip_from_request,
+    record_login_failure,
+    record_login_success,
+)
 from routers.places_router import PlaceCreate, UserAirconCreate, create_place_with_aircons_for_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -321,8 +339,23 @@ def signup_complete(payload: CompleteSignupRequest):
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(payload: LoginRequest):
+def login(payload: LoginRequest, request: Request):
     username = payload.username.strip().lower()
+
+    # jh 추가 - PBKDF2 반복 횟수를 낮춘 것에 대한 보완책(rate_limit.py 참고).
+    # 실패 횟수만 세므로 정상 사용자는 걸리지 않는다.
+    client_ip = client_ip_from_request(request)
+    retry_after = check_login_allowed(username, client_ip)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "로그인 시도가 너무 많습니다. "
+                f"{retry_after}초 후에 다시 시도해 주세요."
+            ),
+            headers={"Retry-After": str(retry_after)},
+        )
+
     result = (
         supabase.table(USERS_TABLE)
         .select("id,username,nickname,password_hash")
@@ -332,6 +365,7 @@ def login(payload: LoginRequest):
     )
 
     if not result.data:
+        record_login_failure(username, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="없는 아이디입니다.",
@@ -341,12 +375,27 @@ def login(payload: LoginRequest):
         payload.password,
         result.data[0]["password_hash"],
     ):
+        record_login_failure(username, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="비밀번호가 일치하지 않습니다.",
         )
 
+    record_login_success(username, client_ip)
     user = result.data[0]
+
+    # jh 추가 - PBKDF2_ITERATIONS를 낮춰도 기존 사용자는 자기 해시에 적힌 옛
+    # 횟수로 계속 검증되므로 전혀 빨라지지 않는다. 로그인이 성공한 지금
+    # (평문 비밀번호를 가진 유일한 시점) 현재 설정값으로 다시 해시해 저장한다.
+    # 실패해도 로그인 자체를 막지 않는다 — 다음 로그인에서 또 시도된다.
+    if password_hash_needs_upgrade(user["password_hash"]):
+        try:
+            supabase.table(USERS_TABLE).update(
+                {"password_hash": hash_secret(payload.password)}
+            ).eq("id", user["id"]).execute()
+        except Exception as error:
+            print(f"[auth] 비밀번호 해시 재계산 실패(로그인은 정상 처리): {error}")
+
     session_token = create_session(user["id"])
 
     return AuthResponse(
@@ -388,6 +437,10 @@ def update_my_nickname(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="별명을 변경하지 못했습니다.",
         )
+
+    # jh 추가 - 세션 캐시에 별명이 함께 들어 있어서(get_current_user가 nickname을
+    # 같이 조회함) 비워주지 않으면 /api/auth/me가 최대 TTL 동안 옛 별명을 준다.
+    invalidate_session_cache_user(current_user["id"])
 
     return AuthUser.model_validate(result.data[0])
 
@@ -444,6 +497,10 @@ def delete_my_account(
         "id", current_user["id"]
     ).execute()
 
+    # jh 추가 - 탈퇴한 사용자의 토큰이 세션 캐시 때문에 최대 TTL 동안 계속
+    # 통하면 안 된다. 여기서만은 캐시 무효화가 보안 요구사항이다.
+    invalidate_session_cache_user(current_user["id"])
+
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -454,6 +511,10 @@ def logout(authorization: Optional[str] = Header(default=None)):
     supabase.table(SESSIONS_TABLE).delete().eq(
         "token_hash", token_hash(raw_token)
     ).execute()
+
+    # jh 추가 - get_current_user()의 세션 캐시(TTL 10초)를 즉시 비운다.
+    # 이게 없으면 로그아웃 후에도 최대 TTL 동안 토큰이 통한다.
+    invalidate_session_cache_token(raw_token)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -539,5 +600,9 @@ def reset_password(payload: PasswordResetRequest):
     supabase.table(SESSIONS_TABLE).delete().eq(
         "user_id", reset_row["user_id"]
     ).execute()
+
+    # jh 추가 - 비밀번호를 재설정하면 그 사용자의 모든 세션을 끊는 것이 의도이므로
+    # 세션 캐시도 사용자 단위로 비운다.
+    invalidate_session_cache_user(reset_row["user_id"])
 
     return {"message": "비밀번호가 변경되었습니다."}

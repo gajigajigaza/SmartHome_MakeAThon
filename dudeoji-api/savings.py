@@ -11,11 +11,168 @@ recommendation_engine.py의 determine_action()이 액션을 정하면,
 
 TODO(정현): 일/주/월 누적 합산 함수(estimate_daily_savings 등)는 아직 없음.
 """
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from db import PLACES_TABLE, READINGS_TABLE, USER_AIRCONS_TABLE, supabase
 from recommendation_engine import VENTILATION_ACTIONS
+
+# jh 수정함 - 이슈 #38(게이트웨이 스트리밍 중 백엔드 전체 응답 불가) 대응.
+# 이 두 함수는 reading이 저장될 때마다(5초 주기 × 장소 수) 호출되는데,
+# 둘 다 "5초마다 다시 볼 이유가 없는 값"을 조회하고 있었다.
+#
+#   - get_rated_power(): 등록된 에어컨의 정격 전력. 사실상 정적 설정값이다.
+#   - get_cumulative_kwh(): 이번 달 누적 kWh. 쓰이는 곳은
+#     get_marginal_price()의 누진 구간(200/400kWh 등) 판정 하나뿐이라,
+#     초 단위 정확도가 전혀 필요 없다.
+#
+# 특히 get_cumulative_kwh()는 이번 달 readings 전체를 매번 다시 가져오는
+# 무제한 스캔이라, 팬아웃(장소당 1행)으로 행이 쌓일수록 호출 비용이 계속
+# 커진다 — 5초 주기면 장소 3개에서 하루 약 5만 행이다. TTL 캐시로 호출
+# 횟수를 줄이고, select 컬럼도 실제로 쓰는 것만 남긴다.
+#
+RATED_POWER_CACHE_TTL_SECONDS = 5 * 60
+CUMULATIVE_KWH_CACHE_TTL_SECONDS = 5 * 60
+
+# PostgREST가 명시적 range 없는 select를 max-rows(보통 1000)에서 조용히 자르는
+# 문제 때문에 페이지 단위로 끊어서 가져온다 — occupancy_engine._fetch_all_
+# occupancy_logs()가 이미 같은 이유로 쓰는 패턴이다. 이걸 안 하면
+# get_cumulative_kwh()가 이번 달 "가장 오래된 1000행"만 보고 계산해서,
+# 팬아웃 5초 주기(장소 3개 기준 약 28분)를 넘긴 뒤로는 누적 kWh가 그대로
+# 멈춘 값이 된다(=누진 단가가 영구히 최저 구간에 고정되는 조용한 버그).
+_FETCH_PAGE_SIZE = 1000
+
+
+class _TTLCache:
+    """키별 lock을 쓰는 아주 작은 TTL 캐시.
+
+    캐시가 이제 여러 워커 스레드에서 동시에 만져지기 때문에(perf.run_blocking
+    참고) lock이 필요하다. 다만 전역 lock 하나로 묶으면 두 가지가 터진다.
+
+    1) self-deadlock: get_cumulative_kwh()는 계산 도중 get_rated_power()를
+       부른다(_compute_cumulative_kwh → power_kw_for). 두 함수가 같은
+       비재진입 lock을 쓰면 같은 스레드가 자기 자신을 기다리며 영구히 멈춘다.
+       배포 직후 첫 reading은 rated_power 캐시가 반드시 비어 있으니 확정적으로
+       재현된다.
+    2) lock convoy: 무거운 조회(이번 달 전체 스캔) 하나가 lock을 쥔 동안,
+       전혀 관계없는 다른 키의 조회까지 전부 줄을 선다.
+
+    키별로 lock을 나누면 둘 다 자연히 사라진다. 서로 다른 캐시 인스턴스끼리도
+    lock을 공유하지 않으므로 (1)의 호출 관계는 애초에 순환이 되지 않는다.
+    """
+
+    __slots__ = ("_ttl", "_entries", "_locks", "_locks_guard")
+
+    def __init__(self, ttl_seconds: float) -> None:
+        self._ttl = ttl_seconds
+        self._entries: dict = {}
+        self._locks: dict = {}
+        self._locks_guard = threading.Lock()
+
+    def _lock_for(self, key) -> threading.Lock:
+        with self._locks_guard:
+            lock = self._locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                self._locks[key] = lock
+            return lock
+
+    def _fresh(self, key):
+        entry = self._entries.get(key)
+        if entry is None:
+            return False, None
+        value, stored_monotonic = entry
+        if time.monotonic() - stored_monotonic >= self._ttl:
+            return False, None
+        return True, value
+
+    def get_or_load(self, key, loader):
+        hit, value = self._fresh(key)
+        if hit:
+            return value
+
+        with self._lock_for(key):
+            # 기다리는 동안 다른 스레드가 이미 채웠을 수 있다.
+            hit, value = self._fresh(key)
+            if hit:
+                return value
+
+            value = loader()
+            self._entries[key] = (value, time.monotonic())
+            return value
+
+    def stale(self, key):
+        """TTL이 지났어도 마지막으로 성공한 값을 돌려준다(조회 실패 시 폴백용)."""
+        entry = self._entries.get(key)
+        return entry[0] if entry is not None else None
+
+
+_rated_power_cache = _TTLCache(RATED_POWER_CACHE_TTL_SECONDS)
+_cumulative_kwh_cache = _TTLCache(CUMULATIVE_KWH_CACHE_TTL_SECONDS)
+
+# PostgREST의 JSONB 경로 select(recommendation->>ac_is_on)를 서버가 거부하는
+# 경우(구버전 등)를 대비한 1회성 폴백 플래그. 한 번 실패하면 그 뒤로는 그냥
+# 전체 recommendation을 가져온다 — 느리지만 동작은 한다.
+_jsonb_path_select_supported = True
+
+
+def _fetch_all_pages(
+    build_query,
+    *,
+    primary_select: str,
+    fallback_select: str,
+    expected_key: str,
+) -> list[dict]:
+    """range로 끊어서 전부 가져온다. JSONB 경로 select는 1회 폴백을 허용한다.
+
+    `build_query(select_columns, start)`는 execute() 전 단계의 쿼리를 돌려줘야
+    한다. 페이지가 _FETCH_PAGE_SIZE보다 적게 오면 마지막 페이지로 본다.
+
+    `expected_key`는 트림된 select가 실제로 먹었는지 확인하는 용도다. PostgREST가
+    `alias:col->>key` 별칭을 무시하거나 다른 키 이름으로 돌려주면 예외가 아니라
+    "값이 하나도 없는 정상 응답"이 되어 절감 합계가 조용히 0이 된다 — 예외보다
+    나쁜 실패다. 첫 페이지에서 키 유무를 직접 확인해서 그 경우도 폴백으로 넘긴다.
+    """
+    global _jsonb_path_select_supported
+
+    select_columns = (
+        primary_select if _jsonb_path_select_supported else fallback_select
+    )
+    rows: list[dict] = []
+    start = 0
+
+    while True:
+        using_primary = select_columns == primary_select
+        try:
+            page = build_query(select_columns, start).execute().data or []
+        except Exception as error:
+            # 첫 페이지에서만, 그리고 트림된 select를 쓰던 중에만 폴백한다.
+            # (두 번째 페이지부터의 실패는 진짜 장애이므로 그대로 올린다.)
+            if start > 0 or not using_primary:
+                raise
+            _jsonb_path_select_supported = False
+            select_columns = fallback_select
+            print(
+                "[savings] JSONB 경로 select가 거부됐습니다 — 전체 recommendation "
+                f"조회로 폴백합니다(이번 프로세스 동안 유지): {error}"
+            )
+            continue
+
+        if start == 0 and using_primary and page and expected_key not in page[0]:
+            _jsonb_path_select_supported = False
+            select_columns = fallback_select
+            print(
+                f"[savings] 트림된 select 응답에 '{expected_key}' 키가 없습니다 "
+                "— 전체 recommendation 조회로 폴백합니다(이번 프로세스 동안 유지)."
+            )
+            continue
+
+        rows.extend(page)
+        if len(page) < _FETCH_PAGE_SIZE:
+            return rows
+        start += _FETCH_PAGE_SIZE
 
 # 전력량요금(원/kWh) 누진 구간표. 기본요금(월 고정비)은 시간당 계산에
 # 포함하지 않으므로 제외. 각 항목은 (구간상한kWh, 그 구간의 단가) 형태이며,
@@ -133,11 +290,7 @@ def estimate_savings(
     }
 
 
-def get_rated_power(place_id: str) -> Optional[int]:
-    """place_id에 등록된 에어컨의 정격 냉방 전력(W)을 반환한다. 없으면 None.
-
-    TODO: 여러 대 처리 방식은 추후 결정. 지금은 먼저 조회된 에어컨 하나만 쓴다.
-    """
+def _fetch_rated_power(place_id: str) -> Optional[int]:
     result = (
         supabase.table(USER_AIRCONS_TABLE)
         .select("rated_cooling_power_w")
@@ -153,7 +306,107 @@ def get_rated_power(place_id: str) -> Optional[int]:
     return result.data[0].get("rated_cooling_power_w")
 
 
+def get_rated_power(place_id: str) -> Optional[int]:
+    """place_id에 등록된 에어컨의 정격 냉방 전력(W)을 반환한다. 없으면 None.
+
+    TODO: 여러 대 처리 방식은 추후 결정. 지금은 먼저 조회된 에어컨 하나만 쓴다.
+
+    jh 수정함 - reading 저장마다(5초 주기 × 장소 수) 호출되는데 값은 사실상
+    정적 설정이라 TTL 캐시를 붙였다. 에어컨을 새로 등록/변경하면 최대
+    RATED_POWER_CACHE_TTL_SECONDS(5분) 동안 이전 정격 전력으로 절감이
+    계산될 수 있다 — 절감량은 어차피 추정치이고, 그 대가로 reading 경로의
+    DB 왕복을 장소당 1회씩 없앤다.
+    """
+    return _rated_power_cache.get_or_load(
+        place_id, lambda: _fetch_rated_power(place_id)
+    )
+
+
+def _fetch_month_readings_for_kwh(user_id: str, month_start: datetime) -> list[dict]:
+    """누적 kWh 계산에 실제로 필요한 3개 값만 가져온다.
+
+    jh 수정함 - 원래는 recommendation JSONB 전체를 가져왔는데, 여기서 쓰는 건
+    그 안의 ac_is_on 하나뿐이다. 추천 JSONB에는 title/summary/reason 등 한글
+    문장과 savings 객체까지 들어 있어서 행당 수백~1천 바이트다 — 이번 달
+    행 수가 수만 건이 되면 호출 한 번에 수십 MB를 받아 파싱하게 된다.
+    PostgREST의 JSONB 경로 select로 그 필드만 뽑아서 전송량을 줄인다.
+    """
+    def build(select_columns: str, start: int):
+        return (
+            supabase.table(READINGS_TABLE)
+            .select(select_columns)
+            .eq("user_id", user_id)
+            .gte("measured_at", month_start.isoformat())
+            .order("measured_at")
+            .range(start, start + _FETCH_PAGE_SIZE - 1)
+        )
+
+    return _fetch_all_pages(
+        build,
+        # alias(ac_is_on:)를 명시해서 PostgREST가 붙이는 응답 키 이름에 의존
+        # 하지 않게 한다. ->>는 text를 주므로 _reading_ac_is_on()이 문자열도 판정.
+        primary_select="measured_at,place_id,ac_is_on:recommendation->>ac_is_on",
+        fallback_select="measured_at,place_id,recommendation",
+        expected_key="ac_is_on",
+    )
+
+
+def _read_savings_pair(row: dict) -> tuple[float, int]:
+    """트림된 select(text)와 폴백 select(JSONB) 양쪽에서 절감 두 값을 뽑는다."""
+    if "power_saved_kwh" in row:
+        raw_kwh = row.get("power_saved_kwh")
+        raw_cost = row.get("cost_won")
+    else:
+        savings = (row.get("recommendation") or {}).get("savings") or {}
+        raw_kwh = savings.get("power_saved_kwh")
+        raw_cost = savings.get("cost_won")
+
+    try:
+        kwh = float(raw_kwh) if raw_kwh is not None else 0.0
+    except (TypeError, ValueError):
+        kwh = 0.0
+    try:
+        cost = int(float(raw_cost)) if raw_cost is not None else 0
+    except (TypeError, ValueError):
+        cost = 0
+    return kwh, cost
+
+
+def _reading_ac_is_on(reading: dict) -> bool:
+    """트림된 select(text)와 폴백 select(JSONB) 양쪽 형태를 모두 판정한다."""
+    if "ac_is_on" in reading:
+        value = reading["ac_is_on"]
+        return value is True or value == "true"
+    return (reading.get("recommendation") or {}).get("ac_is_on") is True
+
+
 def get_cumulative_kwh(user_id: str) -> float:
+    """이번 달 누적 kWh를 TTL 캐시로 감싸서 반환한다.
+
+    jh 수정함 - 이슈 #38. 이 값은 get_marginal_price()의 누진 구간
+    (200/300/400/450kWh 경계) 판정에만 쓰이므로 5초마다 갱신할 이유가 없다.
+    reading 저장 경로에서 가장 무거운 쿼리(이번 달 readings 전체 스캔)라
+    5분 캐시로 호출 빈도를 60분의 1로 줄인다.
+
+    조회가 실패하면 예외를 올리지 않는다 — 절감 추정치 하나 때문에 실제
+    센서 reading 저장이 500으로 죽으면 안 된다. 만료된 캐시값이 있으면 그걸
+    쓰고, 없으면 0.0(=최저 구간, 원래 "실측 없으면 보수적으로 최저가"와 같은
+    취급)으로 진행한다.
+    """
+    try:
+        return _cumulative_kwh_cache.get_or_load(
+            user_id, lambda: _compute_cumulative_kwh(user_id)
+        )
+    except Exception as error:
+        fallback = _cumulative_kwh_cache.stale(user_id) or 0.0
+        print(
+            f"[savings] 이번 달 누적 kWh 조회 실패 — {fallback:.3f}kWh로 "
+            f"진행합니다(절감 추정치만 영향): {error}"
+        )
+        return fallback
+
+
+def _compute_cumulative_kwh(user_id: str) -> float:
     """이번 달(1일 0시~현재) 동안 사용자의 에어컨 가동으로 소비된 누적 전력(kWh), 실측(ac_is_on) 기준.
 
     readings.place_id가 있는 행은 그 장소에 등록된 에어컨의 정격 전력을 그대로
@@ -202,16 +455,7 @@ def get_cumulative_kwh(user_id: str) -> float:
         day=1, hour=0, minute=0, second=0, microsecond=0
     )
 
-    readings_result = (
-        supabase.table(READINGS_TABLE)
-        .select("measured_at,recommendation,place_id")
-        .eq("user_id", user_id)
-        .gte("measured_at", month_start.isoformat())
-        .order("measured_at")
-        .execute()
-    )
-
-    readings = readings_result.data or []
+    readings = _fetch_month_readings_for_kwh(user_id, month_start)
     if len(readings) < 2:
         return 0.0
 
@@ -226,10 +470,7 @@ def get_cumulative_kwh(user_id: str) -> float:
 
         power_kw = power_kw_for(place_id)
         for current_reading, next_reading in zip(place_readings, place_readings[1:]):
-            is_ac_on = (
-                current_reading.get("recommendation") or {}
-            ).get("ac_is_on") is True
-            if not is_ac_on:
+            if not _reading_ac_is_on(current_reading):
                 continue
 
             current_time = datetime.fromisoformat(
@@ -278,32 +519,42 @@ def get_savings_summary(
     else:
         raise ValueError(f"알 수 없는 period입니다: {period}")
 
-    query = (
-        supabase.table(READINGS_TABLE)
-        .select("recommendation")
-        .eq("user_id", user_id)
-    )
-    if period_start is not None:
-        query = query.gte("measured_at", period_start.isoformat())
-    if place_id is not None:
-        query = query.eq("place_id", place_id)
+    # jh 수정함 - 이슈 #38. 여기도 get_cumulative_kwh()와 똑같은 두 문제가
+    # 있었다. (1) range 없는 select라 PostgREST가 1000행에서 조용히 잘라
+    # 합계가 실제보다 작게 나온다. (2) savings 두 숫자만 쓰는데 recommendation
+    # JSONB 전체를 가져온다 — 이 표는 지금 2만 행이 넘어서, 대시보드가 이
+    # 카드를 그릴 때마다 수십 MB를 받아 파싱한다. 실측에서 이 엔드포인트가
+    # 500(타임아웃)을 내는 걸 확인했다.
+    def build(select_columns: str, start: int):
+        query = (
+            supabase.table(READINGS_TABLE)
+            .select(select_columns)
+            .eq("user_id", user_id)
+        )
+        if period_start is not None:
+            query = query.gte("measured_at", period_start.isoformat())
+        if place_id is not None:
+            query = query.eq("place_id", place_id)
+        return query.order("measured_at").range(start, start + _FETCH_PAGE_SIZE - 1)
 
-    readings_result = query.execute()
+    rows = _fetch_all_pages(
+        build,
+        primary_select=(
+            "power_saved_kwh:recommendation->savings->>power_saved_kwh,"
+            "cost_won:recommendation->savings->>cost_won"
+        ),
+        fallback_select="recommendation",
+    )
 
     total_power_saved_kwh = 0.0
     total_cost_won = 0
 
-    for reading in readings_result.data or []:
-        recommendation = reading.get("recommendation") or {}
-        savings = recommendation.get("savings")
-        if not savings:
-            continue
-
-        power_saved_kwh = savings.get("power_saved_kwh") or 0.0
+    for row in rows:
+        power_saved_kwh, cost_won = _read_savings_pair(row)
         if power_saved_kwh <= 0:
             continue
         total_power_saved_kwh += power_saved_kwh
-        total_cost_won += savings.get("cost_won") or 0
+        total_cost_won += cost_won
 
     return {
         "period": period,

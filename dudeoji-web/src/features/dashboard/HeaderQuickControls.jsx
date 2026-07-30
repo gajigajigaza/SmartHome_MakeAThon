@@ -82,6 +82,7 @@ export default function HeaderQuickControls({
     latestReading: realtimeReading,
     latestDeviceState: realtimeDeviceState,
     connectionStatus: realtimeConnectionStatus,
+    realtimeIsLive,
   } = useSensorRealtimeContext();
 
   const [deviceState, setDeviceState] = useState({
@@ -170,15 +171,19 @@ export default function HeaderQuickControls({
     setIsLoading(false);
   }, [realtimeDeviceState, selectedPlaceId]);
 
+  // jh 수정함 - 폴백 판정 기준을 "소켓이 열렸는지"에서 "값이 실제로 들어오는지"로
+  // 바꿨다(realtimeIsLive). 예전 조건(connectionStatus === "connected")은 소켓만
+  // 열려 있고 값은 하나도 안 오는 상태에서도 2초 폴링을 껐다 — 그러면 화면을
+  // 갱신할 수단이 App.jsx의 60초 타이머밖에 남지 않아 값이 낡아 보인다.
+  //
+  // 값이 들어오는 동안에는 HTTP 조회를 아예 하지 않는다. 위쪽 effect들이
+  // realtimeReading/realtimeDeviceState로 같은 상태를 이미 채우고 있어서,
+  // 여기서 getLatestReading을 또 부르는 건 App.jsx가 받는 것과 중복이었다.
   useEffect(() => {
+    if (realtimeIsLive) return undefined;
+
     setIsLoading(true);
     refreshDeviceState();
-
-    // WebSocket 연결 중에는 2초 HTTP 반복 조회를 중지합니다.
-    // 연결이 끊겼을 때만 기존 HTTP 조회가 예비 수단으로 작동합니다.
-    if (realtimeConnectionStatus === "connected") {
-      return undefined;
-    }
 
     const intervalId = window.setInterval(
       refreshDeviceState,
@@ -186,7 +191,7 @@ export default function HeaderQuickControls({
     );
 
     return () => window.clearInterval(intervalId);
-  }, [realtimeConnectionStatus, refreshDeviceState]);
+  }, [realtimeIsLive, refreshDeviceState]);
 
   useEffect(() => {
     setFeedback("");

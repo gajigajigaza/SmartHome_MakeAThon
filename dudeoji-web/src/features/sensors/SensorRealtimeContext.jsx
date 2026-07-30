@@ -18,6 +18,15 @@ const SensorRealtimeContext = createContext(null);
 const HEARTBEAT_INTERVAL_MS = 25_000;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 
+// jh 추가 - "소켓이 열려 있음"과 "실제로 값이 들어오고 있음"은 다른 상태다.
+// 예전에는 폴링 폴백이 connectionStatus === "connected"만 보고 꺼졌는데, 소켓은
+// 정상 연결됐지만 값이 하나도 안 오는 경우가 실제로 존재한다(게이트웨이가 다른
+// 계정으로 붙어 있거나, 보고 있는 장소에 좌표가 없어서 저장이 스킵되는 경우).
+// 그러면 폴링도 꺼지고 실시간도 없어서 60초 타이머만 남아 값이 낡는다.
+// 마지막 수신 후 이 시간이 지나면 실시간을 "죽은 것"으로 보고 폴백을 되살린다.
+// 센서 발행 주기는 5초지만 서버가 밀릴 때 합쳐질 수 있어(coalesce) 넉넉히 잡았다.
+const READING_STALE_AFTER_MS = 20_000;
+
 function buildReadingsWebSocketUrl(placeId) {
   const url = new URL(API_BASE_URL);
 
@@ -34,6 +43,11 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
   const [latestDeviceState, setLatestDeviceState] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState("idle");
   const [connectionError, setConnectionError] = useState("");
+  // 마지막으로 sensor_reading을 실제로 받은 시각(ms). 화면의 "마지막 측정"
+  // 표시와 폴링 폴백 판정이 모두 이 값을 쓴다.
+  const [lastReadingAt, setLastReadingAt] = useState(null);
+  // 감시 타이머가 만료된 시각. lastReadingAt과 비교해 생존 여부를 계산한다.
+  const [staleSince, setStaleSince] = useState(null);
   const socketRef = useRef(null);
 
   useEffect(() => {
@@ -44,6 +58,7 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
 
     setLatestReading(null);
     setLatestDeviceState(null);
+    setLastReadingAt(null);
     setConnectionError("");
 
     if (!selectedPlaceId) {
@@ -127,6 +142,7 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
           message.data
         ) {
           setLatestReading(message.data);
+          setLastReadingAt(Date.now());
           setConnectionStatus("connected");
           setConnectionError("");
           return;
@@ -189,16 +205,42 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
     };
   }, [selectedPlaceId]);
 
+  // jh 추가 - 값이 하나 들어오면 감시 타이머를 다시 걸고, 그 타이머가 만료되면
+  // (=READING_STALE_AFTER_MS 동안 아무 값도 안 옴) 실시간이 죽은 것으로 본다.
+  //
+  // 타이머 콜백에서만 상태를 건드리고, "지금 살아 있는지"는 두 시각을 비교해
+  // 계산한다 — effect 본문에서 setState를 부르면 불필요한 연쇄 렌더가 생긴다
+  // (react-hooks/set-state-in-effect).
+  useEffect(() => {
+    if (lastReadingAt == null) return undefined;
+
+    const staleTimerId = window.setTimeout(() => {
+      setStaleSince(Date.now());
+    }, READING_STALE_AFTER_MS);
+
+    return () => window.clearTimeout(staleTimerId);
+  }, [lastReadingAt]);
+
+  // 마지막 수신 이후에 만료 신호가 찍혔다면 죽은 것으로 본다.
+  const isReceivingReadings =
+    lastReadingAt != null && (staleSince == null || staleSince <= lastReadingAt);
+
   const value = useMemo(
     () => ({
       latestReading,
       latestDeviceState,
       connectionStatus,
       connectionError,
+      lastReadingAt,
+      // 폴링 폴백은 이 값으로 판단해야 한다 — connectionStatus만 보면
+      // "연결됐지만 값이 안 오는" 상태에서 폴백까지 같이 꺼진다.
+      realtimeIsLive: connectionStatus === "connected" && isReceivingReadings,
     }),
     [
       connectionError,
       connectionStatus,
+      isReceivingReadings,
+      lastReadingAt,
       latestDeviceState,
       latestReading,
     ],

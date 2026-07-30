@@ -13,12 +13,15 @@
 - MQTT 게이트웨이 수신 → mqtt_handler.py (민주)
 - 재실 감지 이력/패턴 학습 → routers/occupancy_router.py + occupancy_engine.py (정현)
 """
+import asyncio
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import READINGS_TABLE, supabase
+from perf import start_loop_lag_monitor
 from routers.auth_router import router as auth_router
 from routers.badges_router import router as badges_router
 from routers.places_router import router as places_router
@@ -68,6 +71,32 @@ app.include_router(weather_router)
 app.include_router(occupancy_router)
 
 
+# jh 수정함 - 이슈 #38. 이 앱은 동기 supabase-py 호출을 워커 스레드로 넘겨
+# 이벤트 루프를 비우는 구조다(perf.run_blocking). 그런데 asyncio의 기본
+# executor는 min(32, cpu_count+4)개라 vCPU 1~2개인 Render 인스턴스에서는
+# 5~6개밖에 안 된다. reading 1건이 장소마다 여러 번 DB를 왕복하고, 그게
+# 5초 주기로 들어오므로 스레드가 금방 마른다 — 그러면 루프는 안 막혀도
+# to_thread가 큐에 쌓여 같은 증상이 조용히 재현된다.
+DB_THREAD_POOL_SIZE = int(os.getenv("DB_THREAD_POOL_SIZE", "16"))
+
+
+@app.on_event("startup")
+def configure_thread_pool():
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(
+        ThreadPoolExecutor(
+            max_workers=DB_THREAD_POOL_SIZE,
+            thread_name_prefix="dudeoji-db",
+        )
+    )
+    print(f"[perf] DB 워커 스레드풀 {DB_THREAD_POOL_SIZE}개로 설정했습니다.")
+
+
+@app.on_event("startup")
+async def start_perf_monitor():
+    start_loop_lag_monitor()
+
+
 @app.get("/")
 def root():
     return {
@@ -80,10 +109,34 @@ def root():
 
 @app.get("/health")
 def health_check():
+    """순수 liveness. DB를 건드리지 않는다.
+
+    jh 수정함 - 이슈 #38. 원래 여기서 readings 전체 COUNT(count="exact")를
+    돌렸다. 두 가지가 문제였다.
+
+    1. 이 표는 팬아웃 때문에 계속 커진다(5초 주기 × 장소 수). exact COUNT는
+       매번 전체를 세므로 "서버 살아 있나?"를 확인하는 호출이 갈수록 가장
+       무거운 쿼리가 된다.
+    2. 애초에 이 엔드포인트를 부르는 목적은 "프로세스가 응답하는지"다.
+       DB 왕복을 섞어두면 DB가 느릴 때 서버 자체 상태를 판별할 수 없다 —
+       이슈 #38을 디버깅할 때 정확히 이게 방해가 됐다.
+
+    DB 연결 확인은 /health/db로 분리했다.
+    """
+    return {"status": "healthy", "database": "supabase"}
+
+
+@app.get("/health/db")
+def health_check_db():
+    """readiness. Supabase까지 실제로 왕복해 본다.
+
+    count="planned"는 플래너 추정치라 표 크기와 무관하게 빠르다(exact처럼
+    전체를 세지 않는다). 정확한 행 수가 필요한 화면은 없다.
+    """
     try:
         result = (
             supabase.table(READINGS_TABLE)
-            .select("id", count="exact")
+            .select("id", count="planned")
             .limit(1)
             .execute()
         )

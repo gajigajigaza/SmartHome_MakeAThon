@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -24,7 +25,22 @@ ALLOWED_DEVICE_ACTIONS = frozenset(
         "TURN_OFF_AIRCON",
     }
 )
-COMMAND_RESULT_TIMEOUT_SECONDS = 8.0
+# jh 수정함 - 8.0초에서 낮췄다. 이 값은 "기기가 command_result를 돌려줄 때까지
+# HTTP 응답을 붙잡고 기다리는 시간"이고, 프론트는 이 시간 내내 창문/에어컨 버튼
+# 둘 다 비활성화한 채 "전송 중…"을 띄운다(HeaderQuickControls.jsx).
+#
+# 중요한 건, 명령 자체는 기다리기 전에 이미 나갔다는 점이다 — send_json()이
+# 끝난 순간 게이트웨이→BLE→서보로 진행되고, 실측 왕복은 150~300ms다. 8초는
+# 이벤트 루프가 막혀서 ack를 읽어줄 receive 루프가 멈춰 있던 시절의 값이고,
+# 그때는 정상 동작하는 기기도 매번 8초를 꽉 채웠다(이슈 #38). 그 원인을 고친
+# 뒤에는 2.5초도 정상 왕복의 8배 이상 여유다.
+#
+# 타임아웃돼도 명령이 실패한 게 아니라 "확인만 못 받은" 상태이고, 프론트도
+# 그렇게 표시한다("명령 전송됨 · 기기 응답 시간 초과"). 실제 상태는 곧바로
+# 뒤따라오는 device_state 알림으로 갱신된다.
+COMMAND_RESULT_TIMEOUT_SECONDS = float(
+    os.getenv("COMMAND_RESULT_TIMEOUT_SECONDS", "2.5")
+)
 
 
 class DeviceConnectionError(RuntimeError):

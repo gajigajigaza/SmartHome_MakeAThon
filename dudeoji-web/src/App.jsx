@@ -547,7 +547,17 @@ function DashboardHome({
               // 갱신할 때 기존 loadLatestReading()을 그대로 재사용하도록 전달
               onMockReadingCreated={loadLatestReading}
             >
-              <SavingsSummary placeId={selectedPlaceId} />
+              <SavingsSummary
+                placeId={selectedPlaceId}
+                // jh 수정함 - 이미 받아둔 추천에서 넘겨줘서 /api/recommendation
+                // 중복 호출을 없앤다. 아직 안 받았으면 undefined가 가서
+                // SavingsSummary가 예전처럼 직접 조회한다.
+                windowDataAvailable={
+                  rawRecommendation
+                    ? rawRecommendation.window_data_available === true
+                    : undefined
+                }
+              />
             </EnvironmentCard>
 
           </div>
