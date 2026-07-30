@@ -62,6 +62,7 @@ export async function fetchAirconModels(search = "") {
 }
 
 export async function createPlaceWithAircons(payload) {
+  invalidatePlacesCache();
   return request("/api/places", {
     method: "POST",
     auth: true,
@@ -69,8 +70,44 @@ export async function createPlaceWithAircons(payload) {
   });
 }
 
+// jh 추가 - /api/places 중복 호출 제거용 아주 짧은 캐시.
+//
+// 로그인 직후 이 엔드포인트가 연달아 두 번 호출된다: FlowApp.handleLogin()이
+// "장소가 있으면 대시보드, 없으면 에어컨 등록"을 판단하려고 한 번(순차라서
+// 병렬화 불가 — 로그인 토큰이 먼저 필요하다), 그 다음 대시보드가 마운트되며
+// useSelectedLocation이 또 한 번. 백엔드의 read_my_places는 장소마다 에어컨을
+// 따로 조회하는 N+1 쿼리이고(places_router.py), 이 요청이 첫 화면 렌더를
+// 막는 자리에 있어서 두 번 도는 비용이 그대로 체감된다.
+//
+// TTL을 2초로 짧게 둔 이유: 이건 "같은 사용자 동작 하나에서 발생한 중복"만
+// 합치려는 것이고, 화면 간 데이터 캐시로 쓰려는 게 아니다. 변경 계열 요청은
+// 모두 이 모듈을 지나가므로 그 지점에서 캐시를 비운다(invalidatePlacesCache).
+const PLACES_CACHE_TTL_MS = 2000;
+let placesCache = null;
+let placesInFlight = null;
+
+export function invalidatePlacesCache() {
+  placesCache = null;
+  placesInFlight = null;
+}
+
 export async function fetchMyPlaces() {
-  return fetchPlacesWithRetry();
+  if (placesCache && Date.now() - placesCache.storedAt < PLACES_CACHE_TTL_MS) {
+    return placesCache.value;
+  }
+  // 동시에 여러 컴포넌트가 부르면 요청 하나만 나가게 한다.
+  if (placesInFlight) return placesInFlight;
+
+  placesInFlight = fetchPlacesWithRetry()
+    .then((value) => {
+      placesCache = { value, storedAt: Date.now() };
+      return value;
+    })
+    .finally(() => {
+      placesInFlight = null;
+    });
+
+  return placesInFlight;
 }
 
 // 류은 수정 0718 - 에어컨 카드의 밑줄 친 이름만 변경합니다.
@@ -79,6 +116,7 @@ export async function updateUserAirconNickname(
   airconId,
   nickname,
 ) {
+  invalidatePlacesCache();
   return request(
     `/api/places/${placeId}/aircons/${airconId}/nickname`,
     {
@@ -95,6 +133,7 @@ export async function updateUserAirconProduct(
   airconId,
   payload,
 ) {
+  invalidatePlacesCache();
   return request(
     `/api/places/${placeId}/aircons/${airconId}/product`,
     {
@@ -107,6 +146,7 @@ export async function updateUserAirconProduct(
 
 // 마이페이지의 에어컨 카드에서 자동 제어 사용 여부와 목표 가동 시간을 저장한다.
 export async function updatePlaceCooldown(placeId, payload) {
+  invalidatePlacesCache();
   return request(`/api/places/${placeId}/cooldown`, {
     method: "PATCH",
     auth: true,
@@ -118,6 +158,7 @@ export async function updatePlaceCooldown(placeId, payload) {
 // 예측 기반 / 지속적인 현재 상태 기반) 저장. payload는 둘 중 하나만 보내도
 // 되고(부분 갱신), 응답엔 저장 후 최종 상태 둘 다 내려온다.
 export async function updatePlaceBackgroundControl(placeId, payload) {
+  invalidatePlacesCache();
   return request(`/api/places/${placeId}/background-control`, {
     method: "PATCH",
     auth: true,
@@ -128,6 +169,7 @@ export async function updatePlaceBackgroundControl(placeId, payload) {
 // jh 수정함 - EnvironmentCard의 "+" 위치 검색 팝오버가 기존 장소의 lat/lon만
 // 갱신할 때 쓴다. PATCH /places/{place_id}(places_router.py, 위치만 갱신).
 export async function updatePlaceLocation(placeId, lat, lon) {
+  invalidatePlacesCache();
   return request(`/api/places/${placeId}`, {
     method: "PATCH",
     auth: true,
@@ -140,6 +182,7 @@ export async function updatePlaceLocation(placeId, lat, lon) {
 // 같은 PATCH /places/{place_id}를 쓰지만, payload에 넣은 필드만 보낸다
 // (places_router.py가 name/lat/lon을 각각 선택 필드로 받는다).
 export async function updatePlaceDetails(placeId, payload) {
+  invalidatePlacesCache();
   return request(`/api/places/${placeId}`, {
     method: "PATCH",
     auth: true,
@@ -150,6 +193,7 @@ export async function updatePlaceDetails(placeId, payload) {
 // jh 수정함 - MyPage.jsx의 장소 삭제 버튼에 쓴다. DELETE /places/{place_id}
 // (places_router.py, user_aircons는 DB cascade로 자동 정리됨).
 export async function deletePlaceItem(placeId) {
+  invalidatePlacesCache();
   return request(`/api/places/${placeId}`, {
     method: "DELETE",
     auth: true,

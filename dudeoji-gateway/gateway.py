@@ -1301,11 +1301,21 @@ class DudeojiGateway:
             raise RuntimeError("WebSocket 작업이 예기치 않게 종료되었습니다.")
 
     async def _run_websocket_forever(self) -> None:
+        # jh 수정함 - retry_delay를 while 밖에서 한 번만 초기화해서 연결에
+        # 성공해도 리셋되지 않았다. 그래서 초반 몇 번 실패해 15초까지 올라가면
+        # 그 뒤로는 프로세스가 살아 있는 동안 재연결 대기가 영구히 15초로
+        # 고정됐다 — 백엔드가 재시작될 때마다(Render 무료 플랜은 스핀다운·재시작이
+        # 잦다) 그 15초 동안 device_hub에 연결이 없어서 버튼을 눌러도 503이
+        # 즉시 떨어진다("눌렀는데 아무 일도 안 일어남"으로 보인다).
+        # _run_ble_forever()는 이미 성공 시 리셋한다 — 같은 방식으로 맞춘다.
         retry_delay = 1.0
 
         while not self.stop_event.is_set():
             try:
                 await self._run_one_websocket_connection()
+                # 정상적으로 한 세션을 마치고 돌아온 경우(서버 재시작 등)는
+                # 다음 재연결을 빠르게 시도해야 한다.
+                retry_delay = 1.0
             except asyncio.CancelledError:
                 raise
             except Exception as error:
@@ -1314,9 +1324,9 @@ class DudeojiGateway:
                     error,
                     retry_delay,
                 )
+                retry_delay = min(retry_delay * 2, 15.0)
 
-            await asyncio.sleep(retry_delay)
-            retry_delay = min(retry_delay * 2, 15.0)
+            await asyncio.sleep(min(retry_delay, 15.0))
 
 
 def configure_logging() -> None:

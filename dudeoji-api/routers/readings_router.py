@@ -19,6 +19,7 @@ from occupancy_engine import (
     resolve_occupancy_signal,
     respond_to_prediction,
 )
+from perf import SegmentTimings, run_blocking, timed, timed_blocking
 from recommendation_engine import LOGIC_THRESHOLDS, determine_action
 from sensor_realtime_hub import reading_hub
 from weather import fetch_air_pollution, fetch_current_weather
@@ -460,12 +461,18 @@ async def _apply_background_occupancy_control(
     def preview(direction: str, eta_minutes: int) -> dict:
         return compute_prediction_preview(user_id, place, direction, eta_minutes)
 
-    state = get_prediction_state(place_id, preview)
+    # jh 수정함 - get_prediction_state()는 동기 함수이고, 넘기는 preview 콜백까지
+    # 안에서 다시 동기 DB 조회를 한다(compute_prediction_preview →
+    # get_latest_reading + calculate_ac_run_time). 통째로 워커 스레드로 넘겨야
+    # 이벤트 루프가 안 막힌다 — 이슈 #38.
+    state = await run_blocking(get_prediction_state, place_id, preview)
     if not state or state.get("status") != "PENDING_CONFIRM":
         return
 
     try:
-        result = respond_to_prediction(place_id, state["transition_key"], True)
+        result = await run_blocking(
+            respond_to_prediction, place_id, state["transition_key"], True
+        )
     except ValueError:
         # 다른 경로(예: 사용자가 마침 그 순간 웹에서 팝업에 응답)와 겹쳤을
         # 뿐이니 조용히 넘어간다 — 다음 reading에서 다시 평가된다.
@@ -473,6 +480,89 @@ async def _apply_background_occupancy_control(
 
     device_command = _ACTION_TO_DEVICE_COMMAND.get(result["action"])
     await _maybe_send_background_command(user_id, place_id, device_command)
+
+
+# jh 수정함 - 이슈 #38. 백그라운드 자동 제어를 reading 저장 경로에서 떼어낸다.
+#
+# 원래는 _save_reading_to_place() 안에서 그대로 await했는데, 그 안의
+# device_hub.send_command()는 기기(XIAO)가 command_result를 돌려줄 때까지
+# 최대 COMMAND_RESULT_TIMEOUT_SECONDS(=8초, device_connection_hub.py:27)를
+# 기다린다. 즉 기기가 조용하면 reading 1건 저장이 8초씩 늘어나고, 게이트웨이는
+# 그와 무관하게 계속 다음 값을 밀어 넣는다(펌웨어의 고정 타이머) — 밀린 작업이
+# 그대로 쌓이는 구조였다.
+#
+# 자동 제어는 원래 "사람이 안 보고 있어도 다음 reading에서 같은 조건이면 다시
+# 시도된다"는 설계(_maybe_send_background_command 참고)라, reading 저장 응답을
+# 붙잡고 있을 이유가 전혀 없다. 별 task로 떼어내고, 같은 장소의 이전 명령이
+# 아직 기기 응답을 기다리는 중이면 새로 만들지 않는다(중복 명령/task 누적 방지).
+_background_control_tasks: dict[int, asyncio.Task] = {}
+
+
+async def _run_background_control(
+    user_id: int,
+    place: dict,
+    recommendation: Recommendation,
+    window_is_open: Optional[bool],
+    ac_is_on: Optional[bool],
+) -> None:
+    place_id = place["id"]
+    try:
+        if place.get("background_condition_control_enabled"):
+            await _apply_background_condition_control(
+                user_id,
+                place_id,
+                recommendation,
+                window_is_open,
+                ac_is_on,
+            )
+
+        if place.get("background_occupancy_control_enabled"):
+            await _apply_background_occupancy_control(user_id, place)
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        # 떼어낸 task라 예외를 회수해 줄 호출부가 없다 — 여기서 반드시 잡아야
+        # "Task exception was never retrieved" 경고만 남고 조용히 사라지는 걸
+        # 막을 수 있다.
+        print(f"[백그라운드 자동 제어] place_id={place_id} 처리 중 오류: {error}")
+
+
+def _schedule_background_control(
+    user_id: int,
+    place: dict,
+    recommendation: Recommendation,
+    window_is_open: Optional[bool],
+    ac_is_on: Optional[bool],
+) -> None:
+    if not (
+        place.get("background_condition_control_enabled")
+        or place.get("background_occupancy_control_enabled")
+    ):
+        return
+
+    place_id = place["id"]
+    running = _background_control_tasks.get(place_id)
+    if running is not None and not running.done():
+        # 이전 명령이 아직 기기 응답(최대 8초)을 기다리는 중. 지금 값으로 또
+        # 보내봐야 같은 명령이 겹칠 뿐이고, 조건이 유지되면 다음 reading에서
+        # 자연스럽게 다시 시도된다.
+        return
+
+    task = asyncio.create_task(
+        _run_background_control(
+            user_id,
+            place,
+            recommendation,
+            window_is_open,
+            ac_is_on,
+        )
+    )
+    _background_control_tasks[place_id] = task
+    task.add_done_callback(
+        lambda finished: _background_control_tasks.pop(place_id, None)
+        if _background_control_tasks.get(place_id) is finished
+        else None
+    )
 
 
 def _infer_control_context(
@@ -762,6 +852,15 @@ class _PlaceSaveSkipped(Exception):
         self.detail = detail
 
 
+def _insert_reading_row(reading_data: dict):
+    """동기 insert. 워커 스레드에서 실행되도록 함수로 분리했다(이슈 #38).
+
+    execute_supabase_with_retry()를 쓰지 않는 이유는 아래 호출부 주석 참고
+    (응답 수신 중 소켓 오류 시 중복 저장 위험).
+    """
+    return supabase.table(READINGS_TABLE).insert(reading_data).execute()
+
+
 async def _save_reading_to_place(
     user_id: int,
     base_sensor_data: SensorReadingCreate,
@@ -769,6 +868,7 @@ async def _save_reading_to_place(
     reading_source: str,
     cumulative_kwh_this_month: float,
     outdoor_overrides: Optional[dict] = None,
+    timings: Optional[SegmentTimings] = None,
 ) -> SensorReadingResponse:
     """실내값 하나를 특정 장소 기준으로 저장한다.
 
@@ -795,11 +895,12 @@ async def _save_reading_to_place(
             "조회할 수 없습니다. 장소 위치를 먼저 설정해 주세요.",
         )
 
-    outdoor_weather, weather_status = await _load_outdoor_weather(
-        resolved_place_id,
-        float(lat),
-        float(lon),
-    )
+    async with timed(timings, "weather"):
+        outdoor_weather, weather_status = await _load_outdoor_weather(
+            resolved_place_id,
+            float(lat),
+            float(lon),
+        )
     if not outdoor_weather:
         raise _PlaceSaveSkipped(
             resolved_place_id,
@@ -843,7 +944,14 @@ async def _save_reading_to_place(
 
     previous_action = "MAINTAIN"
     target_cooldown = place.get("target_cooldown_minutes") or 30
-    rated_power_w = get_rated_power(resolved_place_id)
+    # jh 수정함 - 이슈 #38. 아래 네 개(rated_power/latest_reading/ac_run_time/
+    # occupancy_signal)와 뒤의 insert는 모두 **동기** supabase-py 호출이다.
+    # async 함수 안에서 그대로 부르면 그 소켓 왕복 동안 이벤트 루프 스레드가
+    # 통째로 멈춰서, 이 사용자와 아무 상관 없는 /health까지 응답을 못 하게 된다.
+    # perf.timed_blocking()으로 워커 스레드에 넘기면서 구간별 소요시간도 같이 남긴다.
+    rated_power_w = await timed_blocking(
+        timings, "rated_power", get_rated_power, resolved_place_id
+    )
     duration_hours = 0.0
     # interval closing: 절감 계산은 지금 이 reading이 아니라 직전 reading이
     # 저장될 때 실제로 확인됐던 상태(window_is_open/ac_is_on)로 정산한다.
@@ -851,7 +959,9 @@ async def _save_reading_to_place(
     previous_ac_is_on: Optional[bool] = None
 
     try:
-        latest = get_latest_reading(user_id, resolved_place_id)
+        latest = await timed_blocking(
+            timings, "latest_reading", get_latest_reading, user_id, resolved_place_id
+        )
         previous_action = latest.recommendation.action
         previous_window_is_open = latest.window_is_open
         previous_ac_is_on = latest.recommendation.ac_is_on
@@ -861,12 +971,17 @@ async def _save_reading_to_place(
         if error.status_code != status.HTTP_404_NOT_FOUND:
             raise
 
-    actual_ac_state, ac_run_time_minutes = calculate_ac_run_time(
+    actual_ac_state, ac_run_time_minutes = await timed_blocking(
+        timings,
+        "ac_run_time",
+        calculate_ac_run_time,
         user_id,
         resolved_place_id,
         sensor_data.ac_is_on,
     )
-    occupancy_signal = resolve_occupancy_signal(resolved_place_id)
+    occupancy_signal = await timed_blocking(
+        timings, "occupancy_signal", resolve_occupancy_signal, resolved_place_id
+    )
 
     try:
         recommendation = calculate_recommendation(
@@ -940,7 +1055,9 @@ async def _save_reading_to_place(
     # 성공했을 수 있다. 그 상태에서 재시도하면 같은 reading이 중복 저장돼
     # savings/누적 kWh가 두 배로 잡힐 위험이 있다 — SELECT류(멱등)만 재시도 대상.
     try:
-        result = supabase.table(READINGS_TABLE).insert(reading_data).execute()
+        result = await timed_blocking(
+            timings, "insert", _insert_reading_row, reading_data
+        )
     except Exception as error:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -950,27 +1067,29 @@ async def _save_reading_to_place(
     saved_reading = SensorReadingResponse.model_validate(result.data[0])
 
     # HTTP 또는 센서 WebSocket 중 어느 경로로 저장돼도 웹 구독자에게 즉시 전송합니다.
-    await reading_hub.broadcast_reading(
-        user_id=user_id,
-        place_id=resolved_place_id,
-        reading=saved_reading.model_dump(mode="json"),
-    )
+    async with timed(timings, "broadcast"):
+        await reading_hub.broadcast_reading(
+            user_id=user_id,
+            place_id=resolved_place_id,
+            reading=saved_reading.model_dump(mode="json"),
+        )
 
     # jh 추가 - 마이페이지에서 사용자가 명시적으로 동의한 place에 한해, 웹 앱이
     # 열려 있지 않아도 서버가 알아서 기기를 조작한다. 실제 하드웨어는 이
     # reading 저장 경로를 웹 앱과 무관하게 계속 타므로(BLE→게이트웨이→서버),
     # 이 지점이 곧 "무인 자동 제어"의 주기가 된다 — 별도 스케줄러가 필요 없다.
-    if place.get("background_condition_control_enabled"):
-        await _apply_background_condition_control(
-            user_id,
-            resolved_place_id,
-            recommendation,
-            sensor_data.window_is_open,
-            sensor_data.ac_is_on,
-        )
-
-    if place.get("background_occupancy_control_enabled"):
-        await _apply_background_occupancy_control(user_id, place)
+    #
+    # jh 수정함 - 이슈 #38. 여기서 await하지 않고 별 task로 떼어낸다. 기기
+    # 응답을 최대 8초 기다리는 작업이라, reading 저장 응답이 그만큼 늦어지면
+    # 고정 주기로 값을 밀어 넣는 게이트웨이 쪽에 그대로 밀림이 쌓인다.
+    # (_schedule_background_control 주석 참고)
+    _schedule_background_control(
+        user_id,
+        place,
+        recommendation,
+        sensor_data.window_is_open,
+        sensor_data.ac_is_on,
+    )
 
     return saved_reading
 
@@ -1015,15 +1134,25 @@ async def save_reading_for_user(
     동작이 바뀌지 않는다 — _save_reading_to_place() 참고.
     """
     base_sensor_data = SensorReadingCreate.model_validate(sensor_data_dict)
+    # jh 수정함 - 이슈 #38. reading 1건을 저장하는 데 어느 구간이 얼마나
+    # 걸렸는지 한 줄로 남긴다. 이 경로 안의 모든 동기 DB 호출은 이제 워커
+    # 스레드로 넘어가므로(perf.timed_blocking), 여기 찍히는 시간이 길어도
+    # 이벤트 루프가 막힌 건 아니다 — 루프가 실제로 막혔는지는 별도로
+    # perf.start_loop_lag_monitor()가 감시한다.
+    timings = SegmentTimings("reading")
 
     if not fan_out:
-        place = get_place_for_user(user_id, place_id)
+        place = await timed_blocking(
+            timings, "place_lookup", get_place_for_user, user_id, place_id
+        )
         if not place:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="실외 날씨 API를 조회할 장소가 등록되어 있지 않습니다.",
             )
-        cumulative_kwh_this_month = get_cumulative_kwh(user_id)
+        cumulative_kwh_this_month = await timed_blocking(
+            timings, "cumulative_kwh", get_cumulative_kwh, user_id
+        )
         try:
             return await _save_reading_to_place(
                 user_id,
@@ -1032,6 +1161,7 @@ async def save_reading_for_user(
                 reading_source,
                 cumulative_kwh_this_month,
                 outdoor_overrides,
+                timings=timings,
             )
         except _PlaceSaveSkipped as error:
             status_code = (
@@ -1040,8 +1170,12 @@ async def save_reading_for_user(
                 else status.HTTP_503_SERVICE_UNAVAILABLE
             )
             raise HTTPException(status_code=status_code, detail=error.detail) from error
+        finally:
+            timings.log(user_id=user_id, places=1, fan_out=0)
 
-    places = _get_all_places_for_user(user_id)
+    places = await timed_blocking(
+        timings, "places_query", _get_all_places_for_user, user_id
+    )
     if not places:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1050,25 +1184,50 @@ async def save_reading_for_user(
 
     # jh 수정함 - 사용자 전체 기준 값이라 장소마다 다시 계산할 필요 없음.
     # 팬아웃 진입 전 1회만 조회해서 모든 장소의 estimate_savings()에 재사용.
-    cumulative_kwh_this_month = get_cumulative_kwh(user_id)
+    cumulative_kwh_this_month = await timed_blocking(
+        timings, "cumulative_kwh", get_cumulative_kwh, user_id
+    )
 
     successes: list[tuple[dict, SensorReadingResponse]] = []
     last_skip_detail = "모든 장소의 실외 날씨 API 조회에 실패했습니다."
 
-    for place in places:
-        try:
-            saved = await _save_reading_to_place(
-                user_id,
-                base_sensor_data,
-                place,
-                reading_source,
-                cumulative_kwh_this_month,
-                outdoor_overrides,
-            )
-            successes.append((place, saved))
-        except _PlaceSaveSkipped as error:
-            last_skip_detail = error.detail
-            print(f"[readings] place_id={error.place_id} 저장 스킵: {error.detail}")
+    # jh 수정함 - 이슈 #38. 장소별 저장을 순차 for에서 asyncio.gather로 바꿨다.
+    # 장소끼리는 완전히 독립적이다 — 각자 자기 좌표의 날씨, 자기 place_id로
+    # 필터한 조회, 자기 행 insert만 한다. 유일한 공유 입력인
+    # cumulative_kwh_this_month는 이미 루프 밖에서 1회만 계산해 넘긴다.
+    #
+    # 순차였을 때는 reading 1건의 소요시간이 장소 수에 그대로 비례했고, 그게
+    # 곧 웹 대시보드가 갱신되는 주기였다(마지막 장소를 보고 있으면 가장 늦게
+    # 받는다). 이제 장소 수와 거의 무관하게 왕복 1세트 시간으로 끝난다.
+    try:
+        outcomes = await asyncio.gather(
+            *(
+                _save_reading_to_place(
+                    user_id,
+                    base_sensor_data,
+                    place,
+                    reading_source,
+                    cumulative_kwh_this_month,
+                    outdoor_overrides,
+                    timings=timings,
+                )
+                for place in places
+            ),
+            return_exceptions=True,
+        )
+    finally:
+        timings.log(user_id=user_id, places=len(places), fan_out=1)
+
+    for place, outcome in zip(places, outcomes):
+        if isinstance(outcome, _PlaceSaveSkipped):
+            last_skip_detail = outcome.detail
+            print(f"[readings] place_id={outcome.place_id} 저장 스킵: {outcome.detail}")
+        elif isinstance(outcome, BaseException):
+            # 스킵이 아닌 진짜 오류(예: insert 실패 500)는 이전과 같이 그대로
+            # 올린다. 순차 루프 때와 달리 다른 장소는 이미 저장을 마친 상태다.
+            raise outcome
+        else:
+            successes.append((place, outcome))
 
     if not successes:
         raise HTTPException(
@@ -1224,7 +1383,9 @@ async def read_weather_status(
     current_user: dict = Depends(get_current_user),
 ):
     """장소 좌표와 두 외부 API의 상태·관측시각을 각각 반환합니다."""
-    place = get_place_for_user(current_user["id"], place_id)
+    # jh 수정함 - 이슈 #38. async 핸들러라 동기 DB 조회를 그대로 부르면 루프가
+    # 막힌다. 이 엔드포인트는 프론트가 60초마다 폴링한다(SensorReadings.jsx).
+    place = await run_blocking(get_place_for_user, current_user["id"], place_id)
     if not place:
         return {
             "place_id": None,

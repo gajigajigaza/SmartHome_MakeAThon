@@ -1,4 +1,12 @@
 fastapi[standard]==0.139.0
-supabase
+# jh 수정함 - 이슈 #38. supabase가 버전 고정이 안 돼 있어서 Render가 배포할
+# 때마다 최신 버전을 새로 받았다(빌드 시점에 따라 서로 다른 버전이 뜬다).
+# db.py가 SyncClientOptions(httpx_client=...)로 커넥션 풀/타임아웃을 직접
+# 설정하는데, 이건 supabase 2.x의 API다 — 3.x가 나오면 조용히 깨질 수 있다.
+# 지금 배포/테스트에서 확인된 버전으로 고정한다.
+supabase==2.31.0
+# db.py가 직접 import한다. 지금은 uvicorn[standard]에 딸려와서 우연히 설치되고
+# 있을 뿐이라 명시한다.
+python-dotenv==1.2.2
 paho-mqtt
-httpx
+httpx==0.28.1

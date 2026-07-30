@@ -64,7 +64,7 @@ export default function SensorReadings({
   const {
     latestReading: realtimeReading,
     latestDeviceState: realtimeDeviceState,
-    connectionStatus: realtimeConnectionStatus,
+    realtimeIsLive,
   } = useSensorRealtimeContext();
   const [readings, setReadings] = useState([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -432,15 +432,13 @@ export default function SensorReadings({
   }, [autoRefresh, mergeIntoState, realtimeReading, selectedPlaceId]);
 
   useEffect(() => {
-    if (
-      !autoRefresh ||
-      !selectedPlaceId ||
-      realtimeConnectionStatus === "connected"
-    ) {
+    if (!autoRefresh || !selectedPlaceId || realtimeIsLive) {
       return undefined;
     }
 
-    // WebSocket이 연결되지 않은 동안에만 기존 5초 HTTP 조회를 사용합니다.
+    // jh 수정함 - 판정 기준을 "소켓 연결 여부"에서 "값이 실제로 들어오는지"로
+    // 바꿨다. 소켓만 열려 있고 값이 안 오는 상태에서도 폴백이 꺼져 화면이
+    // 낡아 보이던 문제(SensorRealtimeContext의 READING_STALE_AFTER_MS 참고).
     const timerId = window.setInterval(() => {
       if (document.visibilityState === "visible") {
         performRefreshCycle();
@@ -451,7 +449,7 @@ export default function SensorReadings({
   }, [
     autoRefresh,
     performRefreshCycle,
-    realtimeConnectionStatus,
+    realtimeIsLive,
     refreshSeconds,
     selectedPlaceId,
   ]);
@@ -471,7 +469,7 @@ export default function SensorReadings({
       if (
         document.visibilityState === "visible" &&
         autoRefresh &&
-        realtimeConnectionStatus !== "connected"
+        !realtimeIsLive
       ) {
         performRefreshCycle();
       }
@@ -480,7 +478,7 @@ export default function SensorReadings({
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () =>
       document.removeEventListener("visibilitychange", refreshWhenVisible);
-  }, [autoRefresh, performRefreshCycle, realtimeConnectionStatus]);
+  }, [autoRefresh, performRefreshCycle, realtimeIsLive]);
 
   useEffect(() => {
     if (!toastMessage) {

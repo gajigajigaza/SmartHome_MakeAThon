@@ -96,6 +96,15 @@ export default function EnvironmentCard({
         weatherCondition: realtimeReading.weather_condition,
       }
     : sensorData;
+  // jh 수정함 - "마지막 측정" 시각도 실제로 화면에 그리는 값과 같은 출처에서
+  // 가져온다. 예전에는 온습도는 WebSocket(5초마다 갱신)에서 오는데 시각은
+  // updatedAt prop(App.jsx의 60초 폴링에서만 갱신)에서 와서, 값은 최신인데
+  // 옆의 시각만 최대 60초 뒤처져 보였다 — 사용자는 그 시각을 신선도의
+  // 근거로 읽기 때문에, 파이프라인이 정상인데도 "안 갱신된다"고 느끼게 된다.
+  const activeUpdatedAt =
+    realtimeMatchesSelectedPlace && realtimeReading.measured_at
+      ? new Date(realtimeReading.measured_at)
+      : updatedAt;
   const senseNodeDisconnected = isSenseNodeDisconnected(
     realtimeDeviceState,
     selectedLocation?.id,
@@ -471,14 +480,14 @@ export default function EnvironmentCard({
       {children}
 
       {/* jh 수정함 - 시간만 있으면 며칠 지난 기록인지 알 수 없어서 날짜(N월 N일)도 같이 표시 */}
-      {updatedAt && (
+      {activeUpdatedAt && (
         <p className="dashboard-updated-at">
           마지막 측정{" "}
-          {updatedAt.toLocaleDateString("ko-KR", {
+          {activeUpdatedAt.toLocaleDateString("ko-KR", {
             month: "long",
             day: "numeric",
           })}{" "}
-          {updatedAt.toLocaleTimeString("ko-KR", {
+          {activeUpdatedAt.toLocaleTimeString("ko-KR", {
             hour: "2-digit",
             minute: "2-digit",
           })}

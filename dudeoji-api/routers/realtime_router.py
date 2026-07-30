@@ -28,6 +28,112 @@ router = APIRouter(tags=["realtime"])
 AUTH_TIMEOUT_SECONDS = 10
 
 
+class _LatestReadingSlot:
+    """"가장 최신 값 하나만" 유지하는 깊이 1 큐.
+
+    jh 추가 - 이슈 #38. 펌웨어는 서버 상태와 무관하게 고정 타이머로
+    (PUBLISH_INTERVAL_MS) 값을 밀어 넣고, 게이트웨이도 서버 ack를 기다리지
+    않는다. 그래서 저장 1건이 발행 주기보다 오래 걸리기 시작하면 밀린 일이
+    그대로 쌓인다 — 예전에는 receive 루프에서 저장을 그대로 await했기 때문에
+    그 밀림이 소켓 수신 버퍼에 무한정 고이는 구조였다.
+
+    센서값은 "지금 상태"를 알려주는 값이라 3초 전 값을 굳이 저장할 이유가
+    없다. 처리 중에 새 값이 오면 대기 중인 값을 버리고 최신 값으로 교체한다.
+    이러면 부하가 아무리 커져도 서버가 하는 일은 "한 번에 한 건"으로 묶이고,
+    뒤처지면 중간 값이 빠질 뿐 최신 상태는 항상 반영된다.
+    """
+
+    def __init__(self) -> None:
+        self._pending: dict | None = None
+        self._ready = asyncio.Event()
+        self.coalesced_count = 0
+
+    def offer(self, sensor_data: dict) -> bool:
+        """새 값을 넣는다. 대기 중인 값을 밀어냈으면 True."""
+        replaced = self._pending is not None
+        if replaced:
+            self.coalesced_count += 1
+        self._pending = sensor_data
+        self._ready.set()
+        return replaced
+
+    async def take(self) -> dict:
+        await self._ready.wait()
+        sensor_data = self._pending
+        self._pending = None
+        self._ready.clear()
+        # offer()가 _pending을 세팅한 뒤에만 _ready를 set하므로 None일 수 없다.
+        assert sensor_data is not None
+        return sensor_data
+
+
+async def _drain_readings(
+    websocket: WebSocket,
+    user_id: int,
+    place_id: int,
+    slot: _LatestReadingSlot,
+) -> None:
+    """대기 중인 최신 센서값을 한 건씩 저장하는 워커.
+
+    receive 루프와 분리돼 있어서, 저장이 오래 걸려도 게이트웨이가 보내는
+    ping/command_result/device_state는 계속 처리된다. 특히 command_result가
+    막히지 않는 게 중요하다 — 백그라운드 자동 제어가 기기에 명령을 보내고
+    응답을 기다리는데, 예전 구조에서는 그 응답을 읽어줄 receive 루프가 바로
+    이 저장을 기다리며 멈춰 있어서 정상 동작하는 기기도 매번 8초 타임아웃까지
+    갔다(device_connection_hub.COMMAND_RESULT_TIMEOUT_SECONDS).
+    """
+    while True:
+        sensor_data = await slot.take()
+
+        try:
+            saved = await save_reading_for_user(
+                user_id=user_id,
+                sensor_data_dict=sensor_data,
+                place_id=place_id,
+                reading_source="SENSOR",
+            )
+        except HTTPException as error:
+            message: dict[str, Any] = {
+                "type": "reading_error",
+                "status": error.status_code,
+                "detail": error.detail,
+            }
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            print(
+                "[센서 WebSocket] 센서값 저장 실패: "
+                f"user_id={user_id}, place_id={place_id}, error={error}"
+            )
+            message = {
+                "type": "reading_error",
+                "status": 500,
+                "detail": "센서 측정값을 저장하지 못했습니다.",
+            }
+        else:
+            # save_reading_for_user()는 사용자 모든 장소에 팬아웃 저장하고
+            # 대표 1건을 반환합니다. 아래 place_id는 이 소켓의 연결 장소입니다.
+            message = {
+                "type": "reading_saved",
+                "place_id": place_id,
+                "reading_id": saved.id,
+                "measured_at": saved.measured_at.isoformat(),
+                # 처리 중에 밀려서 버려진 값의 누적 개수. 0보다 크면 서버가
+                # 발행 주기를 못 따라가고 있다는 신호다.
+                "coalesced_skipped": slot.coalesced_count,
+            }
+
+        try:
+            await device_hub.send_to_connection(
+                websocket=websocket,
+                user_id=user_id,
+                message=message,
+            )
+        except DeviceConnectionError:
+            # 연결이 교체됐거나 끊겼다. 이 워커는 이 연결 전용이므로 종료한다.
+            return
+
+
 async def _close_safely(
     websocket: WebSocket,
     code: int,
@@ -139,6 +245,8 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
 
     await websocket.accept()
     user_id: int | None = None
+    reading_slot = _LatestReadingSlot()
+    reading_worker: asyncio.Task | None = None
 
     try:
         try:
@@ -174,6 +282,10 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
                     "command_result",
                 ],
             },
+        )
+
+        reading_worker = asyncio.create_task(
+            _drain_readings(websocket, user_id, place_id, reading_slot)
         )
 
         while True:
@@ -304,48 +416,15 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
                 )
                 continue
 
-            try:
-                saved = await save_reading_for_user(
-                    user_id=user_id,
-                    sensor_data_dict=sensor_data,
-                    place_id=place_id,
-                    reading_source="SENSOR",
+            # jh 수정함 - 이슈 #38. 여기서 저장을 await하지 않는다. 최신 값만
+            # 슬롯에 남기고 바로 다음 메시지를 받으러 돌아간다 — 저장은
+            # _drain_readings 워커가 한 건씩 처리한다.
+            if reading_slot.offer(sensor_data):
+                print(
+                    "[센서 WebSocket] 앞선 센서값 저장이 아직 진행 중 — "
+                    f"최신 값으로 대체했습니다(user_id={user_id}, "
+                    f"place_id={place_id}, 누적 {reading_slot.coalesced_count}건)"
                 )
-            except HTTPException as error:
-                await device_hub.send_to_connection(
-                    websocket=websocket,
-                    user_id=user_id,
-                    message={
-                        "type": "reading_error",
-                        "status": error.status_code,
-                        "detail": error.detail,
-                    },
-                )
-                continue
-            except Exception:
-                await device_hub.send_to_connection(
-                    websocket=websocket,
-                    user_id=user_id,
-                    message={
-                        "type": "reading_error",
-                        "status": 500,
-                        "detail": "센서 측정값을 저장하지 못했습니다.",
-                    },
-                )
-                continue
-
-            # save_reading_for_user()는 사용자 모든 장소에 팬아웃 저장하고
-            # 대표 1건을 반환합니다. 아래 place_id는 이 소켓의 연결 장소입니다.
-            await device_hub.send_to_connection(
-                websocket=websocket,
-                user_id=user_id,
-                message={
-                    "type": "reading_saved",
-                    "place_id": place_id,
-                    "reading_id": saved.id,
-                    "measured_at": saved.measured_at.isoformat(),
-                },
-            )
 
     except WebSocketDisconnect:
         pass
@@ -359,6 +438,17 @@ async def sensors_websocket(websocket: WebSocket, place_id: int) -> None:
         )
         await _close_safely(websocket, 1011)
     finally:
+        if reading_worker is not None:
+            reading_worker.cancel()
+            # 진행 중이던 저장이 정리될 때까지 기다린다. 안 기다리면 이미 닫힌
+            # 소켓으로 ack를 보내려다 나는 예외가 회수되지 않은 채 남는다.
+            try:
+                await reading_worker
+            except asyncio.CancelledError:
+                pass
+            except Exception as error:
+                print(f"[센서 WebSocket] 저장 워커 종료 중 오류: {error}")
+
         if user_id is not None:
             removed_current_connection = await device_hub.disconnect(
                 websocket,
