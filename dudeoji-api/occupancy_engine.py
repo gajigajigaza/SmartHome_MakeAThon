@@ -30,6 +30,11 @@ _UNIQUE_VIOLATION_CODE = "23505"
 KST = ZoneInfo("Asia/Seoul")
 
 LIVE_FRESHNESS_MINUTES = 5
+# 최근 몇 개의 감지가 모두 같은 값이어야 라이브 신호로 신뢰할지. 카메라가
+# 수~수십 초 간격으로 새 프레임을 보내는데, 단발성 오탐 하나로 바로 신호가
+# 뒤집히면 재실 여부에 반응하는 추천(TURN_OFF_AIRCON 등)이 매 프레임마다
+# 같이 뒤집힌다 — 2026-07-30 실기기 연동 후 실제로 관찰됨.
+LIVE_DEBOUNCE_SAMPLES = 2
 EMPTY_THRESHOLD = 0.15
 # "곧 재실 예상"으로 볼 확률 하한. EMPTY_THRESHOLD(0.15)와 비대칭인 이유는
 # "없다"는 낮은 확률에서 바로 확신해도 되지만(에어컨 꺼도 그만), "온다"는
@@ -249,26 +254,35 @@ def resolve_occupancy_signal(place_id: int) -> Optional[dict]:
 
     라이브 값이 있으면 occupancy_models는 아예 조회하지 않는다 — "실측이
     학습된 패턴보다 항상 우선한다"는 규칙이 실제로 구현되는 지점.
+
+    최근 LIVE_DEBOUNCE_SAMPLES개의 감지가 모두 같은 값일 때만 라이브로
+    신뢰한다. 표본이 부족하거나(콜드스타트) 값이 엇갈리면 아직 확신할 수
+    없다고 보고 패턴 기반 판단으로 폴백한다.
     """
-    latest_result = execute_supabase_with_retry(
+    recent_result = execute_supabase_with_retry(
         lambda: (
             supabase.table(OCCUPANCY_LOGS_TABLE)
             .select("person_detected, detected_at")
             .eq("place_id", place_id)
             .order("detected_at", desc=True)
-            .limit(1)
+            .limit(LIVE_DEBOUNCE_SAMPLES)
             .execute()
         )
     )
 
-    if latest_result.data:
-        latest = latest_result.data[0]
+    if recent_result.data:
+        latest = recent_result.data[0]
         detected_at = _to_kst(latest["detected_at"])
         age_minutes = (
             datetime.now(timezone.utc) - detected_at.astimezone(timezone.utc)
         ).total_seconds() / 60
         if age_minutes <= LIVE_FRESHNESS_MINUTES:
-            return {"present": bool(latest["person_detected"]), "source": "LIVE"}
+            recent_values = {bool(row["person_detected"]) for row in recent_result.data}
+            if (
+                len(recent_result.data) >= LIVE_DEBOUNCE_SAMPLES
+                and len(recent_values) == 1
+            ):
+                return {"present": recent_values.pop(), "source": "LIVE"}
 
     now_kst = datetime.now(KST)
     day_type = _day_type_for(now_kst)
