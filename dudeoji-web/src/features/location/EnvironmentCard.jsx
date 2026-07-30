@@ -10,7 +10,6 @@
 import { useEffect, useState } from "react";
 
 import { createMockReading } from "../sensors/readingsApi";
-import { isSenseNodeDisconnected } from "../sensors/deviceState";
 import { useSensorRealtimeContext } from "../sensors/SensorRealtimeContext";
 import { useLocationContext } from "./LocationContext";
 import LocationSearchPopover from "./LocationSearchPopover";
@@ -78,10 +77,7 @@ export default function EnvironmentCard({
   // 바꿔서, LocationSwitcher(헤더 위치 버튼)가 선택한 위치를 그대로 공유한다
   // (따로 호출하면 각자 다른 위치를 가리키는 문제가 있었음 - App.jsx의 LocationProvider 참고).
   const { selectedLocation, setLocationCoordinates } = useLocationContext();
-  const {
-    latestReading: realtimeReading,
-    latestDeviceState: realtimeDeviceState,
-  } = useSensorRealtimeContext();
+  const { latestReading: realtimeReading } = useSensorRealtimeContext();
   const realtimeMatchesSelectedPlace =
     realtimeReading &&
     String(realtimeReading.place_id) === String(selectedLocation?.id);
@@ -105,10 +101,6 @@ export default function EnvironmentCard({
     realtimeMatchesSelectedPlace && realtimeReading.measured_at
       ? new Date(realtimeReading.measured_at)
       : updatedAt;
-  const senseNodeDisconnected = isSenseNodeDisconnected(
-    realtimeDeviceState,
-    selectedLocation?.id,
-  );
   const hasLocation =
     selectedLocation?.lat != null && selectedLocation?.lon != null;
   // jh 수정함 - 장소는 있지만 아직 reading이 한 건도 없는 경우(막 등록한 장소
@@ -404,11 +396,6 @@ export default function EnvironmentCard({
           <p>
             <HumidityValue value={activeSensorData?.indoorHumidity} />
           </p>
-          {senseNodeDisconnected && (
-            <p className="environment-sensor-stale" role="status">
-              Sense 끊김 · 마지막 수신값
-            </p>
-          )}
           {occupancyStatusText && (
             <p
               className={`environment-occupancy-status ${
