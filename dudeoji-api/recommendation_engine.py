@@ -200,6 +200,31 @@ def _determine_action_core(
     if sensor_problems:
         return _sensor_error_response(sensor_problems)
 
+    # 재실 신호가 "확실히 없음"이면 에어컨을 새로 켜라고 추천하지 않는다.
+    # 기존에는 반대 방향(켜져 있는데 사람 없으면 끄라고 권함, 아래 참고)만
+    # 있고 이 방향이 없어서, 빈 방+더운 상태에서 "꺼짐→켜라(occupancy 무시)
+    # → 켜짐+사람없음→꺼라 → 꺼짐→다시 켜라"가 매 reading마다 반복되는
+    # 진동이 실기기 연동(2026-07-30) 후 실제로 관찰됐다.
+    occupancy_confidently_empty = (
+        occupancy_signal is not None and occupancy_signal.get("present") is False
+    )
+
+    def _occupancy_empty_response() -> dict:
+        occupancy_source = occupancy_signal.get("source") if occupancy_signal else None
+        return {
+            "action": "MAINTAIN",
+            "title": _TITLES["MAINTAIN"],
+            "summary": "지금 이 장소에는 아무도 없는 것 같아요.",
+            "reason": (
+                (
+                    "실시간 재실 감지 결과 사람이 없습니다."
+                    if occupancy_source == "LIVE"
+                    else "이 시간대에는 평소 자리를 비우는 패턴이 학습되었습니다."
+                )
+                + f" 실내가 {indoor_temp}도로 덥지만 에어컨을 새로 켜지 않고 유지합니다."
+            ),
+        }
+
     # jh 수정함 - 여러 분기에서 각자 따로 계산하던 조건(더움/습함/바람 도움/
     # 실외가 더 시원함)을 여기서 한 번만 계산해 재사용한다. 예전엔 같은
     # 공식이 이름만 바꿔(wind_is_helpful/wind_is_helpful_now,
@@ -263,6 +288,9 @@ def _determine_action_core(
                         "에어컨을 유지합니다."
                     ),
                 }
+
+            if occupancy_confidently_empty:
+                return _occupancy_empty_response()
 
             return {
                 "action": "USE_AIRCON",
@@ -378,6 +406,9 @@ def _determine_action_core(
                     ),
                 }
 
+            if occupancy_confidently_empty:
+                return _occupancy_empty_response()
+
             return {
                 "action": "USE_AIRCON",
                 "title": "습도 조절 냉방 추천 ❄️" if not is_auto else "쾌적 제습 가동 시작! ❄️",
@@ -464,6 +495,9 @@ def _determine_action_core(
                     "자연환기를 기대하기 어려워요. 에어컨 유지가 적합합니다."
                 ),
             }
+
+        if occupancy_confidently_empty:
+            return _occupancy_empty_response()
 
         return {
             "action": "USE_AIRCON",
