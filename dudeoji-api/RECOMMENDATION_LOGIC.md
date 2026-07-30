@@ -66,7 +66,7 @@
 
 **참고**
 - `ENJOY` 액션은 실행 시점의 `is_ac_on`/`window_is_open`에 따라 title이 ④/⑤/⑥ 중 하나로 갈립니다(에어컨 상태 우선).
-- `is_auto_triggered`/`show_popup`은 `current_mode == "AUTO"`일 때만 자동실행 후보가 되고, `ENJOY`/`MAINTAIN`/`ERROR`류(할 일 없음)는 항상 `False`/`False`입니다.
+- `is_auto_triggered`/`show_popup`/`popup_message` 필드는 삭제됨(2026-07-30) — "서버가 AUTO 모드일 때만 확인 팝업을 띄운다"는 옛 설계(`RecommendationPopup.jsx`, 현재 미마운트)용이었는데, 지금 실제로 동작하는 `RecommendationCard.jsx`의 5초 카운트다운은 `current_mode`와 무관하게 실행 가능한 액션이면 전부 처리해서 이 필드들을 읽는 곳이 없었다. `current_mode`/`is_auto` 자체는 계속 쓰인다 — 에어컨 최소 가동시간 유지 분기(4번 규칙)가 자동 제어 켠 사용자에게만 적용되는 게이트로 남아 있음.
 
 ## title별 summary / reason 전체 (총 22개 조합)
 
