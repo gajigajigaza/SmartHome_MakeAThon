@@ -276,7 +276,11 @@ def read_my_places(current_user: dict = Depends(get_current_user)):
     place_result = (
         supabase.table(PLACES_TABLE)
         # jh 수정함 - 위치 기능에 필요한 lat/lon, 기본 장소 여부(is_default)도 응답에 포함
-        .select("id,name,lat,lon,is_default,target_cooldown_minutes,auto_control_enabled,created_at")
+        # jh 추가 - 웹 앱 없이도 서버가 알아서 기기를 조작하는 두 동의 플래그
+        .select(
+            "id,name,lat,lon,is_default,target_cooldown_minutes,auto_control_enabled,"
+            "background_condition_control_enabled,background_occupancy_control_enabled,created_at"
+        )
         .eq("user_id", current_user["id"])
         .order("created_at")
         .execute()
@@ -762,6 +766,71 @@ def update_place_cooldown(
         "message": "에어컨 자동 제어 설정이 저장되었습니다.",
         "target_cooldown_minutes": payload.target_cooldown_minutes,
         "auto_control_enabled": bool(saved_enabled),
+    }
+
+
+# jh 추가 - "웹 앱 없이도 서버가 알아서 기기를 조작"하는 데 대한 명시적 동의.
+# 기존 auto_control_enabled(자동 제어 설정)는 에어컨 최소 가동시간 기준만
+# 바꿀 뿐 무인 실행과는 무관해서, 완전히 별개 엔드포인트/컬럼으로 분리했다
+# (readings_router.py의 _apply_background_condition_control/
+# _apply_background_occupancy_control 참고).
+class PlaceBackgroundControlUpdate(BaseModel):
+    background_condition_control_enabled: Optional[bool] = None
+    background_occupancy_control_enabled: Optional[bool] = None
+
+
+@router.patch("/places/{place_id}/background-control")
+def update_place_background_control(
+    place_id: int,
+    payload: PlaceBackgroundControlUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """마이페이지의 두 백그라운드 자동 제어 동의 토글을 저장합니다."""
+    place_result = (
+        supabase.table(PLACES_TABLE)
+        .select(
+            "id,background_condition_control_enabled,"
+            "background_occupancy_control_enabled"
+        )
+        .eq("id", place_id)
+        .eq("user_id", current_user["id"])
+        .limit(1)
+        .execute()
+    )
+    if not place_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="장소를 찾을 수 없거나 권한이 없습니다.",
+        )
+
+    update_data = {}
+    if payload.background_condition_control_enabled is not None:
+        update_data["background_condition_control_enabled"] = (
+            payload.background_condition_control_enabled
+        )
+    if payload.background_occupancy_control_enabled is not None:
+        update_data["background_occupancy_control_enabled"] = (
+            payload.background_occupancy_control_enabled
+        )
+
+    current = place_result.data[0]
+    if update_data:
+        update_result = (
+            supabase.table(PLACES_TABLE)
+            .update(update_data)
+            .eq("id", place_id)
+            .execute()
+        )
+        current = update_result.data[0] if update_result.data else {**current, **update_data}
+
+    return {
+        "status": "success",
+        "background_condition_control_enabled": bool(
+            current.get("background_condition_control_enabled", False)
+        ),
+        "background_occupancy_control_enabled": bool(
+            current.get("background_occupancy_control_enabled", False)
+        ),
     }
 
 

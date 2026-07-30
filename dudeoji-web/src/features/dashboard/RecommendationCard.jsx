@@ -105,6 +105,18 @@ function convertActionToType(action) {
   return "maintain";
 }
 
+// jh 추가 - EnvironmentCard의 "마지막 측정" 표기와 같은 포맷(시:분)으로
+// 통일한다. 날짜까지는 안 보여준다 — 추천은 "다시 추천받기"를 오래
+// 안 누르면 몇 시간까지도 갈 수 있지만, 그 정도면 시각만 봐도 "한참
+// 전이구나"를 알아채기 충분해서 날짜까지 넣으면 오히려 작은 배지에
+// 정보가 과해진다.
+function formatMeasuredAt(measuredAt) {
+  return measuredAt.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function getRecommendationIcon(action) {
   if (action === "OPEN_WINDOW") return "🪟";
   if (action === "USE_AIRCON" || action === "TURN_ON_AC") return "❄️";
@@ -148,6 +160,10 @@ export default function RecommendationCard({
   // 넘겨준다. App.jsx가 이걸로 백엔드에 유지 시간을 기록하고 새 추천을 받아와
   // readingKey를 갱신해준다.
   onRequestNewRecommendation = null,
+  // jh 추가 - 지금 고정된 추천의 근거가 된 실측 시각(Date). 추천이 더 이상
+  // 60초 폴링으로 조용히 갱신되지 않고 "다시 추천받기"를 눌러야만 바뀌므로,
+  // 화면에 얼마나 오래된 추천이 떠 있는지 작게라도 보여줘야 한다.
+  measuredAt = null,
 }) {
   const safeRecommendation = recommendation || initialRecommendation;
   // jh 수정함 - 추천 시작 전(대기 화면)이거나 추천이 없을 때는 강조 없음.
@@ -348,6 +364,16 @@ export default function RecommendationCard({
             두 가지 냉방 방식 중, 더 효율적인 선택을 지능적으로
           </p>
         </div>
+
+        {hasStarted && measuredAt && (
+          <span
+            className="recommendation-measured-at"
+            title="이 시각에 측정된 센서값을 기준으로 한 추천이에요. 최신 상태가 궁금하면 아래 '다시 추천받기'를 눌러 주세요."
+          >
+            <span aria-hidden="true">🕒</span>
+            {formatMeasuredAt(measuredAt)} 기준
+          </span>
+        )}
       </div>
 
       <div className="recommendation-main">

@@ -114,6 +114,17 @@ export async function updatePlaceCooldown(placeId, payload) {
   });
 }
 
+// jh 추가 - "웹 앱 없이도 서버가 알아서 기기를 조작"하는 두 동의 토글(재실
+// 예측 기반 / 지속적인 현재 상태 기반) 저장. payload는 둘 중 하나만 보내도
+// 되고(부분 갱신), 응답엔 저장 후 최종 상태 둘 다 내려온다.
+export async function updatePlaceBackgroundControl(placeId, payload) {
+  return request(`/api/places/${placeId}/background-control`, {
+    method: "PATCH",
+    auth: true,
+    body: JSON.stringify(payload),
+  });
+}
+
 // jh 수정함 - EnvironmentCard의 "+" 위치 검색 팝오버가 기존 장소의 lat/lon만
 // 갱신할 때 쓴다. PATCH /places/{place_id}(places_router.py, 위치만 갱신).
 export async function updatePlaceLocation(placeId, lat, lon) {

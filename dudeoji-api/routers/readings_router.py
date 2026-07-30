@@ -14,7 +14,11 @@ from db import (
     supabase,
 )
 from device_connection_hub import DeviceConnectionError, device_hub
-from occupancy_engine import resolve_occupancy_signal
+from occupancy_engine import (
+    get_prediction_state,
+    resolve_occupancy_signal,
+    respond_to_prediction,
+)
 from recommendation_engine import LOGIC_THRESHOLDS, determine_action
 from sensor_realtime_hub import reading_hub
 from weather import fetch_air_pollution, fetch_current_weather
@@ -245,6 +249,230 @@ def calculate_recommendation(
         warning=result.get("warning"),
         savings=savings_obj,
     )
+
+
+# jh 수정함 - occupancy_router.py에 있던 _compute_prediction_preview를 여기로
+# 옮겼다. occupancy_router.py는 이미 이 파일(get_latest_reading 등)을 import하고
+# 있어서, 반대 방향(이 파일이 occupancy_router.py를 import)은 순환참조가 된다.
+# background_occupancy_control_enabled(웹 앱 없이 서버가 재실 예측을 바로
+# 수락·실행)도 이 프리뷰 계산이 그대로 필요해서, occupancy_router.py가 이제
+# 여기서 가져다 쓰는 쪽으로 방향을 뒤집었다.
+#
+# 예측 프리뷰용 문구. determine_action()의 title/reason은 "지금 켤까요?" 톤이라
+# 그대로 쓰면 "아직 안 왔는데 지금 켜라는 거야?"처럼 들린다. reason(수치 근거)은
+# 이미 정확해서 그대로 재사용하고, title/summary만 "예상" 톤으로 바꿔 붙인다.
+PREDICTION_COPY = {
+    ("ARRIVAL", "USE_AIRCON"): "곧 오실 시간이에요, 미리 에어컨을 켜둘까요?",
+    ("ARRIVAL", "OPEN_WINDOW"): "곧 오실 시간이에요, 미리 창문을 열어둘까요?",
+    ("DEPARTURE", "TURN_OFF_AIRCON"): "곧 자리를 비우실 시간이에요, 에어컨을 미리 꺼둘까요?",
+}
+
+
+def compute_prediction_preview(user_id: int, place: dict, direction: str, eta_minutes: int) -> dict:
+    """지금 실측 센서값으로 determine_action()을 그대로 돌려서 "무엇을 준비할지" 정한다.
+
+    recommendation_engine은 건드리지 않는다 — ARRIVAL이면 재실 신호를 주지 않아
+    지금 조건(덥다/습하다/바람 등)만으로 자연스럽게 USE_AIRCON/OPEN_WINDOW/MAINTAIN이
+    나오고, DEPARTURE면 이미 있는 "재실 없음" 분기(occupancy_signal.present=False)를
+    그대로 태워 TURN_OFF_AIRCON을 재사용한다. 하드웨어가 on/off 명령만 지원해서
+    "25도로 예열" 같은 목표온도 지정은 불가능 — PRE_COOL 같은 새 액션 없이 기존
+    USE_AIRCON/TURN_OFF_AIRCON을 그대로 쓰고, "미리" 톤은 title/summary 문구로만
+    표현한다(PREDICTION_COPY 참고).
+    """
+    try:
+        latest = get_latest_reading(user_id, place["id"])
+    except HTTPException:
+        return {"action": "MAINTAIN", "title": "", "summary": "", "reason": ""}
+
+    if (
+        latest.outdoor_temperature is None
+        or latest.outdoor_humidity is None
+        or latest.pm25 is None
+        or latest.wind_speed is None
+        or not latest.weather_condition
+    ):
+        return {"action": "MAINTAIN", "title": "", "summary": "", "reason": ""}
+
+    actual_ac_state, ac_run_time_minutes = calculate_ac_run_time(
+        user_id, place["id"], latest.recommendation.ac_is_on
+    )
+    occupancy_hypothesis = (
+        None if direction == "ARRIVAL" else {"present": False, "source": "PATTERN"}
+    )
+
+    result = determine_action(
+        indoor_temp=latest.indoor_temperature,
+        outdoor_temp=latest.outdoor_temperature,
+        indoor_humidity=latest.indoor_humidity,
+        outdoor_humidity=latest.outdoor_humidity,
+        pm25=latest.pm25,
+        wind_speed=latest.wind_speed,
+        weather_condition=latest.weather_condition,
+        window_is_open=latest.window_is_open,
+        is_ac_on=actual_ac_state,
+        current_mode="MANUAL",
+        ac_run_time_minutes=ac_run_time_minutes,
+        target_cooldown_minutes=place.get("target_cooldown_minutes") or 30,
+        occupancy_signal=occupancy_hypothesis,
+    )
+
+    action = result["action"]
+    title = PREDICTION_COPY.get((direction, action))
+    if title is None:
+        # USE_AIRCON/OPEN_WINDOW/TURN_OFF_AIRCON 외 결과(MAINTAIN/ENJOY/ERROR
+        # 등)는 "이미 괜찮거나 준비할 게 없다"는 뜻 — occupancy_engine이 이
+        # action을 보고 EXPIRED 처리한다.
+        return {"action": action, "title": "", "summary": "", "reason": ""}
+
+    if direction == "ARRIVAL":
+        summary = f"평소 이 시간대에 오시는 패턴이에요. 약 {eta_minutes}분 후 도착 예상이에요."
+    else:
+        summary = f"평소 이 시간대에 자리를 비우시는 패턴이에요. 약 {eta_minutes}분 후 예상이에요."
+
+    return {"action": action, "title": title, "summary": summary, "reason": result["reason"]}
+
+
+# jh 추가 - 마이페이지의 "백그라운드 자동 제어" 두 동의 플래그(웹 앱 없이도
+# 서버가 알아서 기기를 조작하는 것)를 실제로 실행하는 부분. 기존 5초
+# 카운트다운 자동실행(RecommendationCard.jsx)이나 재실 예측 팝업과는 완전히
+# 별개 경로다 — 둘 다 웹 브라우저가 열려 있어야만 동작하는데, 이건 실제
+# 하드웨어가 웹 앱과 무관하게 계속 보내는 reading 저장 시점에 걸려서
+# 웹 앱이 꺼져 있어도 동작한다.
+_ACTION_TO_DEVICE_COMMAND = {
+    "USE_AIRCON": "TURN_ON_AIRCON",
+    "TURN_OFF_AIRCON": "TURN_OFF_AIRCON",
+    "OPEN_WINDOW": "OPEN_WINDOW",
+    "CLOSE_WINDOW": "CLOSE_WINDOW",
+}
+
+
+async def _maybe_send_background_command(
+    user_id: int,
+    place_id: int,
+    device_command: Optional[str],
+) -> None:
+    """기기 명령을 보내되, 실패해도 reading 저장 자체는 절대 막지 않는다.
+
+    background_* 플래그는 사람이 지켜보지 않는 상황에서 도는 기능이라, 통신
+    실패를 사용자에게 즉시 알릴 방법이 없다(RecommendationCard처럼 화면에
+    에러를 띄울 대상이 없음) — 다음 reading이 들어올 때 같은 조건이면
+    자연스럽게 다시 시도된다.
+    """
+    if not device_command:
+        return
+    try:
+        await device_hub.send_command(
+            user_id=user_id,
+            requested_place_id=place_id,
+            action=device_command,
+        )
+    except (ValueError, DeviceConnectionError) as error:
+        print(
+            f"[백그라운드 자동 제어] place_id={place_id} "
+            f"명령={device_command} 전송 실패: {error}"
+        )
+        return
+
+    # jh 추가 - device_control_events(뱃지 퀘스트용, control_device 엔드포인트가
+    # source="manual"/"auto"로 남기는 것과 같은 표)에 그대로 함께 남긴다.
+    # 이 경로는 웹 앱 없이 서버가 스스로 실행하는 것이라 "auto"가 맞고, 새 표를
+    # 따로 안 만들어도 된다. 로깅은 어디까지나 부가 기능이라, 이게 실패해도
+    # (예: 마이그레이션 순서상 아직 테이블이 없는 경우) 이미 성공한 기기 제어
+    # 자체나 reading 저장 흐름을 막으면 안 된다.
+    try:
+        await asyncio.to_thread(
+            lambda: execute_supabase_with_retry(
+                lambda: (
+                    supabase.table(DEVICE_CONTROL_EVENTS_TABLE)
+                    .insert(
+                        {
+                            "place_id": place_id,
+                            "user_id": user_id,
+                            "action": device_command,
+                            "source": "auto",
+                        }
+                    )
+                    .execute()
+                )
+            )
+        )
+    except Exception as error:
+        # jh 수정함 - APIError(스키마 캐시 지연 등)만 잡고 있었는데,
+        # execute_supabase_with_retry는 순간적인 네트워크 문제가 재시도
+        # 끝에도 안 풀리면 HTTPException을 던진다(APIError가 아님). 이 함수의
+        # 목적 자체가 "로깅 실패로 기기 제어/reading 저장 흐름을 절대 막지
+        # 않는다"라서, 예외 타입을 좁게 잡으면 그 목적이 깨진다.
+        print(
+            f"[백그라운드 자동 제어] device_control_events 기록 실패"
+            f"(기기 명령 자체는 이미 성공): {error}"
+        )
+
+
+async def _apply_background_condition_control(
+    user_id: int,
+    place_id: int,
+    recommendation: Recommendation,
+    window_is_open: Optional[bool],
+    ac_is_on: Optional[bool],
+) -> None:
+    """지속적인 현재 상태(반응형) 추천을 사람 확인 없이 그대로 실행한다.
+
+    센서가 미연결(None)이면 지금 실제 상태를 모르는 것이라 함부로 조작하지
+    않는다 — RecommendationCard의 5초 카운트다운도 같은 이유로 센서 에러
+    상태(ERROR)에서는 실행 후보 자체가 없다(getDeviceCommandForAction이
+    ERROR를 안 다룸).
+    """
+    device_command = _ACTION_TO_DEVICE_COMMAND.get(recommendation.action)
+    if not device_command:
+        return
+
+    # 이미 그 상태면 또 명령을 보내지 않는다(중복 명령으로 인한 기기/네트워크
+    # 부담 방지). 창문/에어컨 둘 다 센서로 실측된 값이 있어야 비교 가능하다.
+    if device_command in ("OPEN_WINDOW", "CLOSE_WINDOW"):
+        if window_is_open is None:
+            return
+        already_matches = (device_command == "OPEN_WINDOW") == window_is_open
+    else:
+        if ac_is_on is None:
+            return
+        already_matches = (device_command == "TURN_ON_AIRCON") == ac_is_on
+
+    if already_matches:
+        return
+
+    await _maybe_send_background_command(user_id, place_id, device_command)
+
+
+async def _apply_background_occupancy_control(
+    user_id: int,
+    place: dict,
+) -> None:
+    """재실 예측에 따른 사전조치를, 팝업으로 사람에게 묻는 대신 바로 수락·실행한다.
+
+    occupancy_router.py의 GET /api/occupancy/prediction과 완전히 같은
+    get_prediction_state()를 재사용한다 — transition_key 기준 중복 계산/중복
+    실행 방지 로직을 그대로 물려받기 위함이다(같은 전환에 대해 두 번 실행되지
+    않음). PENDING_CONFIRM이 뜬 경우에만, 사람이 "예"를 누른 것과 동일하게
+    respond_to_prediction(accept=True)을 호출한다.
+    """
+    place_id = place["id"]
+
+    def preview(direction: str, eta_minutes: int) -> dict:
+        return compute_prediction_preview(user_id, place, direction, eta_minutes)
+
+    state = get_prediction_state(place_id, preview)
+    if not state or state.get("status") != "PENDING_CONFIRM":
+        return
+
+    try:
+        result = respond_to_prediction(place_id, state["transition_key"], True)
+    except ValueError:
+        # 다른 경로(예: 사용자가 마침 그 순간 웹에서 팝업에 응답)와 겹쳤을
+        # 뿐이니 조용히 넘어간다 — 다음 reading에서 다시 평가된다.
+        return
+
+    device_command = _ACTION_TO_DEVICE_COMMAND.get(result["action"])
+    await _maybe_send_background_command(user_id, place_id, device_command)
 
 
 def _infer_control_context(
@@ -727,6 +955,22 @@ async def _save_reading_to_place(
         place_id=resolved_place_id,
         reading=saved_reading.model_dump(mode="json"),
     )
+
+    # jh 추가 - 마이페이지에서 사용자가 명시적으로 동의한 place에 한해, 웹 앱이
+    # 열려 있지 않아도 서버가 알아서 기기를 조작한다. 실제 하드웨어는 이
+    # reading 저장 경로를 웹 앱과 무관하게 계속 타므로(BLE→게이트웨이→서버),
+    # 이 지점이 곧 "무인 자동 제어"의 주기가 된다 — 별도 스케줄러가 필요 없다.
+    if place.get("background_condition_control_enabled"):
+        await _apply_background_condition_control(
+            user_id,
+            resolved_place_id,
+            recommendation,
+            sensor_data.window_is_open,
+            sensor_data.ac_is_on,
+        )
+
+    if place.get("background_occupancy_control_enabled"):
+        await _apply_background_occupancy_control(user_id, place)
 
     return saved_reading
 

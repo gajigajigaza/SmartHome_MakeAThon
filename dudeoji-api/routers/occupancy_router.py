@@ -19,89 +19,14 @@ from occupancy_engine import (
     respond_to_prediction,
     train_occupancy_pattern,
 )
-from recommendation_engine import determine_action
 from routers.readings_router import (
-    calculate_ac_run_time,
-    get_latest_reading,
+    compute_prediction_preview,
     get_place_for_user,
 )
 
 router = APIRouter(prefix="/api", tags=["occupancy"])
 
 _INSERT_CHUNK_SIZE = 500
-
-# 예측 프리뷰용 문구. determine_action()의 title/reason은 "지금 켤까요?" 톤이라
-# 그대로 쓰면 "아직 안 왔는데 지금 켜라는 거야?"처럼 들린다. reason(수치 근거)은
-# 이미 정확해서 그대로 재사용하고, title/summary만 "예상" 톤으로 바꿔 붙인다.
-_PREDICTION_COPY = {
-    ("ARRIVAL", "USE_AIRCON"): "곧 오실 시간이에요, 미리 에어컨을 켜둘까요?",
-    ("ARRIVAL", "OPEN_WINDOW"): "곧 오실 시간이에요, 미리 창문을 열어둘까요?",
-    ("DEPARTURE", "TURN_OFF_AIRCON"): "곧 자리를 비우실 시간이에요, 에어컨을 미리 꺼둘까요?",
-}
-
-
-def _compute_prediction_preview(user_id: int, place: dict, direction: str, eta_minutes: int) -> dict:
-    """지금 실측 센서값으로 determine_action()을 그대로 돌려서 "무엇을 준비할지" 정한다.
-
-    recommendation_engine은 건드리지 않는다 — ARRIVAL이면 재실 신호를 주지 않아
-    지금 조건(덥다/습하다/바람 등)만으로 자연스럽게 USE_AIRCON/OPEN_WINDOW/MAINTAIN이
-    나오고, DEPARTURE면 이미 있는 "재실 없음" 분기(occupancy_signal.present=False)를
-    그대로 태워 TURN_OFF_AIRCON을 재사용한다. 하드웨어가 on/off 명령만 지원해서
-    "25도로 예열" 같은 목표온도 지정은 불가능 — PRE_COOL 같은 새 액션 없이 기존
-    USE_AIRCON/TURN_OFF_AIRCON을 그대로 쓰고, "미리" 톤은 title/summary 문구로만
-    표현한다(_PREDICTION_COPY 참고).
-    """
-    try:
-        latest = get_latest_reading(user_id, place["id"])
-    except HTTPException:
-        return {"action": "MAINTAIN", "title": "", "summary": "", "reason": ""}
-
-    if (
-        latest.outdoor_temperature is None
-        or latest.outdoor_humidity is None
-        or latest.pm25 is None
-        or latest.wind_speed is None
-        or not latest.weather_condition
-    ):
-        return {"action": "MAINTAIN", "title": "", "summary": "", "reason": ""}
-
-    actual_ac_state, ac_run_time_minutes = calculate_ac_run_time(
-        user_id, place["id"], latest.recommendation.ac_is_on
-    )
-    occupancy_hypothesis = (
-        None if direction == "ARRIVAL" else {"present": False, "source": "PATTERN"}
-    )
-
-    result = determine_action(
-        indoor_temp=latest.indoor_temperature,
-        outdoor_temp=latest.outdoor_temperature,
-        indoor_humidity=latest.indoor_humidity,
-        outdoor_humidity=latest.outdoor_humidity,
-        pm25=latest.pm25,
-        wind_speed=latest.wind_speed,
-        weather_condition=latest.weather_condition,
-        window_is_open=latest.window_is_open,
-        is_ac_on=actual_ac_state,
-        current_mode="MANUAL",
-        ac_run_time_minutes=ac_run_time_minutes,
-        target_cooldown_minutes=place.get("target_cooldown_minutes") or 30,
-        occupancy_signal=occupancy_hypothesis,
-    )
-
-    action = result["action"]
-    title = _PREDICTION_COPY.get((direction, action))
-    if title is None:
-        # USE_AIRCON/OPEN_WINDOW/TURN_OFF_AIRCON 외 결과(MAINTAIN/ENJOY/ERROR
-        # 등)는 "이미 괜찮거나 준비할 게 없다"는 뜻 — occupancy_engine이 이
-        # action을 보고 EXPIRED 처리한다.
-        return {"action": action, "title": "", "summary": "", "reason": ""}
-
-    if direction == "ARRIVAL":
-        summary = f"평소 이 시간대에 오시는 패턴이에요. 약 {eta_minutes}분 후 도착 예상이에요."
-    else:
-        summary = f"평소 이 시간대에 자리를 비우시는 패턴이에요. 약 {eta_minutes}분 후 예상이에요."
-
-    return {"action": action, "title": title, "summary": summary, "reason": result["reason"]}
 
 
 class OccupancyLogCreate(BaseModel):
@@ -227,7 +152,7 @@ def read_occupancy_prediction(
     place = get_place_for_user(current_user["id"], place_id)
 
     def compute_preview(direction: str, eta_minutes: int) -> dict:
-        return _compute_prediction_preview(current_user["id"], place, direction, eta_minutes)
+        return compute_prediction_preview(current_user["id"], place, direction, eta_minutes)
 
     state = get_prediction_state(place_id, compute_preview)
     return {"place_id": place_id, "prediction": state}
