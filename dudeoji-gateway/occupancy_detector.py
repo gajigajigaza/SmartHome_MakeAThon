@@ -15,7 +15,11 @@ from typing import Any
 LOGGER = logging.getLogger("dudeoji-gateway.occupancy")
 
 PERSON_CLASS_NAME = "person"
-DEFAULT_MODEL_NAME = "yolo26n.pt"
+# .pt(torch) 대신 ONNX를 기본값으로 씀 — Raspberry Pi 4(Cortex-A72)에서
+# 최신 torch CPU 빌드의 conv 커널이 illegal instruction(SIGILL)으로
+# 죽는 걸 실기기에서 확인함(ARMv8.2 dot-product 명령 의존으로 추정).
+# onnxruntime은 같은 보드에서 문제없이 동작해서 이걸로 우회한다.
+DEFAULT_MODEL_NAME = "yolo26n.onnx"
 
 _model: Any | None = None
 

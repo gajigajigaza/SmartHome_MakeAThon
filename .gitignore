@@ -24,3 +24,6 @@ plans/
 
 
 dudeoji-firmware/**/secrets.h
+
+# ultralytics가 자동 다운로드하는 torch 체크포인트 — ONNX만 커밋한다
+dudeoji-gateway/*.pt
