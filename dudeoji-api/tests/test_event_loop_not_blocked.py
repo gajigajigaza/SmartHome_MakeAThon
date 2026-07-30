@@ -54,6 +54,15 @@ MAX_LOOP_LAG_RATIO = 0.4
 # 비율 검사를 통과하더라도 이만큼은 절대 넘지 않아야 한다(sanity).
 MAX_LOOP_LAG_SECONDS = 0.4
 
+# 이보다 짧은 지연은 판정 대상에서 뺀다.
+#
+# 비율만 보면, 머신이 순간적으로 바빠 저장이 유난히 빨리 끝난 회차에서 OS
+# 스케줄링 딸꾹질 한 번이 비율을 넘겨버릴 수 있다(실제로 테스트 여러 개를
+# 연달아 돌릴 때 한 번 발생했다). 잡으려는 회귀는 "루프가 저장 시간 내내
+# 막힌다"(실측 874~922ms)라서, 100ms 미만은 그 회귀일 수가 없다. 이 하한을
+# 두면 CI가 바쁠 때 헛되이 깨지지 않으면서 진짜 회귀는 그대로 잡는다.
+LOOP_LAG_NOISE_FLOOR_SECONDS = 0.1
+
 HEARTBEAT_INTERVAL_SECONDS = 0.01
 
 
@@ -235,7 +244,8 @@ class ReadingSaveDoesNotBlockLoopTests(unittest.TestCase):
             "async 경로에서 동기 DB 호출을 직접 부르고 있는지 확인하세요 "
             "— perf.timed_blocking()/run_blocking()으로 감싸야 합니다."
         )
-        self.assertLess(ratio, MAX_LOOP_LAG_RATIO, detail)
+        if probe.max_lag_seconds > LOOP_LAG_NOISE_FLOOR_SECONDS:
+            self.assertLess(ratio, MAX_LOOP_LAG_RATIO, detail)
         self.assertLess(probe.max_lag_seconds, MAX_LOOP_LAG_SECONDS, detail)
 
 
