@@ -9,6 +9,7 @@
 - 센서 기록/추천 → routers/readings_router.py (민주)
 - 판단 규칙 엔진 → recommendation_engine.py (민주)
 - 절감량 계산 → savings.py (정현)
+- 프로필(뱃지) 잠금 조건 → routers/badges_router.py + badges.py
 - MQTT 게이트웨이 수신 → mqtt_handler.py (민주)
 - 재실 감지 이력/패턴 학습 → routers/occupancy_router.py + occupancy_engine.py (정현)
 """
@@ -19,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db import READINGS_TABLE, supabase
 from routers.auth_router import router as auth_router
+from routers.badges_router import router as badges_router
 from routers.places_router import router as places_router
 from routers.occupancy_router import router as occupancy_router
 from routers.readings_router import router as readings_router
@@ -58,6 +60,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(badges_router)
 app.include_router(places_router)
 app.include_router(readings_router)
 app.include_router(realtime_router)

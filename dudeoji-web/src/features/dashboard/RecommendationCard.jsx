@@ -217,7 +217,7 @@ export default function RecommendationCard({
     setPhase("auto-executing");
 
     try {
-      await controlDevice(placeId, deviceCommand);
+      await controlDevice(placeId, deviceCommand, "auto");
       setPhase("idle");
       setPostExecutionOverride(POST_EXECUTION_DISPLAY[deviceCommand] || null);
     } catch (error) {

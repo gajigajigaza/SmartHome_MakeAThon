@@ -100,7 +100,10 @@ export default function OccupancyPredictionPopup({
       if (accept) {
         const deviceCommand = ACTION_TO_DEVICE_COMMAND[result.action];
         if (deviceCommand) {
-          await controlDevice(placeId, deviceCommand);
+          // jh 추가 - 사용자가 직접 창문/에어컨 버튼을 누른 게 아니라 "재실
+          // 예측" 팝업의 "예"를 눌러 시스템이 대신 실행하는 경로라 뱃지
+          // "첫 수동 조작" 판정에서는 auto로 센다.
+          await controlDevice(placeId, deviceCommand, "auto");
         }
       }
 

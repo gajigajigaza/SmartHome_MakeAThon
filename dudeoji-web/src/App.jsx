@@ -45,7 +45,6 @@ import SensorReadings from "./features/sensors/SensorReadings";
 
 import {
   ProfileBadgeIcon,
-  PROFILE_BADGES,
   getProfileBadgeById,
   getProfileBadgeStorageKey,
   getStoredProfileBadgeId,
@@ -246,7 +245,6 @@ function App({
       <BadgePage
         user={user}
         nickname={nickname}
-        badges={PROFILE_BADGES}
         selectedBadgeId={profileBadgeId}
         onSelectBadge={handleBadgeSelect}
         onBack={handleBadgeBack}
@@ -369,6 +367,11 @@ function DashboardHome({
   // 지금은 최초 로드/장소 전환/"다시 추천받기" 클릭 시에만 바뀐다 — 그 사이엔
   // 센서값(sensorData)이 폴링으로 계속 갱신돼도 추천 카드는 그대로 유지된다.
   const [pinnedReadingKey, setPinnedReadingKey] = useState(0);
+  // jh 추가 - 지금 고정된 추천의 근거가 된 실측 시각(reading.measured_at).
+  // updatedAt은 60초 폴링마다 계속 갱신되지만(센서값 표시용), 이건 recommendation이
+  // 실제로 새로 고정된 순간에만 바뀐다 — RecommendationCard가 "이 추천, 언제 기준"을
+  // 보여줄 때 updatedAt을 쓰면 폴링 때문에 실제보다 신선해 보이는 착시가 생긴다.
+  const [recommendationMeasuredAt, setRecommendationMeasuredAt] = useState(null);
 
   // 백엔드 API로부터 선택된 장소의 최신 추천 데이터를 한 번 읽어오는 핵심 함수.
   // pinRecommendation=true일 때만 RecommendationCard가 보는 추천/카운트다운
@@ -401,6 +404,7 @@ function DashboardHome({
         convertRecommendation(latestBackendReading.recommendation),
       );
       setRecommendationShownAt(new Date());
+      setRecommendationMeasuredAt(latestReading.recordedAt);
       setPinnedReadingKey((previous) => previous + 1);
     } catch (error) {
       if (error.message.includes("저장된 센서 기록이 없습니다")) {
@@ -411,6 +415,7 @@ function DashboardHome({
           setRawRecommendation(null);
           setRecommendation(convertRecommendation(null));
           setRecommendationShownAt(new Date());
+          setRecommendationMeasuredAt(null);
           setPinnedReadingKey((previous) => previous + 1);
         }
         return;
@@ -443,6 +448,7 @@ function DashboardHome({
     setRawRecommendation(response.recommendation);
     setRecommendation(convertRecommendation(response.recommendation));
     setRecommendationShownAt(new Date());
+    setRecommendationMeasuredAt(latestReading.recordedAt);
     setPinnedReadingKey((previous) => previous + 1);
   }
 
@@ -529,6 +535,7 @@ function DashboardHome({
             placeId={selectedPlaceId}
             readingKey={pinnedReadingKey}
             onRequestNewRecommendation={handleRequestNewRecommendation}
+            measuredAt={recommendationMeasuredAt}
           />
 
           <div className="flex-layout-column" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
