@@ -138,10 +138,16 @@ export default function RecommendationCard({
   onStart,
   // jh 수정함 - 자동 실행 명령을 보낼 장소. App.jsx의 selectedPlaceId를 그대로 받는다.
   placeId = null,
-  // jh 수정함 - "새 추천이 도착했다"를 판별하는 값(App.jsx가 넘기는 최신 reading의
-  // measured_at 타임스탬프). 같은 값이 유지되는 동안(예: 60초 폴링이 같은
-  // reading을 다시 받아온 경우)에는 카운트다운을 다시 시작하지 않는다.
+  // jh 수정함 - "새 추천이 도착했다"를 판별하는 값. 예전엔 60초 폴링이 새
+  // reading을 받아올 때마다 바뀌었지만, 지금은 App.jsx가 "다시 추천받기"
+  // 버튼을 눌렀을 때(+최초 로드/장소 전환)만 이 값을 바꾼다 — 그래야 폴링이
+  // 조용히 새 온습도를 받아와도 카운트다운/추천이 화면에서 제멋대로 바뀌지
+  // 않고, 사용자가 누를 때까지 그대로 유지된다.
   readingKey = null,
+  // jh 추가 - "다시 추천받기" 클릭 시 App.jsx로 이전 추천의 결과(outcome)를
+  // 넘겨준다. App.jsx가 이걸로 백엔드에 유지 시간을 기록하고 새 추천을 받아와
+  // readingKey를 갱신해준다.
+  onRequestNewRecommendation = null,
 }) {
   const safeRecommendation = recommendation || initialRecommendation;
   // jh 수정함 - 추천 시작 전(대기 화면)이거나 추천이 없을 때는 강조 없음.
@@ -159,6 +165,20 @@ export default function RecommendationCard({
   // 명령 전송 결과/오류 문구. 예전엔 버튼 박스 안에 떠서 지저분했는데,
   // "직접 창문/에어컨을 조작해 주세요" 라벨 옆에 작게 옮겨서 보여준다.
   const [manualDeviceFeedback, setManualDeviceFeedback] = useState("");
+  // jh 추가 - "다시 추천받기" 요청이 진행 중인지(중복 클릭 방지 + 버튼 로딩 표시).
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  // jh 추가 - 아래 useEffect가 이 readingKey를 실제로 처리(phase 확정)하고
+  // 나면 그 key를 기록한다. ref가 아니라 state인 이유: "다시 추천받기"
+  // 노출 여부를 이 값으로 판단하는데, ref를 직접 읽으면 phase가 우연히
+  // 이전과 같은 값("idle" -> "idle")이라 React가 리렌더를 스킵하는 경우
+  // 버튼이 갱신된 ref를 반영하지 못하고 영영 안 보이게 된다. state는 매번
+  // 진짜 새 readingKey로 바뀌므로 항상 리렌더가 보장된다.
+  const [settledReadingKey, setSettledReadingKey] = useState(null);
+  // jh 추가 - phase가 "manual"이 된 두 가지 서로 다른 이유를 구분해서 기록한다:
+  // 사용자가 "거절"을 직접 눌렀는지(REJECTED_MANUAL), 아니면 자동실행이 기기
+  // 통신 실패로 넘어간 것인지(AUTO_EXECUTION_FAILED). 이걸 구분 안 하면
+  // "다시 추천받기" 클릭 시 실패도 전부 "거절"로 로그돼 분석 데이터가 왜곡된다.
+  const [manualEntryReason, setManualEntryReason] = useState(null);
 
   const displayRecommendation = !hasStarted
     ? { ...initialRecommendation, ...START_PROMPT }
@@ -202,6 +222,7 @@ export default function RecommendationCard({
       setPostExecutionOverride(POST_EXECUTION_DISPLAY[deviceCommand] || null);
     } catch (error) {
       setPhase("manual");
+      setManualEntryReason("AUTO_EXECUTION_FAILED");
       setManualDeviceFeedback("");
       setExecutionNote(
         String(error?.message || "자동 실행에 실패했어요. 직접 조작해 주세요."),
@@ -236,6 +257,7 @@ export default function RecommendationCard({
       clearCountdownInterval();
       setPhase("idle");
       setPostExecutionOverride(null);
+      setManualEntryReason(null);
       return;
     }
 
@@ -245,7 +267,9 @@ export default function RecommendationCard({
       clearCountdownInterval();
       setPhase("idle");
       handledReadingKeyRef.current = readingKey;
+      setSettledReadingKey(readingKey);
       setPostExecutionOverride(null);
+      setManualEntryReason(null);
       return;
     }
 
@@ -254,7 +278,9 @@ export default function RecommendationCard({
     }
 
     handledReadingKeyRef.current = readingKey;
+    setSettledReadingKey(readingKey);
     setPostExecutionOverride(null);
+    setManualEntryReason(null);
     startCountdown(deviceCommand, readingKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasStarted, placeId, readingKey]);
@@ -270,9 +296,48 @@ export default function RecommendationCard({
   function handleReject() {
     clearCountdownInterval();
     setPhase("manual");
+    setManualEntryReason("REJECTED_MANUAL");
     setExecutionNote("");
     setManualDeviceFeedback("");
   }
+
+  // jh 추가 - 카운트다운 결과(자동실행/거절/애초에 실행할 것 없음)를 3가지
+  // outcome 중 하나로 요약해 App.jsx에 넘긴다. App.jsx가 이 값을 그대로
+  // /api/recommendation/refresh 로그에 저장한다.
+  async function handleRequestNewRecommendation() {
+    if (!onRequestNewRecommendation || isRefreshing) return;
+
+    const outcome =
+      phase === "manual"
+        ? manualEntryReason || "REJECTED_MANUAL"
+        : postExecutionOverride
+          ? "AUTO_EXECUTED"
+          : "NO_ACTION_NEEDED";
+
+    setIsRefreshing(true);
+    setExecutionNote("");
+    try {
+      await onRequestNewRecommendation({
+        previousAction: safeRecommendation.action,
+        outcome,
+      });
+    } catch (error) {
+      setExecutionNote(
+        String(error?.message || "새 추천을 받아오지 못했어요. 잠시 후 다시 시도해 주세요."),
+      );
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
+  // jh 추가 - 이 readingKey를 위 useEffect가 아직 처리하기 전(그 사이 렌더)엔
+  // phase가 이전 recommendation 시절의 "idle"을 그대로 들고 있을 수 있다.
+  // settledReadingKey 체크 없이 노출하면, 실행 가능한 새 추천의 카운트다운이
+  // 시작되기 직전 한 프레임 동안 "다시 추천받기"가 잘못 반짝였다 사라진다.
+  const canRequestNewRecommendation =
+    hasStarted &&
+    (phase === "idle" || phase === "manual") &&
+    settledReadingKey === readingKey;
 
   return (
     <article className={`card recommendation-card ${displayRecommendation.type} ${isTutorialTarget ? "tutorial-target" : ""}`}>
@@ -351,6 +416,18 @@ export default function RecommendationCard({
             onFeedbackChange={setManualDeviceFeedback}
           />
         </div>
+      )}
+
+      {canRequestNewRecommendation && (
+        <button
+          type="button"
+          className="recommendation-refresh-button"
+          onClick={handleRequestNewRecommendation}
+          disabled={isRefreshing}
+        >
+          <span aria-hidden="true">🔄</span>{" "}
+          {isRefreshing ? "다시 받아오는 중..." : "다시 추천받기"}
+        </button>
       )}
 
       {hasStarted && executionNote && (

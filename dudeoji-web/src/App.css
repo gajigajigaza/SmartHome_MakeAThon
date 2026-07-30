@@ -355,6 +355,38 @@ body {
   background: var(--green-light);
 }
 
+/* jh 추가 - "다시 추천받기" 버튼. 카운트다운/자동실행 중에는 숨기고, 결과가
+   나온 뒤(idle/manual)에만 노출한다(RecommendationCard.jsx 참고). */
+.recommendation-refresh-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px;
+
+  border: 1px solid var(--green);
+  border-radius: 14px;
+
+  background: #fff;
+  color: var(--green-dark);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+
+  transition: background-color 0.15s ease;
+}
+
+.recommendation-refresh-button:hover:not(:disabled) {
+  background: var(--green-light);
+}
+
+.recommendation-refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* jh 수정함(2026-07-29) - 거절 후 수동 조작 모드. 카드를 반으로 나눠
    창문/에어컨 버튼(HeaderQuickControls)을 보여준다. */
 .recommendation-manual-controls {
