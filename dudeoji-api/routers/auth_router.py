@@ -34,6 +34,11 @@ from auth_utils import (
     verify_secret,
 )
 from db import PLACES_TABLE, RESET_TOKENS_TABLE, SESSIONS_TABLE, USERS_TABLE, supabase
+from device_auth import (
+    create_device_token,
+    list_device_tokens,
+    revoke_device_token,
+)
 from rate_limit import (
     check_login_allowed,
     client_ip_from_request,
@@ -41,6 +46,7 @@ from rate_limit import (
     record_login_success,
 )
 from routers.places_router import PlaceCreate, UserAirconCreate, create_place_with_aircons_for_user
+from routers.readings_router import get_place_for_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -501,6 +507,87 @@ def delete_my_account(
     # 통하면 안 된다. 여기서만은 캐시 무효화가 보안 요구사항이다.
     invalidate_session_cache_user(current_user["id"])
 
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------
+# 게이트웨이 전용 기기 토큰 (jh 추가)
+# ---------------------------------------------------------
+# 왜 필요한지는 device_auth.py 모듈 docstring 참고. 요약하면, 게이트웨이가
+# 사람의 세션 토큰을 빌려 쓰고 있어서 브라우저에서 로그아웃할 때마다 같이
+# 죽었다. 이 엔드포인트들로 기기 전용 토큰을 따로 발급/폐기한다.
+#
+# 발급/조회/폐기는 반드시 **사람 세션**으로만 할 수 있다(Depends(get_current_user)).
+# 기기 토큰으로 또 기기 토큰을 만들 수 있으면 권한 분리가 무의미해진다.
+class DeviceTokenCreateRequest(BaseModel):
+    place_id: Optional[int] = Field(default=None, ge=1)
+    label: str = Field(default="", max_length=100)
+
+
+class DeviceTokenCreateResponse(BaseModel):
+    id: int
+    token: str
+    label: str
+    place_id: Optional[int] = None
+    # 원문은 이 응답에서 딱 한 번만 볼 수 있다(DB엔 해시만 저장).
+    notice: str = (
+        "이 토큰은 지금 한 번만 표시됩니다. 게이트웨이의 .env에 "
+        "DUDEOJI_AUTH_TOKEN 값으로 넣어 주세요."
+    )
+
+
+class DeviceTokenSummary(BaseModel):
+    id: int
+    label: str = ""
+    place_id: Optional[int] = None
+    created_at: Optional[str] = None
+    last_used_at: Optional[str] = None
+    revoked_at: Optional[str] = None
+
+
+@router.post("/device-tokens", response_model=DeviceTokenCreateResponse)
+def issue_device_token(
+    payload: DeviceTokenCreateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    if payload.place_id is not None:
+        # 남의 장소에 묶인 토큰을 만들 수 없도록 소유권을 먼저 확인한다.
+        get_place_for_user(current_user["id"], payload.place_id)
+
+    raw_token = create_device_token(
+        current_user["id"], payload.place_id, payload.label.strip()
+    )
+    issued = [
+        row
+        for row in list_device_tokens(current_user["id"])
+        if not row.get("revoked_at")
+    ]
+    return DeviceTokenCreateResponse(
+        id=issued[0]["id"] if issued else 0,
+        token=raw_token,
+        label=payload.label.strip(),
+        place_id=payload.place_id,
+    )
+
+
+@router.get("/device-tokens", response_model=list[DeviceTokenSummary])
+def read_device_tokens(current_user: dict = Depends(get_current_user)):
+    return [
+        DeviceTokenSummary.model_validate(row)
+        for row in list_device_tokens(current_user["id"])
+    ]
+
+
+@router.delete("/device-tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_device_token(
+    token_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    if not revoke_device_token(current_user["id"], token_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="해당 기기 토큰을 찾을 수 없습니다.",
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
