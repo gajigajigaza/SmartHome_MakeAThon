@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from auth_utils import execute_supabase_with_retry, get_current_user
 from db import OCCUPANCY_LOGS_TABLE, OCCUPANCY_MODELS_TABLE, supabase
+from device_auth import get_device_or_user
 from dev_tools.mock_generator import generate_mock_occupancy_history
 from occupancy_engine import (
     get_prediction_state,
@@ -68,9 +69,15 @@ def _insert_logs_in_chunks(rows: list[dict]) -> None:
 @router.post("/occupancy/logs", status_code=status.HTTP_201_CREATED)
 def create_occupancy_log(
     payload: OccupancyLogCreate,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_device_or_user),
 ):
-    """센서 담당 보드/스크립트가 재실 감지할 때마다 호출하는 엔드포인트."""
+    """센서 담당 보드/스크립트가 재실 감지할 때마다 호출하는 엔드포인트.
+
+    jh 수정함 - 게이트웨이 전용 기기 토큰도 허용한다(device_auth.py 참고).
+    예전에는 사람의 세션 토큰을 그대로 써서, 브라우저에서 로그아웃하면 이
+    엔드포인트가 401이 되고 게이트웨이가 죽었다. 사람 세션도 계속 통하므로
+    기존 설정은 그대로 동작한다.
+    """
     get_place_for_user(current_user["id"], payload.place_id)
 
     row = {

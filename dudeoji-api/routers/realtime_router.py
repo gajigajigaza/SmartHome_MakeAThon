@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
-from auth_utils import get_current_user
+from device_auth import authenticate_device_or_user
 from device_connection_hub import DeviceConnectionError, device_hub
 from device_state_contract import (
     DeviceStateContractError,
@@ -169,9 +169,13 @@ async def _authenticate_connection(websocket: WebSocket) -> dict:
     if message_type != "auth" or not isinstance(token, str) or not token.strip():
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
 
+    # jh 수정함 - 게이트웨이 전용 기기 토큰도 허용한다(device_auth.py 참고).
+    # 예전에는 사람의 세션 토큰만 받아서, 브라우저에서 로그아웃하면 그 순간
+    # 게이트웨이의 WebSocket 인증도 같이 죽었다(sessions에서 같은 행이 지워짐).
+    # 사람 세션도 그대로 통하므로 웹의 /ws/readings 연결은 영향이 없다.
     return await asyncio.to_thread(
-        get_current_user,
-        f"Bearer {token.strip()}",
+        authenticate_device_or_user,
+        token.strip(),
     )
 
 
