@@ -74,7 +74,6 @@ class Recommendation(BaseModel):
     reason: str
     warning: Optional[str] = None
     savings: Optional[SavingsEstimate] = None
-    is_auto_triggered: bool = False
 
     # 별도 DB 열을 추가하지 않고 recommendation JSONB에 기록 메타데이터를 저장합니다.
     reading_source: Literal[
@@ -239,7 +238,6 @@ def calculate_recommendation(
         reason=result["reason"],
         warning=result.get("warning"),
         savings=savings_obj,
-        is_auto_triggered=result.get("is_auto_triggered", False),
     )
 
 

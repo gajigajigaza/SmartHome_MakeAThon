@@ -90,9 +90,6 @@ def _sensor_error_response(problem_lines: list[str]) -> dict:
         "title": _TITLES["ERROR"],
         "summary": "센서 연결 상태를 확인해야 정확한 추천을 드릴 수 있어요.",
         "reason": " ".join(problem_lines),
-        "show_popup": False,
-        "popup_message": None,
-        "is_auto_triggered": False,
     }
 
 
@@ -121,7 +118,7 @@ def determine_action(
 ):
     """_determine_action_core()의 결과에 통일된 title을 덮어써서 반환한다.
 
-    핵심 판단 로직(action/summary/reason/popup 등)은 그대로 _determine_action_core
+    핵심 판단 로직(action/summary/reason)은 그대로 _determine_action_core
     쪽에 있고, 여기서는 그 결과의 title 필드만 _resolve_title()로 교체한다
     — 브랜치가 몇 개든 새로 추가되든 title 문구가 갈라질 일이 구조적으로
     없어진다.
@@ -248,9 +245,6 @@ def _determine_action_core(
                 "title": "창문 단속 제안 🚪" if not is_auto else "자동으로 창문 단속 완료! 🚪",
                 "summary": "지금 밖에 비가 오거나 공기가 좋지 않아요.",
                 "reason": f"{warn_msg} 창문을 닫아주세요.",
-                "show_popup": not is_auto,
-                "popup_message": "실외 환경이 좋지 않습니다. 창문을 닫으시겠습니까?",
-                "is_auto_triggered": is_auto,
             }
 
         if is_hot:
@@ -268,9 +262,6 @@ def _determine_action_core(
                         "낮추는 중이에요. 실외 환경이 좋지 않아 창문 대신 "
                         "에어컨을 유지합니다."
                     ),
-                    "show_popup": False,
-                    "popup_message": None,
-                    "is_auto_triggered": False,
                 }
 
             return {
@@ -281,9 +272,6 @@ def _determine_action_core(
                     f"실내가 {indoor_temp}도(불쾌지수 {thi:.1f})로 덥지만 "
                     "실외 날씨나 공기질이 좋지 않아 에어컨 사용을 권장합니다."
                 ),
-                "show_popup": not is_auto,
-                "popup_message": "실외 환경이 좋지 않아 환기하기 어렵습니다. 에어컨을 켜시겠습니까?",
-                "is_auto_triggered": is_auto,
             }
 
         return {
@@ -294,9 +282,6 @@ def _determine_action_core(
                 f"{warn_msg} 창문이 닫혀 있어 실내는 {indoor_temp}도로 "
                 "쾌적하게 유지되고 있어요."
             ),
-            "show_popup": False,
-            "popup_message": None,
-            "is_auto_triggered": False,
         }
 
     if is_ac_on and occupancy_signal and occupancy_signal.get("present") is False:
@@ -313,9 +298,6 @@ def _determine_action_core(
                 )
                 + f" 에어컨이 {ac_run_time_minutes}분째 가동 중이니 꺼서 전력 낭비를 줄일까요?"
             ),
-            "show_popup": not is_auto,
-            "popup_message": "지금 자리를 비우신 것 같아요. 에어컨을 끌까요?",
-            "is_auto_triggered": is_auto,
         }
 
     # jh 추가 - 에어컨 켜진 채 창문도 열려 있으면 냉기가 그대로 새는
@@ -343,9 +325,6 @@ def _determine_action_core(
                     f"충분한데(실내 {indoor_temp}도) 에어컨도 같이 켜져 있어요. "
                     "에어컨을 끄고 자연 바람을 즐겨보세요."
                 ),
-                "show_popup": not is_auto,
-                "popup_message": "자연 바람으로 충분해요. 에어컨을 끌까요?",
-                "is_auto_triggered": is_auto,
             }
 
         limiting_factor = (
@@ -362,9 +341,6 @@ def _determine_action_core(
                 "자연 바람만으로는 부족해요. 냉방한 공기가 열린 창문으로 빠져나가 "
                 "전력이 낭비되고 있으니 창문을 닫아 주세요."
             ),
-            "show_popup": not is_auto,
-            "popup_message": "에어컨이 켜진 채 창문이 열려 있어요. 창문을 닫을까요?",
-            "is_auto_triggered": is_auto,
         }
 
     # jh 수정함 - target_cooldown_minutes는 DB 기본값(30)이 항상 채워져
@@ -387,9 +363,6 @@ def _determine_action_core(
                     "에어컨은 일정 시간 유지하는 것이 효율적입니다. "
                     f"설정한 최소 가동 시간({target_cooldown_minutes}분) 동안 유지합니다."
                 ),
-                "show_popup": False,
-                "popup_message": None,
-                "is_auto_triggered": False,
             }
 
     if is_hot:
@@ -403,9 +376,6 @@ def _determine_action_core(
                         f"실내 습도가 {indoor_humidity}%로 높습니다. "
                         "에어컨을 유지해 주세요."
                     ),
-                    "show_popup": False,
-                    "popup_message": None,
-                    "is_auto_triggered": False,
                 }
 
             return {
@@ -416,9 +386,6 @@ def _determine_action_core(
                     f"실내 습도가 {indoor_humidity}%로 높습니다. "
                     "제습과 냉방을 위해 에어컨 가동을 추천합니다."
                 ),
-                "show_popup": not is_auto,
-                "popup_message": "실내가 습합니다. 에어컨을 켜시겠습니까?",
-                "is_auto_triggered": is_auto,
             }
 
         if wind_is_helpful:
@@ -431,9 +398,6 @@ def _determine_action_core(
                         f"풍속 {wind_speed}m/s이고 실외 온도도 환기에 적합해 "
                         "현재 상태를 유지합니다."
                     ),
-                    "show_popup": False,
-                    "popup_message": None,
-                    "is_auto_triggered": False,
                 }
 
             # jh 수정함 - 창문이 닫혀있고 자연환기가 유리해도, 에어컨이 이미
@@ -451,9 +415,6 @@ def _determine_action_core(
                         f"풍속 {wind_speed}m/s이고 실외 온도도 환기에 적합해요. "
                         "에어컨을 끄고 창문을 열면 자연 바람으로 충분히 시원해요."
                     ),
-                    "show_popup": not is_auto,
-                    "popup_message": "자연 바람으로 충분해요. 에어컨을 끌까요?",
-                    "is_auto_triggered": is_auto,
                 }
 
             return {
@@ -463,9 +424,6 @@ def _determine_action_core(
                 "reason": (
                     f"풍속 {wind_speed}m/s이고 실외 온도가 환기 가능한 범위입니다."
                 ),
-                "show_popup": not is_auto,
-                "popup_message": "에어컨 대신 창문을 여시겠습니까?",
-                "is_auto_triggered": is_auto,
             }
 
         if outdoor_cooler:
@@ -475,9 +433,6 @@ def _determine_action_core(
                     "title": "기분 좋은 환기 진행 중 🍃",
                     "summary": "시원한 실외 공기가 들어오고 있어요.",
                     "reason": "실외 온도가 더 낮아 계속 열어두는 것을 추천합니다.",
-                    "show_popup": False,
-                    "popup_message": None,
-                    "is_auto_triggered": False,
                 }
 
             # jh 수정함 - 위 wind_is_helpful 분기와 같은 이유로 추가.
@@ -490,9 +445,6 @@ def _determine_action_core(
                         f"실외({outdoor_temp}도)가 실내({indoor_temp}도)보다 시원해요. "
                         "에어컨을 끄고 창문을 열면 자연 바람으로 충분히 시원해요."
                     ),
-                    "show_popup": not is_auto,
-                    "popup_message": "실외가 더 시원해요. 에어컨을 끌까요?",
-                    "is_auto_triggered": is_auto,
                 }
 
             return {
@@ -500,9 +452,6 @@ def _determine_action_core(
                 "title": "자연 환기 추천 🪟" if not is_auto else "시원한 공기 유입(창문 열기)! 🪟",
                 "summary": "실외 공기가 더 시원해 자연 환기가 유리해요.",
                 "reason": f"실외({outdoor_temp}도)가 실내({indoor_temp}도)보다 시원합니다.",
-                "show_popup": not is_auto,
-                "popup_message": "실외가 더 시원합니다. 창문을 여시겠습니까?",
-                "is_auto_triggered": is_auto,
             }
 
         if is_ac_on:
@@ -514,9 +463,6 @@ def _determine_action_core(
                     f"풍속이 {wind_speed}m/s로 약하고 실외도 {outdoor_temp}도로 더워 "
                     "자연환기를 기대하기 어려워요. 에어컨 유지가 적합합니다."
                 ),
-                "show_popup": False,
-                "popup_message": None,
-                "is_auto_triggered": False,
             }
 
         return {
@@ -528,9 +474,6 @@ def _determine_action_core(
                 f"모두 높고 풍속도 {wind_speed}m/s로 약해 자연환기를 기대하기 "
                 "어려워요. 에어컨이 가장 확실한 냉방 방법입니다."
             ),
-            "show_popup": not is_auto,
-            "popup_message": "자연풍을 기대하기 어렵습니다. 에어컨을 켜시겠습니까?",
-            "is_auto_triggered": is_auto,
         }
 
     if indoor_temp < thresholds["indoor_cold"]:
@@ -540,9 +483,6 @@ def _determine_action_core(
                 "title": "실내 온기 보호 🚪" if not is_auto else "온기 보호를 위해 창문 폐쇄! 🚪",
                 "summary": "실내가 쌀쌀해요. 창문을 닫을까요?",
                 "reason": f"실내 온도가 {indoor_temp}도로 낮아 창문을 닫아주세요.",
-                "show_popup": not is_auto,
-                "popup_message": "실내가 쌀쌀합니다. 창문을 닫으시겠습니까?",
-                "is_auto_triggered": is_auto,
             }
 
         return {
@@ -550,9 +490,6 @@ def _determine_action_core(
             "title": "따뜻하고 아늑하게 유지 중 😌",
             "summary": "현재 창문이 닫혀 있어 온기를 유지하고 있어요.",
             "reason": f"실내가 {indoor_temp}도로 다소 쌀쌀하지만 창문이 닫혀 있습니다.",
-            "show_popup": False,
-            "popup_message": None,
-            "is_auto_triggered": False,
         }
 
     return {
@@ -563,7 +500,4 @@ def _determine_action_core(
             f"현재 실내 {indoor_temp}도, 습도 {indoor_humidity}%로 "
             "추천 기준상 쾌적한 상태입니다."
         ),
-        "show_popup": False,
-        "popup_message": None,
-        "is_auto_triggered": False,
     }
