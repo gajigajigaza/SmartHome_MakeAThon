@@ -9,6 +9,7 @@ import {
   updateMyRecovery,
 } from "../auth/authApi";
 import { useLocationContext } from "../location/LocationContext";
+import BadgeSelectionPanel from "../badge/BadgeSelectionPanel";
 import SharedAppSidebar from "../navigation/SharedAppSidebar";
 import LocationSearchPopover from "../location/LocationSearchPopover";
 import { buildPlacePayload } from "../location/buildPlacePayload";
@@ -177,8 +178,10 @@ function MyPage({
   user,
   nickname = "두더지",
   renderProfileBadge,
+  renderBadgeIcon,
+  selectedBadgeId,
+  onSelectBadge,
   onBack,
-  onOpenBadgePage,
   onOpenSensorReadings,
   onStartTutorial,
   onLogout,
@@ -188,6 +191,9 @@ function MyPage({
   const [places, setPlaces] = useState([]);
   const [isLoadingPlaces, setIsLoadingPlaces] = useState(true);
   const [placeError, setPlaceError] = useState("");
+  // jh 수정함 - 예전엔 "🏅 아이콘" 버튼이 별도 전체화면(BadgePage)으로
+  // 이동시켰는데, 이제 이 카드 아래에 인라인으로 펼치는 방식으로 바꿨다.
+  const [isBadgePanelOpen, setIsBadgePanelOpen] = useState(false);
 
   const {
     locations,
@@ -762,7 +768,6 @@ function MyPage({
           onOpenDashboard={onBack}
           onOpenMyPage={() => {}}
           onOpenSensorReadings={onOpenSensorReadings}
-          onOpenBadgePage={onOpenBadgePage}
           onStartTutorial={onStartTutorial}
           onLogout={onLogout}
         />
@@ -778,9 +783,15 @@ function MyPage({
 
           <section className="mypage-overview-grid">
             <article className="mypage-profile-card">
-              <div className="mypage-profile-avatar">
+              <button
+                type="button"
+                className="mypage-profile-avatar mypage-profile-avatar-button"
+                onClick={() => setIsBadgePanelOpen((current) => !current)}
+                aria-expanded={isBadgePanelOpen}
+                aria-label="대표 아이콘 바꾸기"
+              >
                 {renderProfileBadge?.("mypage-profile-avatar-image")}
-              </div>
+              </button>
 
               <div className="mypage-profile-info">
                 <div className="mypage-profile-name-row">
@@ -788,8 +799,12 @@ function MyPage({
                   <button type="button" onClick={openNicknameModal}>
                     ✎ 별명
                   </button>
-                  <button type="button" onClick={onOpenBadgePage}>
-                    🏅 아이콘
+                  <button
+                    type="button"
+                    onClick={() => setIsBadgePanelOpen((current) => !current)}
+                    aria-expanded={isBadgePanelOpen}
+                  >
+                    🏅 {isBadgePanelOpen ? "아이콘 닫기" : "아이콘"}
                   </button>
                 </div>
 
@@ -802,6 +817,16 @@ function MyPage({
                 <small>계정 정보와 집 정보를 한곳에서 관리해요.</small>
               </div>
             </article>
+
+            {isBadgePanelOpen && (
+              <div className="mypage-badge-panel-scroll">
+                <BadgeSelectionPanel
+                  selectedBadgeId={selectedBadgeId}
+                  onSelectBadge={onSelectBadge}
+                  renderBadgeIcon={renderBadgeIcon}
+                />
+              </div>
+            )}
 
             <section className="mypage-section-card mypage-security-card">
               <h3>계정 보안</h3>

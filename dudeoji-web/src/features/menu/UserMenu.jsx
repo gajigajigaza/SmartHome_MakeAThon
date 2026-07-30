@@ -16,7 +16,6 @@ export default function UserMenu({
   connectionStatus,
   onOpenMyPage,
   onOpenSensorReadings,
-  onOpenBadgePage,
   onStartTutorial,
   onLogout,
   isLoggingOut,
@@ -90,16 +89,6 @@ export default function UserMenu({
               >
                 <span>🌡️</span>
                 <strong>센서 측정값</strong>
-                <em>›</em>
-              </button>
-
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => onOpenBadgePage("dashboard")}
-              >
-                <span>🏅</span>
-                <strong>프로필</strong>
                 <em>›</em>
               </button>
 

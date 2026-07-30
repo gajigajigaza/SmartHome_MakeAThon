@@ -14,6 +14,7 @@ import {
   getOccupancySourceLabel,
   getWindowLabel,
 } from "./sensorReadingsUtils";
+import { HOME_PLACE_ID } from "./deviceState";
 
 function MetricValueCard({ metric, latest, thresholds }) {
   const value = latest?.[metric.key] ?? null;
@@ -54,7 +55,23 @@ export default function EnvironmentPanels({
   latest,
   outdoorLatest,
   logicThresholds,
+  selectedPlaceId,
 }) {
+  // jh 수정함 - 실내 온습도/창문/에어컨 센서가 붙어 있는 곳은 "우리집"
+  // (place_id 54) 하나뿐이다. 다른 장소는 예전 테스트 기록이 남아 있을 수
+  // 있어도, 화면에는 무조건 "데이터 없음/센서 미연결"로 보여준다. 실외
+  // 값(outdoorLatest)은 날씨 API 기반이라 장소와 무관하게 그대로 둔다.
+  const isKnownHomePlace = String(selectedPlaceId) === HOME_PLACE_ID;
+  const effectiveLatest = isKnownHomePlace
+    ? latest
+    : {
+        ...latest,
+        indoorTemperature: null,
+        indoorHumidity: null,
+        windowDataAvailable: false,
+        acDataAvailable: false,
+      };
+
   return (
     <>
       <section
@@ -85,7 +102,7 @@ export default function EnvironmentPanels({
             {METRICS.slice(0, 2).map((metric) => (
               <MetricValueCard
                 metric={metric}
-                latest={latest}
+                latest={effectiveLatest}
                 thresholds={logicThresholds}
                 key={metric.key}
               />
@@ -99,15 +116,19 @@ export default function EnvironmentPanels({
                 </span>
               </div>
               <strong className="sensor-value-card__value is-text">
-                {getWindowLabel(latest)}
+                {getWindowLabel(effectiveLatest)}
               </strong>
               <div className="sensor-value-card__bottom">
                 <span
                   className={`sensor-status-chip ${
-                    latest.windowDataAvailable ? "is-good" : "is-warning"
+                    effectiveLatest.windowDataAvailable
+                      ? "is-good"
+                      : "is-warning"
                   }`}
                 >
-                  {latest.windowDataAvailable ? "센서 수신" : "센서 미연결"}
+                  {effectiveLatest.windowDataAvailable
+                    ? "센서 수신"
+                    : "센서 미연결"}
                 </span>
                 <span>window_is_open</span>
               </div>
@@ -121,20 +142,20 @@ export default function EnvironmentPanels({
                 </span>
               </div>
               <strong className="sensor-value-card__value is-text">
-                {getAcLabel(latest)}
+                {getAcLabel(effectiveLatest)}
               </strong>
               <div className="sensor-value-card__bottom">
                 <span
                   className={`sensor-status-chip ${
-                    latest.acDataAvailable
-                      ? latest.acIsOn
+                    effectiveLatest.acDataAvailable
+                      ? effectiveLatest.acIsOn
                         ? "is-warning"
                         : "is-good"
                       : "is-warning"
                   }`}
                 >
-                  {latest.acDataAvailable
-                    ? latest.acIsOn
+                  {effectiveLatest.acDataAvailable
+                    ? effectiveLatest.acIsOn
                       ? "가동 감지"
                       : "꺼짐 감지"
                     : "센서 미연결"}

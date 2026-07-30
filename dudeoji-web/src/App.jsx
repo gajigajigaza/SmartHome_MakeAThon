@@ -11,7 +11,6 @@ import {
 import { getStoredToken } from "./api";
 
 import MyPage from "./features/mypage/MyPage";
-import BadgePage from "./features/badge/BadgePage";
 import CrawlingMole from "./features/background/CrawlingMole";
 import UserMenu from "./features/menu/UserMenu";
 import { TUTORIAL_STEPS, TutorialOverlay } from "./features/menu/Tutorial";
@@ -75,7 +74,6 @@ function App({
   onTutorialShown,
 }) {
   const [currentPage, setCurrentPage] = useState("dashboard");
-  const [badgeReturnPage, setBadgeReturnPage] = useState("dashboard");
   const [readingHistory] = useState([]);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -157,36 +155,13 @@ function App({
 
   function openDashboard() {
     setCurrentPage("dashboard");
-    setBadgeReturnPage("dashboard");
   }
 
-  function openBadgePage(returnPage = "dashboard") {
-    setIsUserMenuOpen(false);
-    setIsTutorialOpen(false);
-    setBadgeReturnPage(returnPage);
-    setCurrentPage("badges");
-  }
-
-  // 중략된 핸들러 로직들 유지
-  function handleBadgeBack() {
-    if (badgeReturnPage === "mypage") {
-      setCurrentPage("mypage");
-      return;
-    }
-    if (badgeReturnPage === "sensors") {
-      setCurrentPage("sensors");
-      return;
-    }
-    openDashboard();
-  }
-
+  // jh 수정함 - 예전엔 별도 전체화면(BadgePage)으로 이동시키는 용도였는데,
+  // 이제 마이페이지 안에서 인라인으로 선택하므로 페이지 전환 없이 저장만 한다.
   function handleBadgeSelect(badgeId) {
     setProfileBadgeId(badgeId);
     localStorage.setItem(getProfileBadgeStorageKey(user), badgeId);
-
-    if (badgeReturnPage === "mypage") {
-      setCurrentPage("mypage");
-    }
   }
 
   async function openSensorReadings() {
@@ -228,8 +203,12 @@ function App({
           renderProfileBadge={(className) => (
             <ProfileBadgeIcon badge={currentProfileBadge} className={className} />
           )}
+          renderBadgeIcon={(badge, className) => (
+            <ProfileBadgeIcon badge={badge} className={className} />
+          )}
+          selectedBadgeId={profileBadgeId}
+          onSelectBadge={handleBadgeSelect}
           onBack={openDashboard}
-          onOpenBadgePage={() => openBadgePage("mypage")}
           onOpenSensorReadings={openSensorReadings}
           onStartTutorial={startTutorial}
           onLogout={onLogout}
@@ -237,29 +216,6 @@ function App({
           onAccountDeleted={onAccountDeleted}
         />
       </LocationProvider>
-    );
-  }
-
-  if (currentPage === "badges") {
-    return (
-      <BadgePage
-        user={user}
-        nickname={nickname}
-        selectedBadgeId={profileBadgeId}
-        onSelectBadge={handleBadgeSelect}
-        onBack={handleBadgeBack}
-        onOpenMyPage={openMyPage}
-        onOpenSensorReadings={openSensorReadings}
-        onOpenDashboard={openDashboard}
-        onStartTutorial={startTutorial}
-        onLogout={onLogout}
-        renderProfileBadge={(className) => (
-          <ProfileBadgeIcon badge={currentProfileBadge} className={className} />
-        )}
-        renderBadgeIcon={(badge, className) => (
-          <ProfileBadgeIcon badge={badge} className={className} />
-        )}
-      />
     );
   }
 
@@ -274,7 +230,6 @@ function App({
           )}
           onBack={openDashboard}
           onOpenMyPage={openMyPage}
-          onOpenBadgePage={() => openBadgePage("sensors")}
           onStartTutorial={startTutorial}
           onLogout={handleLogoutClick}
         />
@@ -297,7 +252,6 @@ function App({
         onCloseUserMenu={() => setIsUserMenuOpen(false)}
         onOpenMyPage={openMyPage}
         onOpenSensorReadings={openSensorReadings}
-        onOpenBadgePage={openBadgePage}
         onStartTutorial={startTutorial}
         onLogout={handleLogoutClick}
         isLoggingOut={isLoggingOut}
@@ -327,7 +281,6 @@ function DashboardHome({
   onCloseUserMenu,
   onOpenMyPage,
   onOpenSensorReadings,
-  onOpenBadgePage,
   onStartTutorial,
   onLogout,
   isLoggingOut,
@@ -372,6 +325,11 @@ function DashboardHome({
   // 실제로 새로 고정된 순간에만 바뀐다 — RecommendationCard가 "이 추천, 언제 기준"을
   // 보여줄 때 updatedAt을 쓰면 폴링 때문에 실제보다 신선해 보이는 착시가 생긴다.
   const [recommendationMeasuredAt, setRecommendationMeasuredAt] = useState(null);
+  // jh 추가 - 헤더에 상시 떠 있는 HeaderQuickControls(아래)에서 창문/에어컨을
+  // 직접 조작해 성공했을 때, RecommendationCard가 보여주는 멘트도 같이
+  // 갱신하도록 넘겨준다. key를 매번 새로 찍어서 같은 action을 연달아 눌러도
+  // RecommendationCard의 useEffect가 "새 실행"으로 인식하게 한다.
+  const [externalDeviceCommand, setExternalDeviceCommand] = useState(null);
 
   // 백엔드 API로부터 선택된 장소의 최신 추천 데이터를 한 번 읽어오는 핵심 함수.
   // pinRecommendation=true일 때만 RecommendationCard가 보는 추천/카운트다운
@@ -513,14 +471,17 @@ function DashboardHome({
           connectionStatus={connectionStatus}
           onOpenMyPage={onOpenMyPage}
           onOpenSensorReadings={onOpenSensorReadings}
-          onOpenBadgePage={onOpenBadgePage}
           onStartTutorial={onStartTutorial}
           onLogout={onLogout}
           isLoggingOut={isLoggingOut}
           isTutorialTarget={isIconTutorialStep}
         />
 
-        <HeaderQuickControls />
+        <HeaderQuickControls
+          onCommandSuccess={(action) =>
+            setExternalDeviceCommand({ action, key: Date.now() })
+          }
+        />
 
         <LocationSwitcher />
       </header>
@@ -536,6 +497,7 @@ function DashboardHome({
             readingKey={pinnedReadingKey}
             onRequestNewRecommendation={handleRequestNewRecommendation}
             measuredAt={recommendationMeasuredAt}
+            externalCommand={externalDeviceCommand}
           />
 
           <div className="flex-layout-column" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>

@@ -6,7 +6,6 @@ import {
   getWeatherStatus,
 } from "./readingsApi";
 import LocationSwitcher from "../location/LocationSwitcher";
-import { getNodeConnectionStatus } from "./deviceState";
 import { useSensorRealtimeContext } from "./SensorRealtimeContext";
 import SharedAppSidebar from "../navigation/SharedAppSidebar";
 import { useLocationContext } from "../location/LocationContext";
@@ -27,23 +26,6 @@ import {
 import "./SensorReadings.css";
 
 const LIVE_REFRESH_SECONDS = 5;
-const SENSOR_NODE_STATUS_ITEMS = [
-  {
-    key: "sense_connected",
-    label: "Sense",
-    disconnectedLabel: "끊김",
-  },
-  {
-    key: "control_connected",
-    label: "Control",
-    disconnectedLabel: "끊김",
-  },
-  {
-    key: "ina_available",
-    label: "INA219",
-    disconnectedLabel: "미연결",
-  },
-];
 
 export default function SensorReadings({
   history = [],
@@ -51,7 +33,6 @@ export default function SensorReadings({
   renderProfileBadge,
   onBack,
   onOpenMyPage,
-  onOpenBadgePage,
   onStartTutorial,
   onLogout,
 }) {
@@ -61,11 +42,8 @@ export default function SensorReadings({
     loadError: locationLoadError,
   } = useLocationContext();
   const selectedPlaceId = selectedLocation?.id ?? null;
-  const {
-    latestReading: realtimeReading,
-    latestDeviceState: realtimeDeviceState,
-    realtimeIsLive,
-  } = useSensorRealtimeContext();
+  const { latestReading: realtimeReading, realtimeIsLive } =
+    useSensorRealtimeContext();
   const [readings, setReadings] = useState([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -491,14 +469,6 @@ export default function SensorReadings({
 
   const latest = readings.at(-1) || null;
   const outdoorLatest = latest?.outdoorDataValid ? latest : null;
-  const sensorNodeStatuses = SENSOR_NODE_STATUS_ITEMS.map((item) => ({
-    ...item,
-    status: getNodeConnectionStatus(
-      realtimeDeviceState,
-      item.key,
-      selectedPlaceId,
-    ),
-  }));
   const activeRange = RANGE_OPTIONS.find((option) => option.key === rangeKey);
   const displayedReadings = useMemo(() => {
     if (!activeRange?.milliseconds) {
@@ -537,7 +507,6 @@ export default function SensorReadings({
           onOpenDashboard={onBack}
           onOpenMyPage={onOpenMyPage}
           onOpenSensorReadings={() => {}}
-          onOpenBadgePage={onOpenBadgePage}
           onStartTutorial={onStartTutorial}
           onLogout={onLogout}
         />
@@ -564,7 +533,10 @@ export default function SensorReadings({
               </div>
             </div>
 
-            <div className="sensor-page-controls">
+            {/* jh 수정함 - 데모용으로 상단 컨트롤(장소 선택/마지막 측정/
+                실시간 확인/새로고침)을 화면에서만 숨긴다. 기능 자체는
+                그대로 둬서 나중에 다시 보이게 하기 쉽게 한다. */}
+            <div className="sensor-page-controls" style={{ display: "none" }}>
               <div className="sensor-location-control">
                 <span>측정 장소</span>
                 <LocationSwitcher />
@@ -628,28 +600,6 @@ export default function SensorReadings({
               </section>
             )}
 
-            {selectedLocation && (
-              <section
-                className="sensor-node-status-strip"
-                aria-label="ESP와 전력 센서 연결 상태"
-              >
-                {sensorNodeStatuses.map((item) => (
-                  <span
-                    className={`sensor-node-status is-${item.status}`}
-                    key={item.key}
-                  >
-                    <i aria-hidden="true" />
-                    <b>{item.label}</b>
-                    {item.status === "connected"
-                      ? "연결"
-                      : item.status === "disconnected"
-                        ? item.disconnectedLabel
-                        : "상태 미지원"}
-                  </span>
-                ))}
-              </section>
-            )}
-
             {locationLoadError ? (
               <section className="sensor-error-banner" role="alert">
                 <div>
@@ -692,6 +642,7 @@ export default function SensorReadings({
                   latest={latest}
                   outdoorLatest={outdoorLatest}
                   logicThresholds={logicThresholds}
+                  selectedPlaceId={selectedPlaceId}
                 />
 
                 <SensorHistorySection
