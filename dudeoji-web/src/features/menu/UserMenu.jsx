@@ -99,7 +99,7 @@ export default function UserMenu({
                 onClick={() => onOpenBadgePage("dashboard")}
               >
                 <span>🏅</span>
-                <strong>뱃지</strong>
+                <strong>프로필</strong>
                 <em>›</em>
               </button>
 

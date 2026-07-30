@@ -1097,6 +1097,32 @@
   font-weight: 650;
 }
 
+.badge-collection-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 10px 18px;
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 12px 25px rgba(36, 72, 48, 0.07);
+}
+
+.badge-collection-count strong {
+  color: #168152;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.badge-collection-count span {
+  margin: 0;
+  color: #788c84;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .badge-current-card,
 .badge-grid,
 .badge-page-note {
@@ -1161,6 +1187,7 @@
 }
 
 .badge-card {
+  position: relative;
   display: grid;
   grid-template-columns: 70px minmax(0, 1fr) auto;
   gap: 14px;
@@ -1258,6 +1285,88 @@
 .badge-card.locked em {
   background: #edf0ed;
   color: #7e8d86;
+}
+
+/* 잠긴 프로필 획득 조건 툴팁 - hover/focus로 열리고, 터치 기기는 탭 시
+   BadgePage.jsx가 is-open 클래스를 붙여서 대신 연다. */
+.badge-card-tooltip {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: calc(100% + 10px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 13px 16px;
+  border-radius: 16px;
+  background: #16302a;
+  color: #eefaf1;
+  text-align: left;
+  box-shadow: 0 16px 32px rgba(10, 30, 22, 0.28);
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
+}
+
+.badge-card-tooltip::after {
+  content: "";
+  position: absolute;
+  left: 28px;
+  top: 100%;
+  border: 7px solid transparent;
+  border-top-color: #16302a;
+}
+
+.badge-card.locked:hover .badge-card-tooltip,
+.badge-card.locked:focus-visible .badge-card-tooltip,
+.badge-card-tooltip.is-open {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.badge-card-tooltip strong {
+  font-size: 12px;
+  font-weight: 800;
+  color: #8fe6b4;
+  letter-spacing: -0.02em;
+}
+
+.badge-card-tooltip p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1.45;
+  color: #eefaf1;
+}
+
+.badge-card-tooltip em {
+  align-self: flex-start;
+  padding: 0;
+  min-width: 0;
+  height: auto;
+  background: none;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 800;
+  color: #b7f0cb;
+}
+
+.badge-load-error {
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: #fff3e6;
+  color: #9a5b12;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.badge-grid.is-loading {
+  opacity: 0.6;
 }
 
 .badge-page-note {
@@ -1444,6 +1553,13 @@
     font-size: 21px;
     font-weight: 900;
     letter-spacing: -0.04em;
+  }
+
+  .badge-mobile-topbar-count {
+    color: #168152;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 800;
   }
 
   .mypage-main-panel,

@@ -247,7 +247,7 @@ def get_cumulative_kwh(user_id: str) -> float:
 def get_savings_summary(
     user_id: str, period: str, place_id: Optional[str] = None
 ) -> dict:
-    """기간(day/week/month) 동안 저장된 reading들의 recommendation.savings 값을 그대로 합산한다.
+    """기간(day/week/month/all) 동안 저장된 reading들의 recommendation.savings 값을 그대로 합산한다.
 
     get_cumulative_kwh()와 달리 새로 계산하지 않고, save_reading_for_user()가
     각 reading에 저장해둔 savings 스냅샷(power_saved_kwh, cost_won)을 그대로 더한다.
@@ -260,6 +260,9 @@ def get_savings_summary(
     표시 계층에서만 걸러내는 것이라 저장 계층(estimate_savings/get_cumulative_kwh)은
     건드리지 않는다. 그 결과 합계는 항상 0 이상이다.
     place_id를 주면 해당 장소의 reading만 집계하고, 안 주면 사용자의 모든 장소를 합산한다.
+
+    period="all"은 뱃지 퀘스트(전력 지킴이 등)의 "누적 전체 절감량" 판정용 —
+    하한 없이 사용자의 모든 reading을 합산한다.
     """
     now = datetime.now(timezone.utc)
 
@@ -270,6 +273,8 @@ def get_savings_summary(
         period_start = today_start - timedelta(days=today_start.weekday())
     elif period == "month":
         period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif period == "all":
+        period_start = None
     else:
         raise ValueError(f"알 수 없는 period입니다: {period}")
 
@@ -277,8 +282,9 @@ def get_savings_summary(
         supabase.table(READINGS_TABLE)
         .select("recommendation")
         .eq("user_id", user_id)
-        .gte("measured_at", period_start.isoformat())
     )
+    if period_start is not None:
+        query = query.gte("measured_at", period_start.isoformat())
     if place_id is not None:
         query = query.eq("place_id", place_id)
 

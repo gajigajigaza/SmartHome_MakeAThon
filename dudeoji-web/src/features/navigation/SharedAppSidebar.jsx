@@ -63,7 +63,7 @@ export default function SharedAppSidebar({
         />
         <SidebarButton
           icon="🏅"
-          label="뱃지"
+          label="프로필"
           active={activePage === "badges"}
           onClick={activePage === "badges" ? undefined : onOpenBadgePage}
         />

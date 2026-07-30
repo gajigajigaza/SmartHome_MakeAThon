@@ -9,6 +9,7 @@ from auth_utils import execute_supabase_with_retry, get_current_user
 from db import (
     READINGS_TABLE,
     PLACES_TABLE,
+    DEVICE_CONTROL_EVENTS_TABLE,
     RECOMMENDATION_REFRESH_EVENTS_TABLE,
     supabase,
 )
@@ -132,6 +133,11 @@ DeviceControlAction = Literal[
 class DeviceControl(BaseModel):
     place_id: int = Field(ge=1)
     action: DeviceControlAction
+    # jh 추가 - 프로필(뱃지) 퀘스트("첫 수동 조작")가 자동실행 카운트다운
+    # 완료(auto)와 거절 후 HeaderQuickControls 버튼 클릭(manual)을 구분해야
+    # 해서 추가. 프론트가 안 보내는 구버전 호출과의 호환을 위해 기본값은
+    # "manual"로 둔다(카운트다운 자동실행 쪽만 명시적으로 "auto"를 보낸다).
+    source: Literal["manual", "auto"] = "manual"
 class SavingsSummaryResponse(BaseModel):
     period: str
     power_saved_kwh: float
@@ -1107,7 +1113,7 @@ async def control_device(
     )
 
     try:
-        return await device_hub.send_command(
+        result = await device_hub.send_command(
             user_id=current_user["id"],
             requested_place_id=command.place_id,
             action=command.action,
@@ -1122,3 +1128,36 @@ async def control_device(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(error),
         ) from error
+
+    # jh 추가 - 명령이 실제로 게이트웨이까지 전송된 뒤에만 기록한다(뱃지
+    # 퀘스트 "첫 수동 조작"의 근거 데이터). 기기가 결과를 확인해줬는지
+    # (result_received)까지는 안 보고, "사용자가 조작을 시도해 명령이
+    # 나갔다"만으로 충분하다고 봤다.
+    #
+    # jh 수정함 - 위 device_hub.send_command()가 이미 성공해서 실제로 기기가
+    # 움직인 뒤다. 이 로깅은 순전히 부가 기능(뱃지 집계용)이라, 여기서 예외가
+    # 나도(예: 스키마 캐시 지연으로 인한 APIError, 순간적인 네트워크 문제로
+    # execute_supabase_with_retry가 재시도 끝에 던지는 HTTPException 등)
+    # 이미 성공한 기기 제어 응답 자체를 실패로 덮어써서 사용자에게 잘못된
+    # 오류를 보여주면 안 된다.
+    try:
+        await asyncio.to_thread(
+            lambda: execute_supabase_with_retry(
+                lambda: (
+                    supabase.table(DEVICE_CONTROL_EVENTS_TABLE)
+                    .insert(
+                        {
+                            "place_id": command.place_id,
+                            "user_id": current_user["id"],
+                            "action": command.action,
+                            "source": command.source,
+                        }
+                    )
+                    .execute()
+                )
+            )
+        )
+    except Exception as error:
+        print(f"[뱃지] device_control_events 기록 실패(기기 제어 자체는 이미 성공): {error}")
+
+    return result

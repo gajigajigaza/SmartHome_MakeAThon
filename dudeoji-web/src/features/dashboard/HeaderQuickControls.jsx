@@ -208,7 +208,7 @@ export default function HeaderQuickControls({
     setFeedback("");
 
     try {
-      const response = await controlDevice(selectedPlaceId, action);
+      const response = await controlDevice(selectedPlaceId, action, "manual");
 
       if (response?.result_received === true) {
         setFeedback(
