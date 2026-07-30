@@ -259,8 +259,13 @@ def _determine_action_core(
                     "action": "ENJOY",
                     "title": "시원한 냉기가 집안을 채우는 중 ❄️",
                     "summary": "안전하고 시원하게 온도를 조절하고 있어요.",
+                    # jh 수정함 - "불쾌지수가 높지만 유지합니다"는 사실상 "아직도
+                    # 덥다"는 뜻인데 summary("시원하게 조절 중")와 모순됐다.
+                    # 아직 목표까지 낮추는 중이라는 진행형으로 바꿔 summary와
+                    # 맞춘다.
                     "reason": (
-                        f"실내 불쾌지수가 {thi:.1f}로 높지만 실외 환경이 좋지 않아 "
+                        f"실내가 아직 {indoor_temp}도로 더워 에어컨으로 온도를 "
+                        "낮추는 중이에요. 실외 환경이 좋지 않아 창문 대신 "
                         "에어컨을 유지합니다."
                     ),
                     "show_popup": False,
@@ -362,7 +367,14 @@ def _determine_action_core(
             "is_auto_triggered": is_auto,
         }
 
-    if is_ac_on and ac_run_time_minutes < target_cooldown_minutes:
+    # jh 수정함 - target_cooldown_minutes는 DB 기본값(30)이 항상 채워져
+    # 있어서, 사용자가 "자동 제어 설정"을 한 번도 연 적 없어도 이 분기가
+    # 타면서 "설정한 최소 가동 시간"이라고 말하는 게 부정확했다.
+    # auto_control_enabled(=is_auto)를 켤 때만 그 폼에서 target_cooldown_
+    # minutes를 같이 저장하므로(AutoControlSettings.jsx handleSave), is_auto로
+    # 게이트하면 "설정한"이 실제로 설정된 경우에만 뜨게 된다. MANUAL 유저는
+    # 그냥 이 분기를 건너뛰고 아래 온도 기준 분기로 정상적으로 떨어진다.
+    if is_auto and is_ac_on and ac_run_time_minutes < target_cooldown_minutes:
         if indoor_temp >= thresholds["ac_cooldown_min_temperature"]:
             return {
                 "action": "ENJOY",
@@ -424,6 +436,26 @@ def _determine_action_core(
                     "is_auto_triggered": False,
                 }
 
+            # jh 수정함 - 창문이 닫혀있고 자연환기가 유리해도, 에어컨이 이미
+            # 켜져 있으면 "창문 여세요"만으로는 에어컨을 어떻게 하라는 건지
+            # 빠진다. 먼저 에어컨을 끄라고 안내하고(TURN_OFF_AIRCON), 그
+            # 다음 reading에서 is_ac_on=False로 갱신되면 바로 아래 OPEN_WINDOW
+            # 분기가 자연스럽게 이어받는다 — 새 액션을 추가하지 않고 기존
+            # 두 액션을 순서대로 타게 하는 것으로 충분하다.
+            if is_ac_on:
+                return {
+                    "action": "TURN_OFF_AIRCON",
+                    "title": "에어컨 끌 타이밍이에요!",
+                    "summary": "시원한 바람이 불어 자연 환기로 충분해요.",
+                    "reason": (
+                        f"풍속 {wind_speed}m/s이고 실외 온도도 환기에 적합해요. "
+                        "에어컨을 끄고 창문을 열면 자연 바람으로 충분히 시원해요."
+                    ),
+                    "show_popup": not is_auto,
+                    "popup_message": "자연 바람으로 충분해요. 에어컨을 끌까요?",
+                    "is_auto_triggered": is_auto,
+                }
+
             return {
                 "action": "OPEN_WINDOW",
                 "title": "천연 에어컨 작동 제안 🪟" if not is_auto else "천연 에어컨 가동(창문 열기)! 🪟",
@@ -446,6 +478,21 @@ def _determine_action_core(
                     "show_popup": False,
                     "popup_message": None,
                     "is_auto_triggered": False,
+                }
+
+            # jh 수정함 - 위 wind_is_helpful 분기와 같은 이유로 추가.
+            if is_ac_on:
+                return {
+                    "action": "TURN_OFF_AIRCON",
+                    "title": "에어컨 끌 타이밍이에요!",
+                    "summary": "실외 공기가 더 시원해 자연 환기로 충분해요.",
+                    "reason": (
+                        f"실외({outdoor_temp}도)가 실내({indoor_temp}도)보다 시원해요. "
+                        "에어컨을 끄고 창문을 열면 자연 바람으로 충분히 시원해요."
+                    ),
+                    "show_popup": not is_auto,
+                    "popup_message": "실외가 더 시원해요. 에어컨을 끌까요?",
+                    "is_auto_triggered": is_auto,
                 }
 
             return {

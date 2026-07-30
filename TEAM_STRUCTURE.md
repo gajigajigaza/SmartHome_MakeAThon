@@ -74,14 +74,14 @@ merged/
 │   ├── db.py                      ** 공용 - Supabase 클라이언트 + 테이블 이름 상수 **
 │   ├── database.py                (미사용 SQLite 코드, 실제 서비스는 Supabase 사용)
 │   ├── auth_utils.py              [류은] 세션/비밀번호 보안 유틸 + 인증 dependency
-│   ├── recommendation_engine.py   [민주] 판단 규칙 엔진 (자동제어/쿨다운 로직 추가하며 전면 재작성됨 — 이 과정에서 savings.py 연동이 빠짐, 아래 참고)
-│   ├── savings.py                 [정현] 절감량(전력·시간·비용) 계산 — ⚠️ 지금 recommendation_engine.py가 이 파일을 import도 안 해서 실제 응답에 절감량이 안 실림(연결 복구 필요, 민주와 상의)
+│   ├── recommendation_engine.py   [민주] 판단 규칙 엔진 (자동제어/쿨다운 로직 추가하며 전면 재작성됨)
+│   ├── savings.py                 [정현] 절감량(전력·시간·비용) 계산 — readings_router.py가 직접 호출해서 연동돼 있음(recommendation_engine.py를 거치지 않고 라우터 레이어에서 호출)
 │   ├── weather.py                 [정현] 날씨 API 연동 (구현 완료 · 기상청 초단기실황조회 getUltraSrtNcst로 기온/습도/풍속/강수형태 + OpenWeatherMap Air Pollution으로 미세먼지. KMA_SERVICE_KEY 환경변수 필요)
 │   ├── mqtt_handler.py            [민주] MQTT 사전 준비 코드 (실제 하드웨어 연결은 현장에서 진행)
 │   ├── routers/
 │   │   ├── auth_router.py         [류은] 회원가입/로그인/마이페이지 API
 │   │   ├── places_router.py       [류은] 장소·에어컨 등록 API + 정현이 추가한 위치/기본장소/삭제 엔드포인트 + 민주가 추가한 cooldown 엔드포인트(담당자 셋 다 코드 있는 파일, 아래 2번 참고)
-│   │   ├── readings_router.py     [민주] 센서 기록/추천 API (이제 weather.py를 실제로 호출함, /api/devices/control 스텁 포함 — 아래 3번의 "실외 날씨 두 소스" 항목 참고)
+│   │   ├── readings_router.py     [민주] 센서 기록/추천 API (이제 weather.py를 실제로 호출함, /api/devices/control은 device_connection_hub.py 경유 WebSocket으로 실제 구현됨 — 아래 3번의 "실외 날씨 두 소스" 항목 참고)
 │   │   ├── weather_router.py      [정현] GET /api/weather(lat, lon) — weather.py를 그대로 노출, main.py에 연결됨. EnvironmentCard.jsx 표시 전용이고 readings/추천 파이프라인과는 무관
 │   │   └── locations_router.py    [정현] 위치 저장/조회 API (추가 예정 · 아직 main.py에 연결 안 됨 — 위치 기능 자체는 places_router.py 쪽으로 구현 완료됨)
 │   ├── dev_tools/                 [민주] 하드웨어 없이 테스트하는 개발용 스크립트 (현장 하드웨어 연결과는 별개)
@@ -117,7 +117,7 @@ merged/
             │   ├── LocationSearchPopover.jsx [정현] 위치 검색 UI(주소로 찾기/현재 위치로 찾기). `embedded` prop으로 두 가지 모드 지원 — 기본(팝오버 껍데기+자체 닫기버튼, EnvironmentCard의 "+"용)과 embedded(안쪽 검색 UI만, 마이페이지 모달 안에 넣어서 씀).
             │   ├── buildPlacePayload.js      [정현] AirconPage의 registeredAircons(슬롯)를 POST /api/places 요청 형태로 바꾸는 매핑 함수. 원래 LocationListPanel.jsx 안에 있었는데 MyPage.jsx도 같이 쓰게 되면서 별도 파일로 뺌.
             │   ├── EnvironmentCard.jsx       [정현] 실시간 실내외 환경 카드 — 실외는 GET /api/weather로 실제 날씨 표시
-            │   └── SavingsSummary.jsx        [정현] 예상 절감(1일/1주/1달) — 아직 placeholder(위 savings.py 연동 복구 후 진행 가능)
+            │   └── SavingsSummary.jsx        [정현] 예상 절감(1일/1주/1달) — GET /api/savings/summary로 실제 구현 완료
             │   (locationApi.js는 만들지 않기로 확정 — placesApi.js의 fetchMyPlaces/createPlaceWithAircons/updatePlaceDetails 등을 그대로 재사용)
             ├── dashboard/
             │   ├── RecommendationCard.jsx [민주] 현재 추천 + 이유
@@ -142,9 +142,9 @@ merged/
 | `auth_utils.py` | 비밀번호 해시, 세션 토큰 생성/검증, `get_current_user`(로그인한 사용자인지 확인하는 함수). 다른 라우터들이 이걸 가져다 씀 | **류은** |
 | `routers/auth_router.py` | `/api/auth/*` — 회원가입, 로그인, 로그아웃, 아이디 중복확인, 비번 찾기, 닉네임/비번/복구정보 변경, 탈퇴 | **류은** |
 | `routers/places_router.py` | `/api/aircon-models`, `/api/places`(GET/POST — GET 응답에 `is_default` 포함, POST는 유저의 첫 장소면 자동으로 `is_default: true`), `/api/places/{place_id}`(PATCH — `name`/`lat`/`lon` 각각 선택 필드, 이름만/위치만/둘다 가능; DELETE — 소유자 확인 후 삭제, `user_aircons`는 DB `ON DELETE CASCADE`로 자동 정리됨, 삭제한 게 기본 장소였으면 남은 것 중 가장 오래된 걸 새 기본 장소로 재할당), `/api/places/{place_id}/default`(PATCH, 기본 장소 지정 — 같은 유저 다른 place는 자동 false), `/api/places/{place_id}/cooldown`(PATCH, 에어컨 최소 가동시간 — **민주 작성**), `/api/places/geocode`, `/api/places/reverse-geocode` — 카카오 로컬 API. `places` 테이블에 `lat`/`lon`(nullable, `004_add_place_location.sql`)/`is_default`(not null default false, `005_add_place_default.sql`) 컬럼. **담당자 셋 다 코드 있는 파일**(핵심 CRUD=류은, 위치/기본장소/삭제=정현이 추가, cooldown=민주) | **류은**(+정현 일부) |
-| `routers/readings_router.py` | `/api/readings/*`, `/api/recommendation`, `/api/devices/control`(스텁, 로그만 남기고 실제 제어 없음) — 센서 기록 저장/조회, 추천 결과 조회. MQTT/dev_tools로 들어오는 센서 데이터도 결국 여기로 저장됨. jh 수정함 - `save_reading_for_user()`가 팬아웃 구조로 바뀜: 물리 센서는 사용자당 1개라는 제품 결정에 따라 실내값 1건이 들어오면 "아무 장소나 하나"가 아니라 **그 사용자의 모든 장소에 각각** (그 장소 좌표의 실외값 + 개별 추천) readings 행을 저장함. 특정 장소만 좌표 미설정/날씨 실패면 그 장소만 스킵하고 나머지는 저장, 전부 실패해야 에러 응답. 반환은 대표 1건(`is_default` 성공 행, 없으면 첫 성공 행)만 — 기존 "아무 장소나 하나만 쓰던" 버그는 해소됨(아래 6번도 갱신됨). `calculate_ac_run_time()`으로 에어컨 누적 가동시간을 추정해 `target_cooldown_minutes`와 비교 판단 | **민주**(+정현: 팬아웃) |
-| `recommendation_engine.py` | 실내외 온습도 + 날씨/미세먼지/바람 + 에어컨 가동 상태(`is_ac_on`/`ac_run_time_minutes`/`target_cooldown_minutes`)를 보고 판단하는 규칙 엔진(`determine_action`). 자동제어/쿨다운 로직 추가하며 전면 재작성됨 — THI 공식이 바뀌었고, 센서 이상값용 `ERROR` 액션이 새로 생겼고, **`savings.py` import/호출이 빠졌음**(아래 `savings.py` 행 참고) | **민주** |
-| `savings.py` | 판단된 행동(action)에 대해 절감 전력(kWh)·시간·비용(원)·멘트를 계산 (`estimate_savings`) — ⚠️ 지금 `recommendation_engine.py`가 이 함수를 아예 안 부르고 있어서(import도 없음) 실제 추천 응답에 절감량이 안 실림. 프론트 `SavingsSummary.jsx`도 아직 placeholder라 당장 화면이 깨지진 않지만, 절감량 기능을 만들려면 이 연동부터 복구해야 함(민주와 상의 필요) | **정현** |
+| `routers/readings_router.py` | `/api/readings/*`, `/api/recommendation`, `/api/devices/control`(device_connection_hub.py 경유 WebSocket으로 게이트웨이에 실제 명령 전달, 결과 대기까지 구현됨) — 센서 기록 저장/조회, 추천 결과 조회. MQTT/dev_tools로 들어오는 센서 데이터도 결국 여기로 저장됨. jh 수정함 - `save_reading_for_user()`가 팬아웃 구조로 바뀜: 물리 센서는 사용자당 1개라는 제품 결정에 따라 실내값 1건이 들어오면 "아무 장소나 하나"가 아니라 **그 사용자의 모든 장소에 각각** (그 장소 좌표의 실외값 + 개별 추천) readings 행을 저장함. 특정 장소만 좌표 미설정/날씨 실패면 그 장소만 스킵하고 나머지는 저장, 전부 실패해야 에러 응답. 반환은 대표 1건(`is_default` 성공 행, 없으면 첫 성공 행)만 — 기존 "아무 장소나 하나만 쓰던" 버그는 해소됨(아래 6번도 갱신됨). `calculate_ac_run_time()`으로 에어컨 누적 가동시간을 추정해 `target_cooldown_minutes`와 비교 판단 | **민주**(+정현: 팬아웃) |
+| `recommendation_engine.py` | 실내외 온습도 + 날씨/미세먼지/바람 + 에어컨 가동 상태(`is_ac_on`/`ac_run_time_minutes`/`target_cooldown_minutes`)를 보고 판단하는 규칙 엔진(`determine_action`). 자동제어/쿨다운 로직 추가하며 전면 재작성됨 — THI 공식이 바뀌었고, 센서 이상값용 `ERROR` 액션이 새로 생김. `savings.py`는 이 파일이 아니라 `readings_router.py`가 직접 호출함(아래 `savings.py` 행 참고) | **민주** |
+| `savings.py` | 판단된 행동(action)에 대해 절감 전력(kWh)·시간·비용(원)·멘트를 계산 (`estimate_savings`) — `readings_router.py`가 `recommendation_engine.py`의 결과(action)를 받아 직접 호출해서 `recommendation.savings`에 채워 넣음(실제 파이프라인에 연동돼 있음). 프론트 `SavingsSummary.jsx`도 `GET /api/savings/summary`로 실제 구현 완료 | **정현** |
 | `weather.py` | 외부 날씨 API 연동. `fetch_outdoor_weather(lat, lon)`이 기상청 초단기실황조회(getUltraSrtNcst, 기온/습도/풍속/강수형태)와 OpenWeatherMap Air Pollution API(미세먼지)를 합쳐서 반환(`precipitation_probability`는 둘 다 없어서 항상 `None`). 위경도→기상청 격자좌표 변환(`latlon_to_kma_grid`, 순수함수)/발표시각 역산(`_get_kma_base_datetime`) 등 헬퍼 포함. `KMA_SERVICE_KEY` 환경변수 필요(`.env.example` 참고, data.go.kr에서 이 API에 대한 활용신청 승인이 별도로 필요할 수 있음). `routers/weather_router.py`(표시 전용)와 `routers/readings_router.py`(추천 파이프라인) 양쪽에서 호출됨 | **정현** |
 | `routers/weather_router.py` | `GET /api/weather?lat=&lon=` — 로그인 필요, `weather.py`의 `fetch_outdoor_weather`를 그대로 감싸서 반환, 실패 시 502(콘솔에 원본 에러 로그 남김). `EnvironmentCard.jsx`가 실외 날씨 표시에 씀. jh 수정함 - `readings_router.py`는 팬아웃으로 사용자의 **모든 장소**에 대해 각자 좌표로 실외값을 채우므로(위 `readings_router.py` 행 참고), 이 라우터가 보여주는 "지금 선택된 위치" 카드와 그 장소의 추천 이유는 항상 같은 장소 기준 데이터를 씀 — 예전에 있던 위경도 불일치는 해소됨 | **정현** |
 | `routers/locations_router.py` | 위치(집/회사) 저장/조회/선택 API. `추가 예정` — 아직 엔드포인트가 없고 `main.py`에도 연결 안 됨. 류은의 `places_router.py`와의 통합 방향은 이미 실행됨(→ `places` 테이블에 `lat`/`lon` 컬럼 추가, 위치 검색은 `places_router.py`의 `geocode`/`reverse-geocode`로 구현됨) — 이 파일 자체는 여전히 빈 뼈대 상태 | **정현** |
@@ -218,7 +218,7 @@ jh 수정함 - `readings_router.py`의 `save_reading_for_user()`가 팬아웃 �
 | `features/location/LocationSearchPopover.jsx` | 위치 검색 UI. `embedded` prop으로 기본(팝오버, `EnvironmentCard`용)/embedded(마이페이지 모달용) 두 모드 지원 | **정현** |
 | `features/location/buildPlacePayload.js` | `registeredAircons` 슬롯 배열 → `POST /api/places` payload 매핑 함수(`LocationListPanel.jsx`에서 분리됨) | **정현** |
 | `features/location/EnvironmentCard.jsx` | 실시간 실내외 카드. 실내는 `sensorData`, 실외는 `GET /api/weather`로 실제 날씨 표시 | **정현** |
-| `features/location/SavingsSummary.jsx` | "오늘의 예상 절감" 자리 (지금은 placeholder — `savings.py` 연동 복구 후 진행 가능) | **정현** |
+| `features/location/SavingsSummary.jsx` | "오늘의 예상 절감"(일/주/월). `GET /api/savings/summary`로 실제 구현 완료 | **정현** |
 | `features/dashboard/RecommendationCard.jsx` | 현재 추천 + 이유 카드. `MAINTAIN`/`OPEN_WINDOW`/`USE_AIRCON`/`CLOSE_WINDOW`/`ENJOY`/`ERROR` 액션 아이콘·타입 매핑 | **민주** |
 | `features/dashboard/RecommendationPopup.jsx` | 자동제어(AUTO 모드) 추천 확인 팝업. ⚠️ `place_id: 1` 하드코딩, `http://127.0.0.1:8000` 직접 fetch — 둘 다 미해결 | **민주** |
 | `features/sensors/SensorReadings.jsx` | 센서 측정값 전체를 보여주는 화면 (지금은 뼈대) | **민주** |
@@ -243,7 +243,7 @@ dudeoji-web/src/features/mypage/
 
 ### 정현 (나)
 ```
-dudeoji-api/savings.py                    → ⚠️ recommendation_engine.py가 호출 안 해서 파이프라인에서 빠진 상태(재연결 필요)
+dudeoji-api/savings.py                    → readings_router.py가 직접 호출해서 파이프라인에 연동돼 있음(recommendation_engine.py를 거치지 않고 라우터 레이어에서 호출)
 dudeoji-api/weather.py                    → 기상청 초단기실황조회(getUltraSrtNcst)로 교체됨(기온/습도/풍속/강수형태) + OpenWeatherMap Air Pollution(미세먼지). KMA_SERVICE_KEY 필요
 dudeoji-api/routers/weather_router.py     → GET /api/weather, main.py에 연결됨(표시 전용)
 dudeoji-api/routers/locations_router.py   → 여전히 뼈대만 있고 main.py에 연결 안 됨(위치 통합은 places_router.py 쪽에서 진행됨)
@@ -260,8 +260,8 @@ supabase/005_add_place_default.sql, 006_backfill_default_place.sql → is_defaul
 
 ### 민주
 ```
-dudeoji-api/recommendation_engine.py      → 자동제어/쿨다운 로직 추가하며 전면 재작성됨(savings.py 연동 빠짐, 위 참고)
-dudeoji-api/routers/readings_router.py    → weather.py를 실제로 호출하도록 연결함, /api/devices/control 스텁 추가. jh 수정함 - 이후 "아무 장소나 하나만 쓰는" 버그를 팬아웃 구조로 해소(아래 6번 참고)
+dudeoji-api/recommendation_engine.py      → 자동제어/쿨다운 로직 추가하며 전면 재작성됨
+dudeoji-api/routers/readings_router.py    → weather.py를 실제로 호출하도록 연결함. jh 수정함 - 이후 "아무 장소나 하나만 쓰는" 버그를 팬아웃 구조로 해소(아래 6번 참고). /api/devices/control도 이후 device_connection_hub.py 경유 WebSocket 릴레이로 실제 구현됨(더 이상 스텁 아님)
 dudeoji-api/routers/places_router.py      → cooldown 엔드포인트(PATCH /places/{id}/cooldown)만 추가(류은 담당 파일 일부)
 dudeoji-api/mqtt_handler.py
 dudeoji-api/dev_tools/
@@ -304,7 +304,7 @@ dudeoji-web/src/features/badge/     (여유 있으면)
 
 **아직 안 됨**
 - ~~`readings_router.py`가 weather.py를 호출할 때 "아무 장소나"(사실상 첫 번째) 씁니다.~~ **(해결됨, jh 수정함)** `save_reading_for_user()`가 팬아웃 구조로 바뀌어서, 이제 사용자의 **모든 장소**에 대해 각자 좌표로 실외값을 조회하고 각자 추천을 계산해 저장합니다("아무 장소나 하나"가 아님). 반환은 대표 1건(`is_default` 성공 행, 없으면 첫 성공 행)만 돌려주지만, 각 장소의 `readings` 행 자체는 그 장소 기준 데이터로 정확하게 저장됩니다.
-- **`savings.py` 연동이 끊어져 있습니다.** `recommendation_engine.py`가 전면 재작성되면서 `estimate_savings` 호출이 빠졌습니다. `SavingsSummary.jsx`가 실제 절감량을 보여주려면 이 연동부터 복구해야 합니다(민주와 상의 필요).
+- ~~`savings.py` 연동이 끊어져 있습니다.~~ **(해결됨, jh 수정함)** `readings_router.py`가 `recommendation_engine.py`의 판단 결과(action)를 받아 `estimate_savings()`를 직접 호출해서 `recommendation.savings`에 채워 넣습니다. `SavingsSummary.jsx`도 `GET /api/savings/summary`로 실제 절감량을 보여줍니다. 이후 `TURN_OFF_AIRCON`(재실 없음/자연환기로 에어컨 끄기) 액션이 절감 계산에서 빠져있던 것도 추가로 고쳐짐(2026-07-29).
 - **`CooldownSettings.jsx`/`RecommendationPopup.jsx`(민주 작성)가 `placeId`/`place_id`를 `1`로 하드코딩하고, `http://127.0.0.1:8000`을 `request()` 대신 직접 fetch합니다.** 배포 환경에서 안 붙고, 여러 위치를 등록한 사용자에겐 항상 엉뚱한 장소를 대상으로 동작합니다.
 - 위치가 여러 개면 "각 위치마다 최근 센서 기록이 따로 있어야 하는가"도 정해야 합니다. 지금 `readings` 테이블은 장소 구분 없이 사용자 1명당 최신 기록 1줄만 조회하는 구조라, 위치별로 나누려면 `readings` 테이블에도 `place_id`(또는 `location_id`) 컬럼이 필요할 수 있습니다. 이건 민주(`readings_router.py`)와 같이 상의해야 하는 부분입니다.
 
@@ -315,7 +315,7 @@ dudeoji-web/src/features/badge/     (여유 있으면)
 - `App.jsx`의 `<RecommendationPopup>` 마운트와 `MyPage.jsx`의 `<AutoControlSettings>` 마운트를 각각 주석 처리(두 import도 함께 주석). **컴포넌트 파일 자체는 삭제하지 않음.**
 - 백엔드는 그대로 유지: `PATCH /places/{id}/cooldown`, `auto_control_enabled` 저장 로직, `save_reading_for_user()`의 장소별 `auto_control_enabled` 기반 `current_mode` 서버 결정 로직 전부 안 건드림. 토글이 숨겨지면 새 사용자는 AUTO가 될 일이 없고, 기존에 켜둔 계정만 AUTO로 남는다.
 - ⚠️ **기존에 `auto_control_enabled=true`로 켜둔 계정이 있으면, 팝업 없이 AUTO 추천만 도는 상태가 됨.** 확인 후 필요하면 Supabase에서 직접 실행: `UPDATE places SET auto_control_enabled = false WHERE auto_control_enabled = true;`
-- **재활성화 조건**: `/api/devices/control` 스텁(로그만 남기고 실제 제어 없음) → `mqtt_handler.py`의 `publish_device_command`로 실제 기기 제어가 연결된 뒤. 재활성화 시 `RecommendationPopup`의 포지셔닝(모달/포탈 방식)부터 고쳐야 함.
+- **재활성화 조건**: `/api/devices/control`은 이후 `device_connection_hub.py` 경유 WebSocket→게이트웨이→BLE로 실제 기기 제어까지 연결됨(더 이상 스텁 아님, `mqtt_handler.py` 경로가 아니라 이 경로로 구현됨). 남은 조건은 `RecommendationPopup`의 포지셔닝(모달/포탈 방식)만 고치면 됨.
 - `HeaderQuickControls.jsx`(대시보드 상단 수동 제어 버튼)는 그대로 유지 — 지금은 이게 유일한 제어 UI.
 
 

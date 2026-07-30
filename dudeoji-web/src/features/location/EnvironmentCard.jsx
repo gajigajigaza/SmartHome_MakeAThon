@@ -7,13 +7,22 @@
 // 보여주는 실외값이 서로 다른 시점의 값이라 어긋날 수 있었다. 같은
 // reading 하나에서 실내·실외를 함께 읽도록 통일했다(중복 요청도 제거).
 // GET /api/weather 자체는 다른 용도로 쓸 수 있어 백엔드에는 그대로 둔다.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { createMockReading } from "../sensors/readingsApi";
 import { isSenseNodeDisconnected } from "../sensors/deviceState";
 import { useSensorRealtimeContext } from "../sensors/SensorRealtimeContext";
 import { useLocationContext } from "./LocationContext";
 import LocationSearchPopover from "./LocationSearchPopover";
+import { getLatestOccupancy } from "./occupancyApi";
+
+// jh 수정함 - 재실감지(카메라) 최신 상태를 폴링하는 주기. 실시간 값이 아니라
+// occupancy_service.py의 heartbeat(30초)만큼만 바뀌는 값이라 짧은 폴링은
+// 불필요 — 20초면 충분하고, 이미 부하 이슈가 있는 백엔드에 부담을 덜 준다.
+const OCCUPANCY_POLL_INTERVAL_MS = 20000;
+// jh 수정함 - 이 시간보다 오래된 기록이면 "카메라가 지금 안 돌고 있다"로
+// 간주한다(occupancy_service.py는 아직 상시 서비스가 아니라 수동 실행 중).
+const OCCUPANCY_STALE_AFTER_MS = 3 * 60 * 1000;
 
 const WEATHER_EMOJI = {
   맑음: "☀️",
@@ -103,6 +112,60 @@ export default function EnvironmentCard({
   // 팝오버 열림 상태. 위치가 저장되면(hasLocation이 true가 됨) 다음 reading
   // 폴링/realtime 브로드캐스트가 그 장소의 실외값을 자연히 채워준다.
   const [isLocationPopoverOpen, setIsLocationPopoverOpen] = useState(false);
+
+  // jh 수정함 - 재실감지(카메라 → YOLO26/occupancy_service.py) 최신 상태.
+  // /ws/readings 실시간 브로드캐스트에는 안 태우고(occupancy_router.py 담당
+  // 자체가 별도 API라 실시간 배선까지는 안 함), 대시보드에서 가볍게 폴링만
+  // 한다. selectedLocation이 바뀌면 그 장소 기준으로 다시 조회한다.
+  const [occupancyStatus, setOccupancyStatus] = useState(null);
+
+  useEffect(() => {
+    const placeId = selectedLocation?.id;
+    if (!placeId) {
+      setOccupancyStatus(null);
+      return undefined;
+    }
+
+    let isCancelled = false;
+
+    async function refreshOccupancy() {
+      try {
+        const result = await getLatestOccupancy(placeId);
+        if (!isCancelled) {
+          setOccupancyStatus(result);
+        }
+      } catch {
+        if (!isCancelled) {
+          setOccupancyStatus(null);
+        }
+      }
+    }
+
+    refreshOccupancy();
+    const intervalId = window.setInterval(
+      refreshOccupancy,
+      OCCUPANCY_POLL_INTERVAL_MS,
+    );
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [selectedLocation?.id]);
+
+  const occupancyDetectedAt = occupancyStatus?.detected_at
+    ? new Date(occupancyStatus.detected_at)
+    : null;
+  const isOccupancyFresh =
+    occupancyDetectedAt != null &&
+    Date.now() - occupancyDetectedAt.getTime() < OCCUPANCY_STALE_AFTER_MS;
+  const occupancyStatusText = !occupancyDetectedAt
+    ? null
+    : isOccupancyFresh
+      ? occupancyStatus.person_detected
+        ? "재실감지: 있음 🧍"
+        : "재실감지: 없음"
+      : "재실감지: 카메라 연결 끊김 (오래된 기록)";
 
   // jh 수정함 - 개발/데모용 "테스트 모드" 토글. 서버에 저장하지 않는 로컬 state라
   // 새로고침하면 꺼진 상태로 돌아가도 무방하다(기본값 OFF).
@@ -335,6 +398,16 @@ export default function EnvironmentCard({
           {senseNodeDisconnected && (
             <p className="environment-sensor-stale" role="status">
               Sense 끊김 · 마지막 수신값
+            </p>
+          )}
+          {occupancyStatusText && (
+            <p
+              className={`environment-occupancy-status ${
+                isOccupancyFresh ? "" : "is-stale"
+              }`}
+              role="status"
+            >
+              {occupancyStatusText}
             </p>
           )}
         </div>

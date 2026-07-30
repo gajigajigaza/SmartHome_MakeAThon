@@ -90,6 +90,41 @@ def read_occupancy_pattern(
     return {"place_id": place_id, "models": result.data or []}
 
 
+@router.get("/occupancy/latest")
+def read_latest_occupancy(
+    place_id: int = Query(ge=1),
+    current_user: dict = Depends(get_current_user),
+):
+    """가장 최근 재실 감지 기록 조회 — 대시보드 실시간 표시용."""
+    get_place_for_user(current_user["id"], place_id)
+
+    result = execute_supabase_with_retry(
+        lambda: (
+            supabase.table(OCCUPANCY_LOGS_TABLE)
+            .select("person_detected, confidence, detected_at")
+            .eq("place_id", place_id)
+            .order("detected_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    )
+    if not result.data:
+        return {
+            "place_id": place_id,
+            "person_detected": None,
+            "confidence": None,
+            "detected_at": None,
+        }
+
+    row = result.data[0]
+    return {
+        "place_id": place_id,
+        "person_detected": row["person_detected"],
+        "confidence": row.get("confidence"),
+        "detected_at": row["detected_at"],
+    }
+
+
 @router.post("/dev/occupancy/train")
 def train_occupancy_now(
     place_id: int = Query(ge=1),

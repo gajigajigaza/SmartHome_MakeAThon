@@ -687,6 +687,9 @@ async def _save_reading_to_place(
         cumulative_kwh_this_month=cumulative_kwh_this_month,
         window_is_open=previous_window_is_open,
         ac_is_on=previous_ac_is_on,
+        # jh 수정함 - TURN_OFF_AIRCON 절감 인정용. 구간 시작 시점 상태가
+        # 아니라 지금 막 확인된 실제 에어컨 상태(actual_ac_state)를 넘긴다.
+        current_ac_is_on=actual_ac_state,
     )
     recommendation.savings = SavingsEstimate(**savings_result)
 
