@@ -3,7 +3,11 @@ import { useEffect, useState } from "react";
 
 import "./App.css";
 import "./DashboardOverrides.css";
-import { getLatestReading, getReadingHistory } from "./features/sensors/readingsApi";
+import {
+  getLatestReading,
+  getReadingHistory,
+  refreshRecommendation,
+} from "./features/sensors/readingsApi";
 import { getStoredToken } from "./api";
 
 import MyPage from "./features/mypage/MyPage";
@@ -355,9 +359,22 @@ function DashboardHome({
   // 리셋한다(아래 useEffect).
   const [hasStartedRecommendation, setHasStartedRecommendation] =
     useState(false);
+  // jh 추가 - 지금 화면에 "고정"돼 있는 추천이 언제부터 유지됐는지. "다시
+  // 추천받기"를 누를 때 이 시점부터 지금까지의 시간을 held_seconds로 백엔드에
+  // 남긴다(recommendationRefreshApi 참고).
+  const [recommendationShownAt, setRecommendationShownAt] = useState(null);
+  // jh 추가 - RecommendationCard에 넘기는 readingKey. 예전엔 60초 폴링이
+  // 새 reading을 받아올 때마다 바뀌어서 카운트다운이 제멋대로 재시작됐는데,
+  // 지금은 최초 로드/장소 전환/"다시 추천받기" 클릭 시에만 바뀐다 — 그 사이엔
+  // 센서값(sensorData)이 폴링으로 계속 갱신돼도 추천 카드는 그대로 유지된다.
+  const [pinnedReadingKey, setPinnedReadingKey] = useState(0);
 
-  // 백엔드 API로부터 선택된 장소의 최신 추천 데이터를 한 번 읽어오는 핵심 함수
-  async function loadLatestReading() {
+  // 백엔드 API로부터 선택된 장소의 최신 추천 데이터를 한 번 읽어오는 핵심 함수.
+  // pinRecommendation=true일 때만 RecommendationCard가 보는 추천/카운트다운
+  // 트리거(recommendation/rawRecommendation/pinnedReadingKey)를 갱신한다.
+  // 60초 폴링은 pinRecommendation=false로 호출해 sensorData(온습도 표시)만
+  // 조용히 새로고침한다.
+  async function loadLatestReading(pinRecommendation = true) {
     try {
       const latestBackendReading = await getLatestReading(selectedPlaceId);
       const latestReading = convertReading(latestBackendReading);
@@ -369,33 +386,70 @@ function DashboardHome({
         outdoorHumidity: latestReading.outdoorHumidity,
         weatherCondition: latestReading.weatherCondition,
       });
+      setUpdatedAt(latestReading.recordedAt);
+      setConnectionStatus("connected");
+
+      if (!pinRecommendation) {
+        return;
+      }
 
       if (latestBackendReading && latestBackendReading.recommendation) {
         setRawRecommendation(latestBackendReading.recommendation);
       }
-
       setRecommendation(
         convertRecommendation(latestBackendReading.recommendation),
       );
-      setUpdatedAt(latestReading.recordedAt);
-      setConnectionStatus("connected");
+      setRecommendationShownAt(new Date());
+      setPinnedReadingKey((previous) => previous + 1);
     } catch (error) {
       if (error.message.includes("저장된 센서 기록이 없습니다")) {
         setSensorData(null);
-        setRawRecommendation(null);
-        setRecommendation(convertRecommendation(null));
         setUpdatedAt(null);
         setConnectionStatus("connected");
+        if (pinRecommendation) {
+          setRawRecommendation(null);
+          setRecommendation(convertRecommendation(null));
+          setRecommendationShownAt(new Date());
+          setPinnedReadingKey((previous) => previous + 1);
+        }
         return;
       }
       setConnectionStatus("error");
     }
   }
 
+  // jh 추가 - "다시 추천받기" 버튼 클릭 시 App.jsx가 하는 일: 이전 추천을
+  // 얼마나 유지했는지/어떤 결과로 끝났는지 백엔드에 기록하고, 그 자리에서 바로
+  // 최신 추천을 받아와 화면에 고정한다.
+  async function handleRequestNewRecommendation({ previousAction, outcome }) {
+    const response = await refreshRecommendation(
+      selectedPlaceId,
+      previousAction,
+      outcome,
+      recommendationShownAt || new Date(),
+    );
+
+    const latestReading = convertReading(response);
+    setSensorData({
+      indoorTemperature: latestReading.indoorTemperature,
+      indoorHumidity: latestReading.indoorHumidity,
+      outdoorTemperature: latestReading.outdoorTemperature,
+      outdoorHumidity: latestReading.outdoorHumidity,
+      weatherCondition: latestReading.weatherCondition,
+    });
+    setUpdatedAt(latestReading.recordedAt);
+    setConnectionStatus("connected");
+    setRawRecommendation(response.recommendation);
+    setRecommendation(convertRecommendation(response.recommendation));
+    setRecommendationShownAt(new Date());
+    setPinnedReadingKey((previous) => previous + 1);
+  }
+
   // 💡 [개선 완료] 주기적 갱신 타이머 로직
   useEffect(() => {
-    // 최초 화면 로드 시, 그리고 선택된 장소가 바뀔 때마다 한 번 실행
-    loadLatestReading();
+    // 최초 화면 로드 시, 그리고 선택된 장소가 바뀔 때마다 한 번 실행 —
+    // 이때는 추천 카드도 그 장소의 최신 추천으로 고정한다.
+    loadLatestReading(true);
 
     // 팝업이 켜져 있는 동안에는 주기적 데이터 로드를 잠시 중단합니다.
     if (isPopupActive) {
@@ -403,10 +457,12 @@ function DashboardHome({
       return undefined;
     }
 
-    // 1분(60000ms)마다 백엔드에 새로운 날씨 정보가 있는지 요청하는 타이머 작동
+    // 1분(60000ms)마다 백엔드에 새로운 날씨 정보가 있는지 요청하는 타이머 작동.
+    // 여기서는 sensorData(온습도 표시)만 갱신하고, 추천 카드는 사용자가
+    // "다시 추천받기"를 누르기 전까지 그대로 유지한다.
     const updateInterval = setInterval(() => {
-      console.log("60초 도래: 백엔드로부터 최신 환경 추천 정보를 업데이트합니다.");
-      loadLatestReading();
+      console.log("60초 도래: 백엔드로부터 최신 센서값을 조용히 업데이트합니다.");
+      loadLatestReading(false);
     }, 60000);
 
     // 컴포넌트가 꺼지거나 상태가 바뀔 때 작동 중이던 타이머를 깨끗이 청소합니다.
@@ -470,7 +526,8 @@ function DashboardHome({
             hasStarted={hasStartedRecommendation}
             onStart={() => setHasStartedRecommendation(true)}
             placeId={selectedPlaceId}
-            readingKey={updatedAt ? updatedAt.getTime() : null}
+            readingKey={pinnedReadingKey}
+            onRequestNewRecommendation={handleRequestNewRecommendation}
           />
 
           <div className="flex-layout-column" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>

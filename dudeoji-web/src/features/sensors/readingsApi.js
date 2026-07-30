@@ -115,6 +115,30 @@ export async function getRecommendation(placeId = null, options = {}) {
   });
 }
 
+// "다시 추천받기" 버튼 전용. 이전 추천을 얼마나 유지했다가(shownAt 기준)
+// 어떤 결과로 끝났는지(previousOutcome)를 백엔드에 남기고, 그 자리에서 바로
+// 최신 추천을 다시 받아온다 — 60초 폴링과 달리 사용자가 직접 눌렀을 때만
+// 호출된다.
+export async function refreshRecommendation(
+  placeId,
+  previousAction,
+  previousOutcome,
+  shownAt,
+  options = {},
+) {
+  return request("/api/recommendation/refresh", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify({
+      place_id: placeId,
+      previous_action: previousAction,
+      previous_outcome: previousOutcome,
+      shown_at: shownAt.toISOString(),
+    }),
+    ...options,
+  });
+}
+
 export async function getSavingsSummary(period, placeId = null) {
   let endpoint = `/api/savings/summary?period=${period}`;
   endpoint = appendPlaceId(endpoint, placeId);

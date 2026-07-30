@@ -6,7 +6,12 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field, ValidationError
 from auth_utils import execute_supabase_with_retry, get_current_user
-from db import READINGS_TABLE, PLACES_TABLE, supabase
+from db import (
+    READINGS_TABLE,
+    PLACES_TABLE,
+    RECOMMENDATION_REFRESH_EVENTS_TABLE,
+    supabase,
+)
 from device_connection_hub import DeviceConnectionError, device_hub
 from occupancy_engine import resolve_occupancy_signal
 from recommendation_engine import LOGIC_THRESHOLDS, determine_action
@@ -1020,6 +1025,66 @@ def read_recommendation(
         get_place_for_user(current_user["id"], place_id)
     latest_reading = get_latest_reading(current_user["id"], place_id)
     return latest_reading.recommendation
+
+
+# jh 수정함 - 추천은 더 이상 60초 폴링만으로 화면에서 자동 갱신되지 않는다
+# (App.jsx/RecommendationCard.jsx 참고). 카운트다운 자동실행/거절 결과가 나온
+# 뒤 사용자가 "다시 추천받기"를 눌렀을 때만 이 엔드포인트를 호출한다.
+# recommendation_engine 쪽 로직(target_cooldown_minutes 등)은 그대로 두고,
+# 대신 "실제로 몇 초 유지했다가 어떤 상황에서 다시 받았는지"를 여기 남겨서
+# 나중에 그 임계값을 튜닝할 근거 데이터로 쓴다.
+class RecommendationRefreshRequest(BaseModel):
+    place_id: int = Field(ge=1)
+    previous_action: str
+    previous_outcome: Literal[
+        "AUTO_EXECUTED",
+        "REJECTED_MANUAL",
+        "NO_ACTION_NEEDED",
+        "AUTO_EXECUTION_FAILED",
+    ]
+    shown_at: datetime
+
+
+@router.post("/recommendation/refresh", response_model=SensorReadingResponse)
+def refresh_recommendation(
+    payload: RecommendationRefreshRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    get_place_for_user(current_user["id"], payload.place_id)
+    latest_reading = get_latest_reading(current_user["id"], payload.place_id)
+
+    shown_at = (
+        payload.shown_at
+        if payload.shown_at.tzinfo is not None
+        else payload.shown_at.replace(tzinfo=timezone.utc)
+    )
+    held_seconds = max(
+        0, int((datetime.now(timezone.utc) - shown_at).total_seconds())
+    )
+
+    event_row = {
+        "place_id": payload.place_id,
+        "user_id": current_user["id"],
+        "previous_action": payload.previous_action,
+        "previous_outcome": payload.previous_outcome,
+        "shown_at": shown_at.isoformat(),
+        "held_seconds": held_seconds,
+        "indoor_temperature": latest_reading.indoor_temperature,
+        "indoor_humidity": latest_reading.indoor_humidity,
+        "outdoor_temperature": latest_reading.outdoor_temperature,
+        "outdoor_humidity": latest_reading.outdoor_humidity,
+        "window_is_open": latest_reading.window_is_open,
+        "ac_is_on": latest_reading.recommendation.ac_is_on,
+    }
+    execute_supabase_with_retry(
+        lambda: (
+            supabase.table(RECOMMENDATION_REFRESH_EVENTS_TABLE)
+            .insert(event_row)
+            .execute()
+        )
+    )
+
+    return latest_reading
 
 
 @router.get("/savings/summary", response_model=SavingsSummaryResponse)
