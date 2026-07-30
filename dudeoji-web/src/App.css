@@ -280,6 +280,27 @@ body {
   min-width: 0;
 }
 
+/* jh 추가 - "다시 추천받기"가 생기면서 추천이 더 이상 폴링으로 조용히
+   갱신되지 않아, 화면에 얼마나 오래된 추천이 떠 있는지 작게 보여준다. */
+.recommendation-measured-at {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+
+  padding: 5px 10px;
+  margin-top: 2px;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+
+  background: var(--green-light);
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 /* jh 수정함 - 추천카드.png 시안의 "추천 시작" 버튼. 실제 추천 결과는 이미
    불러와져 있지만, 이 버튼을 눌러야 화면에 노출한다(App.jsx의 DashboardHome
    참고, hasStartedRecommendation). */

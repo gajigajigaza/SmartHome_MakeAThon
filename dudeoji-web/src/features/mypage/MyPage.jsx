@@ -17,6 +17,7 @@ import AirconSelectorModal from "../places/AirconSelectorModal";
 // jh 수정함 - 자동제어 UI, 하드웨어 제어 연동 후 활성화 예정(팀 결정,
 // 2026-07-26). 파일은 지우지 않음 — TEAM_STRUCTURE.md 참고.
 // import AutoControlSettings from "../places/AutoControlSettings";
+import BackgroundControlSettings from "../places/BackgroundControlSettings";
 // 류은 수정 0718 - 에어컨 이름 변경과 제품 변경 API를 분리해서 사용합니다.
 import {
   createPlaceWithAircons,
@@ -1076,6 +1077,27 @@ function MyPage({
                                 }}
                               />
                               */}
+
+                              <BackgroundControlSettings
+                                placeId={location.id}
+                                initialConditionEnabled={
+                                  matchedPlace?.background_condition_control_enabled ??
+                                  false
+                                }
+                                initialOccupancyEnabled={
+                                  matchedPlace?.background_occupancy_control_enabled ??
+                                  false
+                                }
+                                onSaved={(savedSettings) => {
+                                  setPlaces((previousPlaces) =>
+                                    previousPlaces.map((place) =>
+                                      String(place.id) === String(location.id)
+                                        ? { ...place, ...savedSettings }
+                                        : place,
+                                    ),
+                                  );
+                                }}
+                              />
                             </article>
                           ))}
                         </div>

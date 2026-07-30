@@ -1,0 +1,127 @@
+.background-control-settings {
+  padding: 13px;
+  border-top: 1px solid rgba(217, 230, 221, 0.95);
+  background: #fbfefc;
+}
+
+.background-control-heading strong {
+  display: block;
+  color: #21493d;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.background-control-heading p {
+  margin: 4px 0 0;
+  color: #6a7f76;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.background-control-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(217, 230, 221, 0.7);
+}
+
+.background-control-row-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #eef8f2;
+  font-size: 16px;
+}
+
+.background-control-row-copy {
+  min-width: 0;
+}
+
+.background-control-row-copy strong {
+  display: block;
+  color: #183b31;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.background-control-row-copy p {
+  margin: 3px 0 0;
+  color: #6a7f76;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.background-control-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 66px;
+  height: 30px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid #d7e2dc;
+  border-radius: 999px;
+  background: #eef2f0;
+  color: #60736a;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.background-control-switch > span {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(27, 60, 48, 0.15);
+}
+
+.background-control-switch.enabled {
+  border-color: #4eb981;
+  background: #18885f;
+  color: #ffffff;
+}
+
+.background-control-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.background-control-feedback,
+.background-control-error {
+  margin: 11px 0 0;
+  padding: 8px 11px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.background-control-feedback {
+  background: #dff5e7;
+  color: #137451;
+}
+
+.background-control-error {
+  background: #fff0ee;
+  color: #b43d32;
+}
+
+@media (max-width: 560px) {
+  .background-control-row {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .background-control-switch {
+    grid-column: 2;
+    justify-self: end;
+    margin-top: 8px;
+  }
+}
