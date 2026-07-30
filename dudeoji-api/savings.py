@@ -544,6 +544,7 @@ def get_savings_summary(
             "cost_won:recommendation->savings->>cost_won"
         ),
         fallback_select="recommendation",
+        expected_key="power_saved_kwh",
     )
 
     total_power_saved_kwh = 0.0
