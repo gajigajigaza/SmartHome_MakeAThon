@@ -165,7 +165,7 @@ export default function EnvironmentCard({
     : isOccupancyFresh
       ? occupancyStatus.person_detected
         ? "재실감지: 있음 🧍"
-        : "재실감지: 없음"
+        : null
       : "재실감지: 카메라 연결 끊김 (오래된 기록)";
 
   // jh 수정함 - 개발/데모용 "테스트 모드" 토글. 서버에 저장하지 않는 로컬 state라

@@ -6,7 +6,6 @@ import {
   getWeatherStatus,
 } from "./readingsApi";
 import LocationSwitcher from "../location/LocationSwitcher";
-import { getNodeConnectionStatus } from "./deviceState";
 import { useSensorRealtimeContext } from "./SensorRealtimeContext";
 import SharedAppSidebar from "../navigation/SharedAppSidebar";
 import { useLocationContext } from "../location/LocationContext";
@@ -27,23 +26,6 @@ import {
 import "./SensorReadings.css";
 
 const LIVE_REFRESH_SECONDS = 5;
-const SENSOR_NODE_STATUS_ITEMS = [
-  {
-    key: "sense_connected",
-    label: "Sense",
-    disconnectedLabel: "끊김",
-  },
-  {
-    key: "control_connected",
-    label: "Control",
-    disconnectedLabel: "끊김",
-  },
-  {
-    key: "ina_available",
-    label: "INA219",
-    disconnectedLabel: "미연결",
-  },
-];
 
 export default function SensorReadings({
   history = [],
@@ -61,11 +43,8 @@ export default function SensorReadings({
     loadError: locationLoadError,
   } = useLocationContext();
   const selectedPlaceId = selectedLocation?.id ?? null;
-  const {
-    latestReading: realtimeReading,
-    latestDeviceState: realtimeDeviceState,
-    realtimeIsLive,
-  } = useSensorRealtimeContext();
+  const { latestReading: realtimeReading, realtimeIsLive } =
+    useSensorRealtimeContext();
   const [readings, setReadings] = useState([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -491,14 +470,6 @@ export default function SensorReadings({
 
   const latest = readings.at(-1) || null;
   const outdoorLatest = latest?.outdoorDataValid ? latest : null;
-  const sensorNodeStatuses = SENSOR_NODE_STATUS_ITEMS.map((item) => ({
-    ...item,
-    status: getNodeConnectionStatus(
-      realtimeDeviceState,
-      item.key,
-      selectedPlaceId,
-    ),
-  }));
   const activeRange = RANGE_OPTIONS.find((option) => option.key === rangeKey);
   const displayedReadings = useMemo(() => {
     if (!activeRange?.milliseconds) {
@@ -625,28 +596,6 @@ export default function SensorReadings({
                 >
                   다시 시도
                 </button>
-              </section>
-            )}
-
-            {selectedLocation && (
-              <section
-                className="sensor-node-status-strip"
-                aria-label="ESP와 전력 센서 연결 상태"
-              >
-                {sensorNodeStatuses.map((item) => (
-                  <span
-                    className={`sensor-node-status is-${item.status}`}
-                    key={item.key}
-                  >
-                    <i aria-hidden="true" />
-                    <b>{item.label}</b>
-                    {item.status === "connected"
-                      ? "연결"
-                      : item.status === "disconnected"
-                        ? item.disconnectedLabel
-                        : "상태 미지원"}
-                  </span>
-                ))}
               </section>
             )}
 
