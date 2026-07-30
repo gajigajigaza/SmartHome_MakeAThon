@@ -24,7 +24,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { controlDevice } from "./devicesApi";
 import HeaderQuickControls from "./HeaderQuickControls";
-import SensorNodeStatusBadges from "./SensorNodeStatusBadges";
 
 export const initialRecommendation = {
   type: "maintain",
@@ -95,6 +94,26 @@ const POST_EXECUTION_DISPLAY = {
   },
 };
 
+// jh 수정함 - 수동 모드(사용자가 직접 버튼을 눌러 실행)에서는 위
+// POST_EXECUTION_DISPLAY의 "두더지가 추천대로 ~을 자동으로 했어요" 요약이
+// 사실과 다르다(자동 실행도 아니고, 추천과 다른 기기를 조작했을 수도 있다).
+// 제목/아이콘은 상태 설명이라 그대로 재사용하고, 요약만 이걸로 바꿔 끼운다.
+const MANUAL_EXECUTION_SUMMARY = {
+  TURN_ON_AIRCON: "직접 에어컨을 켰어요.",
+  OPEN_WINDOW: "직접 창문을 열었어요.",
+  CLOSE_WINDOW: "직접 창문을 닫았어요.",
+  TURN_OFF_AIRCON: "직접 에어컨을 껐어요.",
+};
+
+function buildManualOverride(deviceCommand) {
+  return POST_EXECUTION_DISPLAY[deviceCommand]
+    ? {
+        ...POST_EXECUTION_DISPLAY[deviceCommand],
+        summary: MANUAL_EXECUTION_SUMMARY[deviceCommand],
+      }
+    : null;
+}
+
 function convertActionToType(action) {
   if (action === "OPEN_WINDOW") return "window";
   if (action === "USE_AIRCON" || action === "TURN_ON_AC") return "aircon";
@@ -164,6 +183,11 @@ export default function RecommendationCard({
   // 60초 폴링으로 조용히 갱신되지 않고 "다시 추천받기"를 눌러야만 바뀌므로,
   // 화면에 얼마나 오래된 추천이 떠 있는지 작게라도 보여줘야 한다.
   measuredAt = null,
+  // jh 추가 - App.jsx 헤더에 항상 떠 있는 별도 HeaderQuickControls(수동 모드
+  // 밖에서도 상시 노출, 하드웨어 파이프라인 테스트용)에서 기기 제어가
+  // 성공했을 때 App.jsx가 넘겨주는 { action, key } 객체. key가 바뀔 때마다
+  // (같은 action이 연달아 와도) 새 실행으로 처리해서 카드 멘트를 갱신한다.
+  externalCommand = null,
 }) {
   const safeRecommendation = recommendation || initialRecommendation;
   // jh 수정함 - 추천 시작 전(대기 화면)이거나 추천이 없을 때는 강조 없음.
@@ -203,6 +227,7 @@ export default function RecommendationCard({
       : safeRecommendation;
 
   const handledReadingKeyRef = useRef(null);
+  const handledExternalCommandKeyRef = useRef(null);
   const intervalIdRef = useRef(null);
   const fireTimeoutIdRef = useRef(null);
   // jh 수정함 - StrictMode(개발 모드)는 setState 업데이터 함수를 순수성 검증을
@@ -308,6 +333,21 @@ export default function RecommendationCard({
     const timerId = window.setTimeout(() => setExecutionNote(""), 4200);
     return () => window.clearTimeout(timerId);
   }, [executionNote]);
+
+  // jh 추가 - 헤더에 상시 떠 있는 HeaderQuickControls(수동 모드 밖)에서 기기
+  // 제어가 성공하면, 이 카드가 지금 보여주는 멘트도 같이 갱신한다. 이 카드가
+  // 렌더하는 수동 모드용 HeaderQuickControls는 onCommandSuccess를 직접
+  // 처리하니 여긴 손대지 않는다 — 그쪽은 externalCommand를 거치지 않는다.
+  useEffect(() => {
+    if (
+      !externalCommand ||
+      externalCommand.key === handledExternalCommandKeyRef.current
+    ) {
+      return;
+    }
+    handledExternalCommandKeyRef.current = externalCommand.key;
+    setPostExecutionOverride(buildManualOverride(externalCommand.action));
+  }, [externalCommand]);
 
   function handleReject() {
     clearCountdownInterval();
@@ -428,7 +468,6 @@ export default function RecommendationCard({
             <p className="recommendation-manual-controls-label">
               직접 창문/에어컨을 조작해 주세요
             </p>
-            <SensorNodeStatusBadges />
           </div>
           <p
             className="recommendation-manual-feedback"
@@ -440,6 +479,9 @@ export default function RecommendationCard({
           <HeaderQuickControls
             recommendedAction={recommendedAction}
             onFeedbackChange={setManualDeviceFeedback}
+            onCommandSuccess={(deviceCommand) =>
+              setPostExecutionOverride(buildManualOverride(deviceCommand))
+            }
           />
         </div>
       )}

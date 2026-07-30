@@ -516,6 +516,28 @@
   object-fit: contain;
 }
 
+/* jh 수정함 - 아바타를 눌러 아이콘 패널을 여는 버튼으로도 쓰므로,
+   기본 버튼 테두리/배경을 지우고 .mypage-profile-avatar 모양은 그대로 둔다. */
+.mypage-profile-avatar-button {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* jh 수정함 - 예전엔 별도 전체화면(BadgePage)이었던 아이콘 선택을 마이페이지
+   안에 인라인으로 펼친다. 카드 그리드 두 칸을 다 차지하게 하고, 목록이 길어도
+   페이지 전체가 늘어나지 않도록 이 안에서만 스크롤되게 한다. */
+.mypage-badge-panel-scroll {
+  grid-column: 1 / -1;
+  max-height: 480px;
+  overflow-y: auto;
+  border: 1px solid rgba(215, 227, 219, 0.95);
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 28px rgba(36, 72, 48, 0.07);
+  padding: 24px;
+}
+
 .mypage-profile-info {
   min-width: 0;
 }

@@ -9,6 +9,7 @@
 // GET /api/weather 자체는 다른 용도로 쓸 수 있어 백엔드에는 그대로 둔다.
 import { useEffect, useState } from "react";
 
+import { HOME_PLACE_ID } from "../sensors/deviceState";
 import { createMockReading } from "../sensors/readingsApi";
 import { useSensorRealtimeContext } from "../sensors/SensorRealtimeContext";
 import { useLocationContext } from "./LocationContext";
@@ -92,6 +93,18 @@ export default function EnvironmentCard({
         weatherCondition: realtimeReading.weather_condition,
       }
     : sensorData;
+  // jh 수정함 - 실내 온습도 센서가 실제로 붙어 있는 곳은 "우리집"(place_id 54)
+  // 하나뿐이다. 다른 장소는 예전 테스트 기록이 남아 있을 수 있어도 화면에는
+  // "측정 대기 중"으로 보여준다(TemperatureValue/HumidityValue가 null을 이미
+  // 그렇게 처리한다). 실외값은 날씨 API 기반이라 그대로 둔다.
+  const isKnownHomePlace = String(selectedLocation?.id) === HOME_PLACE_ID;
+  const effectiveSensorData = isKnownHomePlace
+    ? activeSensorData
+    : {
+        ...activeSensorData,
+        indoorTemperature: null,
+        indoorHumidity: null,
+      };
   // jh 수정함 - "마지막 측정" 시각도 실제로 화면에 그리는 값과 같은 출처에서
   // 가져온다. 예전에는 온습도는 WebSocket(5초마다 갱신)에서 오는데 시각은
   // updatedAt prop(App.jsx의 60초 폴링에서만 갱신)에서 와서, 값은 최신인데
@@ -167,6 +180,12 @@ export default function EnvironmentCard({
         ? "재실감지: 있음 🧍"
         : null
       : "재실감지: 카메라 연결 끊김 (오래된 기록)";
+  // jh 수정함 - 실내 카드 아이콘을 재실감지 결과에 맞춰 바꾼다. 센서 미연결/
+  // 오래된 기록 등 판단 불가한 경우는 모두 "감지됨" 아이콘으로 둔다(사용자 결정).
+  const indoorPresenceEmoji =
+    isOccupancyFresh && occupancyStatus.person_detected === false
+      ? "🙅‍♂️"
+      : "🙋‍♂️";
 
   // jh 수정함 - 개발/데모용 "테스트 모드" 토글. 서버에 저장하지 않는 로컬 state라
   // 새로고침하면 꺼진 상태로 돌아가도 무방하다(기본값 OFF).
@@ -387,14 +406,14 @@ export default function EnvironmentCard({
         <div className="environment-item indoor">
           <div className="environment-title">
             <span>실내</span>
-            <span className="environment-emoji">🏠</span>
+            <span className="environment-emoji">{indoorPresenceEmoji}</span>
           </div>
 
           <strong>
-            <TemperatureValue value={activeSensorData?.indoorTemperature} />
+            <TemperatureValue value={effectiveSensorData?.indoorTemperature} />
           </strong>
           <p>
-            <HumidityValue value={activeSensorData?.indoorHumidity} />
+            <HumidityValue value={effectiveSensorData?.indoorHumidity} />
           </p>
           {occupancyStatusText && (
             <p

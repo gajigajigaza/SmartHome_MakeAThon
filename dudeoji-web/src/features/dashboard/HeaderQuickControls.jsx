@@ -8,7 +8,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useLocationContext } from "../location/LocationContext";
-import { areDeviceControlsDisabled } from "../sensors/deviceState";
+import {
+  areDeviceControlsDisabled,
+  HOME_PLACE_ID,
+} from "../sensors/deviceState";
 import { getLatestReading } from "../sensors/readingsApi";
 import { useSensorRealtimeContext } from "../sensors/SensorRealtimeContext";
 import { controlDevice } from "./devicesApi";
@@ -75,6 +78,7 @@ function getStatusText({
 export default function HeaderQuickControls({
   recommendedAction = null,
   onFeedbackChange,
+  onCommandSuccess,
 }) {
   const { selectedLocation } = useLocationContext();
   const selectedPlaceId = selectedLocation?.id ?? null;
@@ -221,6 +225,9 @@ export default function HeaderQuickControls({
             ? "기기 응답 확인"
             : `기기 처리 실패: ${response.detail || "원인 미확인"}`,
         );
+        if (response.success === true) {
+          onCommandSuccess?.(action);
+        }
       } else if (response?.result_received === false) {
         if (response.detail === "device_disconnected_before_result") {
           setFeedback("명령 전송 후 게이트웨이 연결 끊김");
@@ -249,11 +256,21 @@ export default function HeaderQuickControls({
     }
   }
 
+  const isKnownHomePlace = String(selectedPlaceId) === HOME_PLACE_ID;
+  const effectiveDeviceState = isKnownHomePlace
+    ? deviceState
+    : {
+        windowAvailable: false,
+        windowIsOpen: null,
+        airconAvailable: false,
+        airconIsOn: null,
+      };
+
   const windowStatusText = getStatusText({
     isLoading,
     hasError: Boolean(statusError),
-    isAvailable: deviceState.windowAvailable,
-    isOn: deviceState.windowIsOpen,
+    isAvailable: effectiveDeviceState.windowAvailable,
+    isOn: effectiveDeviceState.windowIsOpen,
     onText: "창문 열림",
     offText: "창문 닫힘",
   });
@@ -261,39 +278,41 @@ export default function HeaderQuickControls({
   const airconStatusText = getStatusText({
     isLoading,
     hasError: Boolean(statusError),
-    isAvailable: deviceState.airconAvailable,
-    isOn: deviceState.airconIsOn,
+    isAvailable: effectiveDeviceState.airconAvailable,
+    isOn: effectiveDeviceState.airconIsOn,
     onText: "에어컨 켜짐",
     offText: "에어컨 꺼짐",
   });
 
   const windowAction =
-    deviceState.windowIsOpen === true ? "CLOSE_WINDOW" : "OPEN_WINDOW";
+    effectiveDeviceState.windowIsOpen === true ? "CLOSE_WINDOW" : "OPEN_WINDOW";
 
   const airconAction =
-    deviceState.airconIsOn === true
+    effectiveDeviceState.airconIsOn === true
       ? "TURN_OFF_AIRCON"
       : "TURN_ON_AIRCON";
 
   const windowButtonText =
     pendingDevice === "window"
       ? "전송 중…"
-      : deviceState.windowIsOpen === true
+      : effectiveDeviceState.windowIsOpen === true
         ? "창문 닫기"
         : "창문 열기";
 
   const airconButtonText =
     pendingDevice === "aircon"
       ? "전송 중…"
-      : deviceState.airconIsOn === true
+      : effectiveDeviceState.airconIsOn === true
         ? "에어컨 끄기"
         : "에어컨 틀기";
 
-  const controlsDisabled = areDeviceControlsDisabled({
-    selectedPlaceId,
-    pendingDevice,
-    state: realtimeDeviceState,
-  });
+  const controlsDisabled =
+    !isKnownHomePlace ||
+    areDeviceControlsDisabled({
+      selectedPlaceId,
+      pendingDevice,
+      state: realtimeDeviceState,
+    });
 
   // jh 수정함 - 버튼이 지금 제안하는 동작(windowAction/airconAction)이
   // 추천의 action과 같을 때만 강조한다. 창문은 OPEN_WINDOW/CLOSE_WINDOW를

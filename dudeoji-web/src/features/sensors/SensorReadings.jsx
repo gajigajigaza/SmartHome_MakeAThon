@@ -33,7 +33,6 @@ export default function SensorReadings({
   renderProfileBadge,
   onBack,
   onOpenMyPage,
-  onOpenBadgePage,
   onStartTutorial,
   onLogout,
 }) {
@@ -508,7 +507,6 @@ export default function SensorReadings({
           onOpenDashboard={onBack}
           onOpenMyPage={onOpenMyPage}
           onOpenSensorReadings={() => {}}
-          onOpenBadgePage={onOpenBadgePage}
           onStartTutorial={onStartTutorial}
           onLogout={onLogout}
         />
@@ -535,7 +533,10 @@ export default function SensorReadings({
               </div>
             </div>
 
-            <div className="sensor-page-controls">
+            {/* jh 수정함 - 데모용으로 상단 컨트롤(장소 선택/마지막 측정/
+                실시간 확인/새로고침)을 화면에서만 숨긴다. 기능 자체는
+                그대로 둬서 나중에 다시 보이게 하기 쉽게 한다. */}
+            <div className="sensor-page-controls" style={{ display: "none" }}>
               <div className="sensor-location-control">
                 <span>측정 장소</span>
                 <LocationSwitcher />
@@ -641,6 +642,7 @@ export default function SensorReadings({
                   latest={latest}
                   outdoorLatest={outdoorLatest}
                   logicThresholds={logicThresholds}
+                  selectedPlaceId={selectedPlaceId}
                 />
 
                 <SensorHistorySection

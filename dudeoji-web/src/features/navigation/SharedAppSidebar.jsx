@@ -22,7 +22,6 @@ export default function SharedAppSidebar({
   onOpenDashboard,
   onOpenMyPage,
   onOpenSensorReadings,
-  onOpenBadgePage,
   onStartTutorial,
   onLogout,
   className = "",
@@ -60,12 +59,6 @@ export default function SharedAppSidebar({
           label="센서 측정값"
           active={activePage === "sensors"}
           onClick={activePage === "sensors" ? undefined : onOpenSensorReadings}
-        />
-        <SidebarButton
-          icon="🏅"
-          label="프로필"
-          active={activePage === "badges"}
-          onClick={activePage === "badges" ? undefined : onOpenBadgePage}
         />
         <SidebarButton
           icon="📖"
