@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <cstring>
 
 #include <esp_camera.h>
 
@@ -21,10 +22,12 @@
 // ESP-SENSE: XIAO ESP32S3 Sense 카메라 + BME280
 //
 // 데이터 경로:
-//   카메라 준비 상태·BME280 -> BLE Notification -> Raspberry Pi 게이트웨이
+//   BME280 -> JSON BLE Notification -> Raspberry Pi 게이트웨이
+//   카메라 JPEG 프레임 -> 청크 분할 BLE Notification -> 게이트웨이가
+//     재조립 후 YOLO26 추론 -> POST /api/occupancy/logs
 //
-// 카메라 프레임은 BLE로 보내지 않습니다. 사람 감지 모델을 붙이기 전까지
-// person_detected는 JSON null로 전송합니다.
+// 사람 감지는 이 보드가 아니라 게이트웨이(Pi)에서 수행하므로, 환경 JSON의
+// person_detected는 여전히 null로 전송합니다(별개 파이프라인).
 // ---------------------------------------------------------------------------
 
 namespace DudeojiSense {
@@ -37,6 +40,8 @@ constexpr char SERVICE_UUID[] =
     "7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e";
 constexpr char SENSOR_CHARACTERISTIC_UUID[] =
     "7d2ea28b-f7bd-485a-bd9d-92ad6ecfe93e";
+constexpr char CAMERA_CHARACTERISTIC_UUID[] =
+    "7d2ea28e-f7bd-485a-bd9d-92ad6ecfe93e";
 
 // 외부 BME280: XIAO D4(GPIO5) / D5(GPIO6)
 constexpr uint8_t BME_SDA_PIN = D4;
@@ -64,12 +69,28 @@ constexpr int CAMERA_PCLK_PIN = 13;
 constexpr unsigned long PUBLISH_INTERVAL_MS = 5000;
 constexpr unsigned long BLE_READVERTISE_DELAY_MS = 500;
 
+// 카메라는 환경 텔레메트리보다 훨씬 느리게 보냅니다 — 한 프레임을 여러
+// BLE notify로 쪼개 보내는 데 시간이 걸리고, 재실감지는 초 단위 실시간성이
+// 필요하지 않습니다.
+constexpr unsigned long CAMERA_PUBLISH_INTERVAL_MS = 10000;
+
+// BLE MTU 247 협상 시 ATT 페이로드 한도는 244B(MTU-3). 4B 헤더를 뺀
+// 나머지를 JPEG 페이로드로 씁니다. notify()는 이 크기를 넘는 값을 자동
+// 분할하지 않으므로 애플리케이션 레벨에서 직접 쪼갭니다.
+constexpr size_t CAMERA_CHUNK_HEADER_SIZE = 4;
+constexpr size_t CAMERA_CHUNK_PAYLOAD_SIZE = 240;
+
+// 매 notify 사이에 짧게 대기해 Bluedroid의 알림 큐가 넘치는 것을 막습니다
+// (프레임 하나가 수십 개의 청크로 쪼개질 수 있어 연속 notify가 몰립니다).
+constexpr unsigned long CAMERA_CHUNK_DELAY_MS = 10;
+
 }  // namespace DudeojiSense
 
 Adafruit_BME280 bme;
 
 BLEServer* bleServer = nullptr;
 BLECharacteristic* environmentCharacteristic = nullptr;
+BLECharacteristic* cameraCharacteristic = nullptr;
 
 volatile bool bleConnected = false;
 bool wasBleConnected = false;
@@ -78,7 +99,9 @@ bool cameraReady = false;
 volatile bool forcePublish = true;
 
 unsigned long lastPublishAt = 0;
+unsigned long lastCameraPublishAt = 0;
 unsigned long disconnectedAt = 0;
+uint8_t cameraFrameId = 0;
 
 bool initializeBme280() {
   Wire.begin(
@@ -197,6 +220,62 @@ void publishEnvironment() {
   forcePublish = false;
 }
 
+void publishCameraFrame() {
+  if (!bleConnected || cameraCharacteristic == nullptr || !cameraReady) {
+    return;
+  }
+
+  camera_fb_t* frame = esp_camera_fb_get();
+  if (frame == nullptr) {
+    Serial.println("[CAMERA] 프레임 획득 실패, 이번 주기 건너뜀");
+    return;
+  }
+
+  const uint8_t frameId = cameraFrameId++;
+  const size_t totalLen = frame->len;
+  uint8_t packet[
+      DudeojiSense::CAMERA_CHUNK_HEADER_SIZE +
+      DudeojiSense::CAMERA_CHUNK_PAYLOAD_SIZE];
+
+  size_t offset = 0;
+  uint16_t chunkIndex = 0;
+  while (offset < totalLen) {
+    const size_t remaining = totalLen - offset;
+    const size_t chunkPayloadLen =
+        remaining < DudeojiSense::CAMERA_CHUNK_PAYLOAD_SIZE
+            ? remaining
+            : DudeojiSense::CAMERA_CHUNK_PAYLOAD_SIZE;
+    const bool isLast = (offset + chunkPayloadLen) >= totalLen;
+
+    packet[0] = frameId;
+    packet[1] = static_cast<uint8_t>((chunkIndex >> 8) & 0xFF);
+    packet[2] = static_cast<uint8_t>(chunkIndex & 0xFF);
+    packet[3] = isLast ? 1 : 0;
+    memcpy(
+        packet + DudeojiSense::CAMERA_CHUNK_HEADER_SIZE,
+        frame->buf + offset,
+        chunkPayloadLen);
+
+    cameraCharacteristic->setValue(
+        packet,
+        DudeojiSense::CAMERA_CHUNK_HEADER_SIZE + chunkPayloadLen);
+    cameraCharacteristic->notify();
+
+    offset += chunkPayloadLen;
+    chunkIndex += 1;
+    delay(DudeojiSense::CAMERA_CHUNK_DELAY_MS);
+  }
+
+  Serial.printf(
+      "[BLE TX] 카메라 프레임 전송 완료: frame_id=%u bytes=%u chunks=%u\n",
+      frameId,
+      static_cast<unsigned>(totalLen),
+      static_cast<unsigned>(chunkIndex));
+
+  esp_camera_fb_return(frame);
+  lastCameraPublishAt = millis();
+}
+
 class SenseServerCallbacks : public BLEServerCallbacks {
  public:
   void onConnect(BLEServer* server) override {
@@ -227,6 +306,11 @@ void initializeBle() {
       BLECharacteristic::PROPERTY_READ |
           BLECharacteristic::PROPERTY_NOTIFY);
   environmentCharacteristic->addDescriptor(new BLE2902());
+
+  cameraCharacteristic = service->createCharacteristic(
+      DudeojiSense::CAMERA_CHARACTERISTIC_UUID,
+      BLECharacteristic::PROPERTY_NOTIFY);
+  cameraCharacteristic->addDescriptor(new BLE2902());
 
   service->start();
 
@@ -262,6 +346,13 @@ void loop() {
        millis() - lastPublishAt >=
            DudeojiSense::PUBLISH_INTERVAL_MS)) {
     publishEnvironment();
+  }
+
+  if (
+      bleConnected &&
+      millis() - lastCameraPublishAt >=
+          DudeojiSense::CAMERA_PUBLISH_INTERVAL_MS) {
+    publishCameraFrame();
   }
 
   if (
