@@ -8,3 +8,28 @@ export async function getLatestOccupancy(placeId) {
     auth: true,
   });
 }
+
+// 재실 패턴 예측(도착/퇴근 전 사전조치) API — occupancy_router.py의
+// /api/occupancy/prediction* 엔드포인트에 대응.
+export async function getOccupancyPrediction(placeId, options = {}) {
+  const endpoint = `/api/occupancy/prediction?place_id=${encodeURIComponent(placeId)}`;
+  return request(endpoint, { auth: true, ...options });
+}
+
+export async function respondOccupancyPrediction(
+  placeId,
+  transitionKey,
+  accept,
+  options = {},
+) {
+  return request("/api/occupancy/prediction/respond", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify({
+      place_id: placeId,
+      transition_key: transitionKey,
+      accept,
+    }),
+    ...options,
+  });
+}

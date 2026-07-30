@@ -7,17 +7,37 @@
 직접 구현한 경사하강법이며 numpy/scikit-learn 등 외부 ML 의존성이 없다.
 """
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from postgrest.exceptions import APIError
+
 from auth_utils import execute_supabase_with_retry
-from db import OCCUPANCY_LOGS_TABLE, OCCUPANCY_MODELS_TABLE, supabase
+from db import (
+    OCCUPANCY_LOGS_TABLE,
+    OCCUPANCY_MODELS_TABLE,
+    OCCUPANCY_PREDICTIONS_TABLE,
+    supabase,
+)
+
+# Postgres unique_violation. occupancy_predictions(place_id, transition_key)에
+# UNIQUE 제약이 있어서, 같은 place를 여러 탭에서 동시에 폴링하다가 같은
+# transition_key가 "처음" 생성되는 그 순간에 두 요청이 모두 "아직 없다"고
+# 보고 INSERT를 시도하면 하나는 이 코드로 실패한다(get_prediction_state 참고).
+_UNIQUE_VIOLATION_CODE = "23505"
 
 KST = ZoneInfo("Asia/Seoul")
 
 LIVE_FRESHNESS_MINUTES = 5
 EMPTY_THRESHOLD = 0.15
+# "곧 재실 예상"으로 볼 확률 하한. EMPTY_THRESHOLD(0.15)와 비대칭인 이유는
+# "없다"는 낮은 확률에서 바로 확신해도 되지만(에어컨 꺼도 그만), "온다"는
+# 예열/예냉을 미리 실행하는 것이라 확신이 더 필요해서 기준을 보수적으로 높였다.
+ARRIVAL_THRESHOLD = 0.5
+# 예측 전환 시점 몇 분 전부터 팝업을 띄울지. resolve_occupancy_signal의
+# 실측/패턴 판단 자체와는 무관한, 순수 UX 타이밍 값이다.
+PREDICTION_LOOKAHEAD_MINUTES = 10
 MIN_SAMPLES_PER_DAY_TYPE = 20
 MIN_HISTORY_DAYS = 14
 
@@ -275,3 +295,275 @@ def resolve_occupancy_signal(place_id: int) -> Optional[dict]:
         return {"present": False, "source": "PATTERN"}
 
     return None
+
+
+def _hour_probability(hour_weights: dict, hour: int) -> float:
+    z = hour_weights.get(str(hour), 0.0) + hour_weights.get("intercept", 0.0)
+    return _sigmoid(z)
+
+
+def predict_upcoming_transition(
+    place_id: int, lookahead_minutes: int = PREDICTION_LOOKAHEAD_MINUTES
+) -> Optional[dict]:
+    """학습된 시간대별 패턴으로 "곧(lookahead_minutes 이내) 재실 상태가 바뀔지"를 본다.
+
+    resolve_occupancy_signal()이 "지금 재실 여부"만 답하는 것과 달리, 이 함수는
+    다음 정시(예: 지금 7:52면 8:00)로 넘어가면서 확률이 낮음→높음(ARRIVAL) 또는
+    높음→낮음(DEPARTURE)으로 넘어가는 시점을 미리 알려준다. 트리거 판단만 하고
+    실제 켤지/끌지(에어컨이냐 창문이냐)는 여기서 정하지 않는다 — 그건 호출부가
+    지금 실측 센서값으로 recommendation_engine.determine_action()을 그대로
+    돌려서 정한다(occupancy_engine은 "언제"만 안다, "무엇을"은 모른다).
+
+    lookahead_minutes 창 안에 있을 때만 값을 반환하고, 그 밖에는 매번 None —
+    같은 전환에 대해 몇 시부터 팝업을 띄울지는 이 값 하나로 조절된다.
+    """
+    now_kst = datetime.now(KST)
+    minutes_to_next_hour = 60 - now_kst.minute
+    if minutes_to_next_hour > lookahead_minutes:
+        return None
+
+    day_type = _day_type_for(now_kst)
+    model_result = execute_supabase_with_retry(
+        lambda: (
+            supabase.table(OCCUPANCY_MODELS_TABLE)
+            .select("hour_weights")
+            .eq("place_id", place_id)
+            .eq("day_type", day_type)
+            .limit(1)
+            .execute()
+        )
+    )
+    if not model_result.data:
+        return None
+
+    hour_weights = model_result.data[0]["hour_weights"]
+    current_hour = now_kst.hour
+    next_hour = (current_hour + 1) % 24
+    current_prob = _hour_probability(hour_weights, current_hour)
+    next_prob = _hour_probability(hour_weights, next_hour)
+
+    if current_prob <= EMPTY_THRESHOLD and next_prob >= ARRIVAL_THRESHOLD:
+        direction = "ARRIVAL"
+    elif current_prob >= ARRIVAL_THRESHOLD and next_prob <= EMPTY_THRESHOLD:
+        direction = "DEPARTURE"
+    else:
+        return None
+
+    transition_at_kst = (now_kst + timedelta(minutes=minutes_to_next_hour)).replace(
+        minute=0, second=0, microsecond=0
+    )
+
+    # 라이브 신호가 이미 예측이 말하려는 미래 상태와 같으면(예: 이미 사람이
+    # 와 있는데 "곧 올 거예요" 라고 하는 상황) 팝업을 띄우지 않는다 — 그 경우는
+    # resolve_occupancy_signal()의 실측 기반 반응 로직이 이미 처리하고 있어서,
+    # 예측 팝업까지 겹치면 같은 상황에 안내가 두 번 나가게 된다.
+    latest_result = execute_supabase_with_retry(
+        lambda: (
+            supabase.table(OCCUPANCY_LOGS_TABLE)
+            .select("person_detected, detected_at")
+            .eq("place_id", place_id)
+            .order("detected_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    )
+    if latest_result.data:
+        latest = latest_result.data[0]
+        detected_at = _to_kst(latest["detected_at"])
+        age_minutes = (
+            datetime.now(timezone.utc) - detected_at.astimezone(timezone.utc)
+        ).total_seconds() / 60
+        if age_minutes <= LIVE_FRESHNESS_MINUTES:
+            live_present = bool(latest["person_detected"])
+            predicted_present = direction == "ARRIVAL"
+            if live_present == predicted_present:
+                return None
+
+    transition_key = (
+        f"{transition_at_kst.date().isoformat()}_{transition_at_kst.hour:02d}_{direction}"
+    )
+
+    return {
+        "direction": direction,
+        "transition_key": transition_key,
+        "transition_at": transition_at_kst.astimezone(timezone.utc),
+        "eta_minutes": minutes_to_next_hour,
+    }
+
+
+_ACTIONABLE_PREDICTION_ACTIONS = ("USE_AIRCON", "OPEN_WINDOW", "TURN_OFF_AIRCON")
+
+
+def get_prediction_state(place_id: int, compute_preview) -> Optional[dict]:
+    """place의 현재 예측 팝업/오버라이드 상태를 조회, 없으면 새로 만든다.
+
+    compute_preview(direction, eta_minutes) -> {"action","title","summary","reason"} 는
+    호출부(occupancy_router)가 넘겨주는 콜백이다. 이 모듈은 "recommendation_engine
+    으로 무엇을 판단해야 하는지"를 몰라도 되게 하기 위해 의도적으로 주입받는다
+    (occupancy_engine이 readings_router/recommendation_engine을 직접 import하지
+    않도록 하기 위함 — 순환 참조 방지).
+    """
+    now = datetime.now(timezone.utc)
+
+    active_result = execute_supabase_with_retry(
+        lambda: (
+            supabase.table(OCCUPANCY_PREDICTIONS_TABLE)
+            .select("*")
+            .eq("place_id", place_id)
+            .eq("status", "ACCEPTED")
+            .order("transition_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    )
+    if active_result.data:
+        row = active_result.data[0]
+        override_until = datetime.fromisoformat(
+            str(row["override_until"]).replace("Z", "+00:00")
+        )
+        if override_until > now:
+            remaining_minutes = max(0, int((override_until - now).total_seconds() / 60))
+            return {
+                "status": "OVERRIDE_ACTIVE",
+                "direction": row["direction"],
+                "remaining_minutes": remaining_minutes,
+                "action": row["action"],
+                "title": row["title"],
+                "summary": row["summary"],
+                "reason": row["reason"],
+            }
+
+    transition = predict_upcoming_transition(place_id)
+    if transition is None:
+        return None
+
+    def build_pending_confirm(row: dict) -> Optional[dict]:
+        """이미 조회해둔 occupancy_predictions 행을 PENDING_CONFIRM 응답으로
+        변환한다(PENDING이 아니면 None). DB를 다시 조회하지 않는다 — 호출부가
+        이미 갖고 있는 row를 그대로 넘긴다.
+        """
+        if row["status"] != "PENDING":
+            return None
+        return {
+            "status": "PENDING_CONFIRM",
+            "transition_key": row["transition_key"],
+            "direction": row["direction"],
+            "eta_minutes": transition["eta_minutes"],
+            "action": row["action"],
+            "title": row["title"],
+            "summary": row["summary"],
+            "reason": row["reason"],
+        }
+
+    existing_result = execute_supabase_with_retry(
+        lambda: (
+            supabase.table(OCCUPANCY_PREDICTIONS_TABLE)
+            .select("*")
+            .eq("place_id", place_id)
+            .eq("transition_key", transition["transition_key"])
+            .limit(1)
+            .execute()
+        )
+    )
+    if existing_result.data:
+        return build_pending_confirm(existing_result.data[0])
+
+    preview = compute_preview(transition["direction"], transition["eta_minutes"])
+    row_status = "PENDING" if preview["action"] in _ACTIONABLE_PREDICTION_ACTIONS else "EXPIRED"
+
+    try:
+        execute_supabase_with_retry(
+            lambda: (
+                supabase.table(OCCUPANCY_PREDICTIONS_TABLE)
+                .insert(
+                    {
+                        "place_id": place_id,
+                        "transition_key": transition["transition_key"],
+                        "direction": transition["direction"],
+                        "transition_at": transition["transition_at"].isoformat(),
+                        "action": preview["action"],
+                        "title": preview["title"],
+                        "summary": preview["summary"],
+                        "reason": preview["reason"],
+                        "status": row_status,
+                    }
+                )
+                .execute()
+            )
+        )
+    except APIError as error:
+        if error.code != _UNIQUE_VIOLATION_CODE:
+            raise
+        # 같은 place를 다른 탭/요청이 거의 동시에 폴링해서 이 transition_key를
+        # 먼저 만들었다 — 내가 진 것뿐이니 그 행을 다시 조회해서(이번엔 반드시
+        # 존재함) 그대로 신뢰하고 반환한다(여기서 500을 내는 대신, 어차피 둘 다
+        # 같은 preview로 계산했을 상황이라 결과는 동일하다).
+        refetch_result = execute_supabase_with_retry(
+            lambda: (
+                supabase.table(OCCUPANCY_PREDICTIONS_TABLE)
+                .select("*")
+                .eq("place_id", place_id)
+                .eq("transition_key", transition["transition_key"])
+                .limit(1)
+                .execute()
+            )
+        )
+        return build_pending_confirm(refetch_result.data[0])
+
+    if row_status == "EXPIRED":
+        return None
+
+    return {
+        "status": "PENDING_CONFIRM",
+        "transition_key": transition["transition_key"],
+        "direction": transition["direction"],
+        "eta_minutes": transition["eta_minutes"],
+        "action": preview["action"],
+        "title": preview["title"],
+        "summary": preview["summary"],
+        "reason": preview["reason"],
+    }
+
+
+def respond_to_prediction(place_id: int, transition_key: str, accept: bool) -> dict:
+    """PENDING 상태의 예측 이벤트에 사용자 응답(수락/거절)을 기록한다.
+
+    수락 시 override_until을 transition_at(예측된 전환 시각)으로 맞춘다 —
+    그 시각이 지나면 실측(LIVE) 신호가 자연스럽게 넘겨받으므로 별도 타이머나
+    스케줄러 없이 "10분만 유지"가 성립한다.
+    """
+    result = execute_supabase_with_retry(
+        lambda: (
+            supabase.table(OCCUPANCY_PREDICTIONS_TABLE)
+            .select("*")
+            .eq("place_id", place_id)
+            .eq("transition_key", transition_key)
+            .limit(1)
+            .execute()
+        )
+    )
+    if not result.data:
+        raise ValueError("해당 예측 이벤트를 찾을 수 없습니다.")
+
+    row = result.data[0]
+    if row["status"] != "PENDING":
+        raise ValueError("이미 응답한 예측 이벤트입니다.")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    update_payload = {
+        "status": "ACCEPTED" if accept else "DECLINED",
+        "responded_at": now_iso,
+    }
+    if accept:
+        update_payload["override_until"] = row["transition_at"]
+
+    execute_supabase_with_retry(
+        lambda: (
+            supabase.table(OCCUPANCY_PREDICTIONS_TABLE)
+            .update(update_payload)
+            .eq("id", row["id"])
+            .execute()
+        )
+    )
+
+    return {"status": update_payload["status"], "action": row["action"]}
