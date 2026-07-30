@@ -8,7 +8,14 @@
 // 그 장소의 절감량만 집계해서 보여준다(App.jsx의 DashboardHome이 넘겨줌).
 import { useEffect, useState } from "react";
 
-import { getRecommendation, getSavingsSummary } from "../sensors/readingsApi";
+import {
+  getRecommendation,
+  getSavingsSummary,
+  isRetryableReadError,
+} from "../sensors/readingsApi";
+
+const SERVER_WAKING_MESSAGE =
+  "서버를 깨우는 중이에요. 잠시 후 다시 시도해주세요.";
 
 const PERIOD_OPTIONS = [
   { value: "day", label: "오늘" },
@@ -69,7 +76,9 @@ export default function SavingsSummary({ placeId = null }) {
       })
       .catch((err) => {
         if (!isCancelled) {
-          setError(err.message);
+          setError(
+            isRetryableReadError(err) ? SERVER_WAKING_MESSAGE : err.message,
+          );
         }
       })
       .finally(() => {

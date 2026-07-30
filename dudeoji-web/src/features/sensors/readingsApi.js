@@ -33,7 +33,10 @@ function wait(milliseconds, signal) {
   });
 }
 
-function isRetryableReadError(error) {
+// Render 무료 플랜은 15분 미사용 시 서버가 완전히 꺼졌다가 첫 요청에서
+// 콜드스타트(20~50초)한다. SavingsSummary 등에서 이 에러 종류를 구분해
+// "서버를 깨우는 중" 같은 안내 문구를 보여줄 수 있도록 내보낸다.
+export function isRetryableReadError(error) {
   if (error?.name === "AbortError") {
     return false;
   }
@@ -49,7 +52,11 @@ function isRetryableReadError(error) {
   );
 }
 
-async function requestReadWithRetry(endpoint, options = {}, attempts = 3) {
+// attempts=5, 800ms부터 배로 늘어나는 백오프(800/1600/3200/6400ms, 총 약
+// 12초)로 늘렸다 — 기존 3회/250ms 백오프(총 750ms)는 Render 콜드스타트를
+// 버티기엔 너무 짧아서, 서버가 막 깨어나는 도중에 들어온 요청이 재시도를
+// 다 소진하고 "Failed to fetch"로 사용자에게 그대로 노출되곤 했다.
+async function requestReadWithRetry(endpoint, options = {}, attempts = 5) {
   let lastError;
 
   for (let index = 0; index < attempts; index += 1) {
@@ -60,7 +67,7 @@ async function requestReadWithRetry(endpoint, options = {}, attempts = 3) {
       if (!isRetryableReadError(error) || index === attempts - 1) {
         throw error;
       }
-      await wait(250 * 2 ** index, options.signal);
+      await wait(800 * 2 ** index, options.signal);
     }
   }
 
