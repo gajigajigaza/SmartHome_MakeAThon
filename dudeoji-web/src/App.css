@@ -602,6 +602,25 @@ body {
   font-weight: 800;
 }
 
+/* jh 수정함 - 재실감지(카메라) 상태 배지. 기본은 초록(감지 정보 있음),
+   카메라가 오래 안 돌아서 기록이 낡았을 때(is-stale)만 회색으로 낮춘다. */
+.environment-occupancy-status {
+  display: inline-flex;
+  align-items: center;
+  margin: 8px 0 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(223, 245, 232, 0.9);
+  color: #1f7a4d;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.environment-occupancy-status.is-stale {
+  background: rgba(233, 233, 233, 0.9);
+  color: #6b6b6b;
+}
+
 /* jh 수정함 - 개발/데모용 "테스트 모드" 토글 + "가짜 데이터 받기" 버튼.
    제목과 같은 줄에 줄바꿈 없이 들어가도록 최대한 컴팩트하게 조정. */
 .environment-test-mode {
