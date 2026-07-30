@@ -27,6 +27,7 @@ import LocationSwitcher from "./features/location/LocationSwitcher";
 // HeaderQuickControls는 그대로 유지 — 같은 컴포넌트를 두 곳에서 각자
 // 독립적으로 마운트하는 것뿐이라 상태 충돌은 없다.
 import HeaderQuickControls from "./features/dashboard/HeaderQuickControls";
+import OccupancyPredictionPopup from "./features/dashboard/OccupancyPredictionPopup";
 // jh 수정함 - LocationSwitcher/EnvironmentCard가 각자 useSelectedLocation()을
 // 따로 호출해서 서로 다른 위치를 가리키던 문제를 고치려고 Context를 추가했다.
 import {
@@ -572,6 +573,12 @@ function DashboardHome({
         placeId={selectedPlaceId}
       />
       */}
+
+      <OccupancyPredictionPopup
+        placeId={selectedPlaceId}
+        isPaused={isTutorialOpen}
+        setIsPopupActive={setIsPopupActive}
+      />
     </div>
   );
 }
