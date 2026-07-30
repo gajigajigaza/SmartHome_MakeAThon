@@ -33,6 +33,7 @@ def make_settings(*, stale_after: float = 30.0) -> Settings:
         demo_fallback_bme=False,
         demo_temperature=25.0,
         demo_humidity=50.0,
+        api_base_url="https://example.test",
         sense_ble_name="DUDEOJI-SENSE",
         control_ble_name="DUDEOJI-CONTROL",
         state_stale_after=stale_after,
@@ -133,6 +134,46 @@ class DualBleGatewayTests(unittest.IsolatedAsyncioTestCase):
             control_client.writes[0][1].decode("utf-8")
         )
         self.assertEqual(payload["command_id"], "command-1")
+
+    async def test_camera_chunks_reassemble_into_full_frame(self) -> None:
+        self.gateway._on_camera_chunk_notification(
+            None, bytes([3, 0x00, 0x00, 0]) + b"ABC"
+        )
+        self.gateway._on_camera_chunk_notification(
+            None, bytes([3, 0x00, 0x01, 1]) + b"DEF"
+        )
+
+        frame = self.gateway.camera_frame_queue.get_nowait()
+        self.assertEqual(frame, b"ABCDEF")
+
+    async def test_camera_new_frame_id_resets_buffer(self) -> None:
+        self.gateway._on_camera_chunk_notification(
+            None, bytes([1, 0, 0, 0]) + b"stale"
+        )
+        self.gateway._on_camera_chunk_notification(
+            None, bytes([2, 0, 0, 1]) + b"fresh"
+        )
+
+        frame = self.gateway.camera_frame_queue.get_nowait()
+        self.assertEqual(frame, b"fresh")
+
+    async def test_camera_queue_full_drops_oldest_frame(self) -> None:
+        def send_frame(frame_id: int, payload: bytes) -> None:
+            self.gateway._on_camera_chunk_notification(
+                None, bytes([frame_id, 0, 0, 1]) + payload
+            )
+
+        send_frame(1, b"first")
+        send_frame(2, b"second")
+        send_frame(3, b"third")
+
+        remaining = []
+        while not self.gateway.camera_frame_queue.empty():
+            remaining.append(
+                self.gateway.camera_frame_queue.get_nowait()
+            )
+
+        self.assertEqual(remaining, [b"second", b"third"])
 
     async def test_dual_scan_requires_exact_advertised_name(self) -> None:
         spec = self.gateway.device_specs[SENSE_DEVICE_ID]
@@ -345,6 +386,7 @@ class GatewaySettingsTests(unittest.IsolatedAsyncioTestCase):
             demo_fallback_bme=False,
             demo_temperature=25.0,
             demo_humidity=50.0,
+            api_base_url="https://example.test",
         )
 
         self.assertFalse(settings.dual_ble_enabled)
@@ -401,6 +443,7 @@ class GatewaySettingsTests(unittest.IsolatedAsyncioTestCase):
             demo_fallback_bme=False,
             demo_temperature=25.0,
             demo_humidity=50.0,
+            api_base_url="https://example.test",
             sense_ble_name="DUDEOJI-SENSE",
         )
         gateway = DudeojiGateway(settings)

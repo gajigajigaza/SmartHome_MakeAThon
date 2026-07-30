@@ -16,12 +16,15 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+import httpx
 import websockets
 from bleak import BleakClient, BleakScanner
 from dotenv import load_dotenv
 
+import occupancy_detector
 from protocol import (
     BLE_DEVICE_NAME,
+    CAMERA_CHARACTERISTIC_UUID,
     CONTROL_BLE_DEVICE_NAME,
     CONTROL_CHARACTERISTIC_UUID,
     CONTROL_DEVICE_ID,
@@ -34,6 +37,7 @@ from protocol import (
     combined_sensor_to_server,
     control_ble_to_state,
     control_state_to_device_state,
+    decode_camera_chunk,
     decode_json_message,
     environment_ble_to_server,
     environment_ble_to_state,
@@ -74,6 +78,7 @@ class Settings:
     demo_fallback_bme: bool
     demo_temperature: float
     demo_humidity: float
+    api_base_url: str
     sense_ble_name: str | None = None
     control_ble_name: str | None = None
     state_stale_after: float = 30.0
@@ -178,6 +183,23 @@ class Settings:
                 "DUDEOJI_DEMO_HUMIDITY는 0~100 범위여야 합니다."
             )
 
+        api_base_url_override = os.getenv("DUDEOJI_API_BASE_URL", "").strip()
+        if api_base_url_override:
+            api_base_url = api_base_url_override.rstrip("/")
+        else:
+            # 재실감지 REST 호출(POST /api/occupancy/logs)은 기존
+            # WebSocket과 같은 Render 백엔드를 향하므로, 별도 필수 env 없이
+            # wss://.../ws/sensors -> https://호스트 로 유도한다.
+            ws_parts = urlsplit(websocket_url)
+            http_scheme = "https" if ws_parts.scheme == "wss" else "http"
+            api_base_url = urlunsplit(
+                (http_scheme, ws_parts.netloc, "", "", "")
+            )
+        if not api_base_url.startswith(("http://", "https://")):
+            raise RuntimeError(
+                "DUDEOJI_API_BASE_URL은 http:// 또는 https://여야 합니다."
+            )
+
         return cls(
             websocket_url=websocket_url,
             place_id=place_id,
@@ -187,6 +209,7 @@ class Settings:
             demo_fallback_bme=demo_fallback_bme,
             demo_temperature=demo_temperature,
             demo_humidity=demo_humidity,
+            api_base_url=api_base_url,
             sense_ble_name=sense_ble_name,
             control_ble_name=control_ble_name,
             state_stale_after=state_stale_after,
@@ -329,6 +352,14 @@ class DudeojiGateway:
         self._device_state_unsupported_logged = False
         self._demo_fallback_logged = False
         self._ble_scan_lock = asyncio.Lock()
+        # 카메라 프레임 재조립 상태 — Sense 보드는 한 번에 한 프레임만
+        # 전송하므로 device_id별이 아닌 단일 버퍼로 충분하다.
+        self.camera_frame_queue: asyncio.Queue[bytes] = asyncio.Queue(
+            maxsize=2,
+        )
+        self._camera_frame_id: int | None = None
+        self._camera_buffer = bytearray()
+        self._http_client: httpx.AsyncClient | None = None
 
     async def run(self) -> None:
         self.event_loop = asyncio.get_running_loop()
@@ -388,6 +419,13 @@ class DudeojiGateway:
                 name="websocket-loop",
             ),
         ]
+        if self.settings.dual_ble_enabled or self.settings.sense_only_enabled:
+            tasks.append(
+                asyncio.create_task(
+                    self._run_occupancy_forever(),
+                    name="occupancy-loop",
+                )
+            )
 
         await self.stop_event.wait()
         LOGGER.info("종료 요청을 처리합니다.")
@@ -405,6 +443,8 @@ class DudeojiGateway:
             *(client.disconnect() for client in clients),
             return_exceptions=True,
         )
+        if self._http_client is not None:
+            await self._http_client.aclose()
 
     def _install_signal_handlers(self) -> None:
         loop = asyncio.get_running_loop()
@@ -708,6 +748,46 @@ class DudeojiGateway:
         else:
             self._emit_single_state_message(device_id)
 
+    def _on_camera_chunk_notification(
+        self,
+        _: Any,
+        data: bytearray,
+    ) -> None:
+        try:
+            chunk = decode_camera_chunk(data)
+        except ProtocolError as error:
+            LOGGER.warning("카메라 청크 무시: %s", error)
+            return
+
+        frame_id = chunk["frame_id"]
+        if frame_id != self._camera_frame_id:
+            self._camera_frame_id = frame_id
+            self._camera_buffer = bytearray()
+
+        self._camera_buffer.extend(chunk["payload"])
+
+        if not chunk["is_last"]:
+            return
+
+        frame_bytes = bytes(self._camera_buffer)
+        self._camera_buffer = bytearray()
+        LOGGER.info(
+            "카메라 프레임 수신 완료: frame_id=%s bytes=%d",
+            frame_id,
+            len(frame_bytes),
+        )
+
+        try:
+            self.camera_frame_queue.put_nowait(frame_bytes)
+        except asyncio.QueueFull:
+            # 추론이 캡처 속도를 못 따라가면 오래된 프레임을 버리고
+            # 최신 프레임으로 교체한다 — 재실감지는 최신성이 더 중요하다.
+            try:
+                self.camera_frame_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            self.camera_frame_queue.put_nowait(frame_bytes)
+
     def _on_result_notification(
         self,
         device_id: str,
@@ -862,6 +942,12 @@ class DudeojiGateway:
                         data,
                     )
 
+                def camera_notification(
+                    sender: Any,
+                    data: bytearray,
+                ) -> None:
+                    self._on_camera_chunk_notification(sender, data)
+
                 async with BleakClient(
                     device,
                     disconnected_callback=disconnected,
@@ -876,6 +962,21 @@ class DudeojiGateway:
                             RESULT_CHARACTERISTIC_UUID,
                             result_notification,
                         )
+                    if spec.role == "sense":
+                        try:
+                            await client.start_notify(
+                                CAMERA_CHARACTERISTIC_UUID,
+                                camera_notification,
+                            )
+                        except Exception as error:
+                            # 펌웨어가 아직 카메라 characteristic을 갖기 전
+                            # (배포 순서가 안 맞는 경우)이어도 환경/재실
+                            # 텔레메트리는 그대로 동작해야 한다.
+                            LOGGER.warning(
+                                "카메라 characteristic 구독 실패(구버전 "
+                                "펌웨어일 수 있음): %s",
+                                error,
+                            )
 
                     self.ble_ready[spec.device_id].set()
                     self._set_device_connected(spec, True)
@@ -907,6 +1008,66 @@ class DudeojiGateway:
 
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, 15.0)
+
+    def _get_http_client(self) -> httpx.AsyncClient:
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient(
+                base_url=self.settings.api_base_url,
+                timeout=10.0,
+            )
+        return self._http_client
+
+    async def _post_occupancy_log(
+        self,
+        person_detected: bool,
+        confidence: float | None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "place_id": self.settings.place_id,
+            "person_detected": person_detected,
+        }
+        if confidence is not None:
+            payload["confidence"] = confidence
+
+        try:
+            response = await self._get_http_client().post(
+                "/api/occupancy/logs",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {self.settings.auth_token}",
+                },
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            LOGGER.warning("재실감지 POST 실패: %s", error)
+            return
+
+        LOGGER.info(
+            "재실감지 POST 완료: person_detected=%s confidence=%s",
+            person_detected,
+            confidence,
+        )
+
+    async def _process_camera_frame(self, frame_bytes: bytes) -> None:
+        loop = asyncio.get_running_loop()
+        person_detected, confidence = await loop.run_in_executor(
+            None,
+            occupancy_detector.detect,
+            frame_bytes,
+        )
+        await self._post_occupancy_log(person_detected, confidence)
+
+    async def _run_occupancy_forever(self) -> None:
+        while not self.stop_event.is_set():
+            frame_bytes = await self.camera_frame_queue.get()
+            try:
+                await self._process_camera_frame(frame_bytes)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # 한 프레임의 추론/전송 실패가 다음 프레임 처리를 막으면
+                # 안 된다 — 카메라는 계속 새 프레임을 보내고 있다.
+                LOGGER.exception("재실 감지 처리 실패, 다음 프레임으로 계속")
 
     async def _put_command_result(
         self,

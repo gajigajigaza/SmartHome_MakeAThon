@@ -14,6 +14,7 @@ from protocol import (  # noqa: E402
     combined_sensor_to_server,
     control_ble_to_state,
     control_state_to_device_state,
+    decode_camera_chunk,
     decode_json_message,
     environment_ble_to_state,
     result_ble_to_server,
@@ -257,6 +258,30 @@ class ProtocolTests(unittest.TestCase):
     def test_decode_rejects_non_object(self) -> None:
         with self.assertRaises(ProtocolError):
             decode_json_message(b"[]")
+
+    def test_decode_camera_chunk_middle(self) -> None:
+        raw = bytes([7, 0x01, 0x2C, 0]) + b"jpegbytes"
+        result = decode_camera_chunk(raw)
+
+        self.assertEqual(result["frame_id"], 7)
+        self.assertEqual(result["chunk_index"], 0x012C)
+        self.assertIs(result["is_last"], False)
+        self.assertEqual(result["payload"], b"jpegbytes")
+
+    def test_decode_camera_chunk_last(self) -> None:
+        raw = bytes([7, 0x00, 0x00, 1]) + b"end"
+        result = decode_camera_chunk(raw)
+
+        self.assertIs(result["is_last"], True)
+        self.assertEqual(result["payload"], b"end")
+
+    def test_decode_camera_chunk_rejects_short_header(self) -> None:
+        with self.assertRaises(ProtocolError):
+            decode_camera_chunk(bytes([1, 0, 0]))
+
+    def test_decode_camera_chunk_rejects_bad_is_last(self) -> None:
+        with self.assertRaises(ProtocolError):
+            decode_camera_chunk(bytes([1, 0, 0, 2]) + b"x")
 
 
 if __name__ == "__main__":

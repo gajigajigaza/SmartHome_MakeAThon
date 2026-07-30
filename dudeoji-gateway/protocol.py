@@ -17,6 +17,12 @@ SERVICE_UUID = "7d2ea28a-f7bd-485a-bd9d-92ad6ecfe93e"
 SENSOR_CHARACTERISTIC_UUID = "7d2ea28b-f7bd-485a-bd9d-92ad6ecfe93e"
 CONTROL_CHARACTERISTIC_UUID = "7d2ea28c-f7bd-485a-bd9d-92ad6ecfe93e"
 RESULT_CHARACTERISTIC_UUID = "7d2ea28d-f7bd-485a-bd9d-92ad6ecfe93e"
+CAMERA_CHARACTERISTIC_UUID = "7d2ea28e-f7bd-485a-bd9d-92ad6ecfe93e"
+
+# 카메라 프레임 청크 헤더: frame_id(1B) + chunk_index(2B BE) + is_last(1B).
+# BLE MTU 247 협상 시 ATT 페이로드 한도가 244B라 JPEG 프레임 하나를 여러
+# notify()로 쪼개 보내야 하고, 청크마다 이 헤더로 재조립 순서/완료를 표시한다.
+CAMERA_CHUNK_HEADER_SIZE = 4
 
 ALLOWED_ACTIONS = frozenset(
     {
@@ -50,6 +56,29 @@ def decode_json_message(raw: bytes | bytearray | str) -> dict[str, Any]:
         raise ProtocolError("JSON 객체가 필요합니다.")
 
     return value
+
+
+def decode_camera_chunk(data: bytes | bytearray) -> dict[str, Any]:
+    """카메라 프레임 청크 하나를 파싱합니다 (JSON이 아닌 바이너리 프레이밍)."""
+
+    raw = bytes(data)
+    if len(raw) < CAMERA_CHUNK_HEADER_SIZE:
+        raise ProtocolError(
+            f"카메라 청크가 헤더 길이({CAMERA_CHUNK_HEADER_SIZE}B)보다 짧습니다."
+        )
+
+    frame_id = raw[0]
+    chunk_index = (raw[1] << 8) | raw[2]
+    is_last = raw[3]
+    if is_last not in (0, 1):
+        raise ProtocolError("카메라 청크의 is_last 값은 0 또는 1이어야 합니다.")
+
+    return {
+        "frame_id": frame_id,
+        "chunk_index": chunk_index,
+        "is_last": is_last == 1,
+        "payload": raw[CAMERA_CHUNK_HEADER_SIZE:],
+    }
 
 
 def _require_number(
