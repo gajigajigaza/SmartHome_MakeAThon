@@ -24,6 +24,7 @@ from routers.readings_router import (
     compute_prediction_preview,
     get_place_for_user,
 )
+from sensor_realtime_hub import reading_hub
 
 router = APIRouter(prefix="/api", tags=["occupancy"])
 
@@ -67,7 +68,7 @@ def _insert_logs_in_chunks(rows: list[dict]) -> None:
 
 
 @router.post("/occupancy/logs", status_code=status.HTTP_201_CREATED)
-def create_occupancy_log(
+async def create_occupancy_log(
     payload: OccupancyLogCreate,
     current_user: dict = Depends(get_device_or_user),
 ):
@@ -77,6 +78,9 @@ def create_occupancy_log(
     예전에는 사람의 세션 토큰을 그대로 써서, 브라우저에서 로그아웃하면 이
     엔드포인트가 401이 되고 게이트웨이가 죽었다. 사람 세션도 계속 통하므로
     기존 설정은 그대로 동작한다.
+
+    저장 직후 sensor_reading과 같은 WebSocket 연결로 즉시 브로드캐스트한다
+    (EnvironmentCard.jsx의 20초 폴링만으로는 최대 20초 지연이 있었음).
     """
     get_place_for_user(current_user["id"], payload.place_id)
 
@@ -88,7 +92,19 @@ def create_occupancy_log(
     result = execute_supabase_with_retry(
         lambda: supabase.table(OCCUPANCY_LOGS_TABLE).insert(row).execute()
     )
-    return result.data[0]
+    saved = result.data[0]
+
+    await reading_hub.broadcast_occupancy(
+        user_id=current_user["id"],
+        place_id=payload.place_id,
+        data={
+            "person_detected": saved["person_detected"],
+            "confidence": saved.get("confidence"),
+            "detected_at": saved["detected_at"],
+        },
+    )
+
+    return saved
 
 
 @router.get("/occupancy/pattern")

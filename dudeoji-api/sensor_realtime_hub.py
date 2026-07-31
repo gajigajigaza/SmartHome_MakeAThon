@@ -59,6 +59,38 @@ class SensorReadingHub:
         for websocket in disconnected:
             self.disconnect(websocket, user_id, place_id)
 
+    async def broadcast_occupancy(
+        self,
+        *,
+        user_id: int,
+        place_id: int,
+        data: dict[str, Any],
+    ) -> None:
+        """재실 감지 기록 저장 직후 그 장소를 보고 있는 브라우저에 바로 알린다.
+
+        sensor_reading과 같은 (user_id, place_id) 연결 목록을 재사용한다 —
+        게이트웨이가 이미 이 소켓으로 sensor_reading을 보내고 있으므로 새
+        연결/인증 배선이 필요 없다.
+        """
+        key = (int(user_id), int(place_id))
+        connections = list(self._connections.get(key, []))
+        disconnected: list[WebSocket] = []
+
+        message = {
+            "type": "occupancy",
+            "place_id": int(place_id),
+            "data": data,
+        }
+
+        for websocket in connections:
+            try:
+                await websocket.send_json(message)
+            except Exception:
+                disconnected.append(websocket)
+
+        for websocket in disconnected:
+            self.disconnect(websocket, user_id, place_id)
+
     def latest_device_state_message(
         self,
         *,

@@ -16,10 +16,11 @@ import { useLocationContext } from "./LocationContext";
 import LocationSearchPopover from "./LocationSearchPopover";
 import { createOccupancyLog, getLatestOccupancy } from "./occupancyApi";
 
-// jh 수정함 - 재실감지(카메라) 최신 상태를 폴링하는 주기. 실시간 값이 아니라
-// occupancy_service.py의 heartbeat(30초)만큼만 바뀌는 값이라 짧은 폴링은
-// 불필요 — 20초면 충분하고, 이미 부하 이슈가 있는 백엔드에 부담을 덜 준다.
-const OCCUPANCY_POLL_INTERVAL_MS = 20000;
+// jh 수정함 - 재실감지 저장 즉시 WebSocket으로 브로드캐스트되므로(occupancy_router.py
+// POST /occupancy/logs 참고), 이 폴링은 더 이상 주 경로가 아니라 realtime이
+// 끊겼을 때만 쓰는 안전망이다. sensor_reading의 HTTP 폴백(60초, App.jsx)과
+// 같은 주기로 맞췄다.
+const OCCUPANCY_POLL_INTERVAL_MS = 60000;
 // jh 수정함 - 이 시간보다 오래된 기록이면 "카메라가 지금 안 돌고 있다"로
 // 간주한다(occupancy_service.py는 아직 상시 서비스가 아니라 수동 실행 중).
 const OCCUPANCY_STALE_AFTER_MS = 3 * 60 * 1000;
@@ -87,7 +88,8 @@ export default function EnvironmentCard({
   // 바꿔서, LocationSwitcher(헤더 위치 버튼)가 선택한 위치를 그대로 공유한다
   // (따로 호출하면 각자 다른 위치를 가리키는 문제가 있었음 - App.jsx의 LocationProvider 참고).
   const { selectedLocation, setLocationCoordinates } = useLocationContext();
-  const { latestReading: realtimeReading } = useSensorRealtimeContext();
+  const { latestReading: realtimeReading, latestOccupancy: realtimeOccupancy } =
+    useSensorRealtimeContext();
   const realtimeMatchesSelectedPlace =
     realtimeReading &&
     String(realtimeReading.place_id) === String(selectedLocation?.id);
@@ -137,10 +139,21 @@ export default function EnvironmentCard({
   const [isLocationPopoverOpen, setIsLocationPopoverOpen] = useState(false);
 
   // jh 수정함 - 재실감지(카메라 → YOLO26/occupancy_service.py) 최신 상태.
-  // /ws/readings 실시간 브로드캐스트에는 안 태우고(occupancy_router.py 담당
-  // 자체가 별도 API라 실시간 배선까지는 안 함), 대시보드에서 가볍게 폴링만
-  // 한다. selectedLocation이 바뀌면 그 장소 기준으로 다시 조회한다.
+  // POST /occupancy/logs 저장 직후 /ws/readings로 바로 브로드캐스트되므로
+  // (sensor_reading/device_state와 같은 소켓), 아래 realtimeOccupancy effect가
+  // 대부분의 갱신을 즉시 반영한다. 이 폴링은 realtime이 끊겼을 때의 안전망.
   const [occupancyStatus, setOccupancyStatus] = useState(null);
+
+  // jh 추가 - WebSocket으로 새 재실감지 값이 오면 폴링 결과를 기다리지 않고
+  // 바로 반영한다. selectedLocation이 바뀌면 이전 장소의 realtimeOccupancy가
+  // 아직 context에 남아 있을 수 있으니, effect 실행 시점의 selectedLocation과
+  // 무관하게 SensorRealtimeContext가 이미 place_id로 필터링해서 넘겨준 값만
+  // 여기 온다(SensorRealtimeContext.jsx의 message.place_id 비교 참고).
+  useEffect(() => {
+    if (realtimeOccupancy) {
+      setOccupancyStatus(realtimeOccupancy);
+    }
+  }, [realtimeOccupancy]);
 
   // jh 수정함 - 테스트 모드에서 사람 있음/없음을 보낸 직후 20초 폴링을
   // 기다리지 않고 바로 반영하려고 effect 밖으로 뺐다(useCallback으로 감싸서

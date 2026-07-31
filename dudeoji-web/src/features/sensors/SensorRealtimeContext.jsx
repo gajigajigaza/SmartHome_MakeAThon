@@ -41,6 +41,7 @@ function buildReadingsWebSocketUrl(placeId) {
 export function SensorRealtimeProvider({ selectedPlaceId, children }) {
   const [latestReading, setLatestReading] = useState(null);
   const [latestDeviceState, setLatestDeviceState] = useState(null);
+  const [latestOccupancy, setLatestOccupancy] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState("idle");
   const [connectionError, setConnectionError] = useState("");
   // 마지막으로 sensor_reading을 실제로 받은 시각(ms). 화면의 "마지막 측정"
@@ -58,6 +59,7 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
 
     setLatestReading(null);
     setLatestDeviceState(null);
+    setLatestOccupancy(null);
     setLastReadingAt(null);
     setConnectionError("");
 
@@ -156,6 +158,17 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
           setLatestDeviceState(buildRealtimeDeviceState(message));
           setConnectionStatus("connected");
           setConnectionError("");
+          return;
+        }
+
+        if (
+          message?.type === "occupancy" &&
+          String(message.place_id) === String(selectedPlaceId) &&
+          message.data
+        ) {
+          setLatestOccupancy(message.data);
+          setConnectionStatus("connected");
+          setConnectionError("");
         }
       });
 
@@ -229,6 +242,7 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
     () => ({
       latestReading,
       latestDeviceState,
+      latestOccupancy,
       connectionStatus,
       connectionError,
       lastReadingAt,
@@ -242,6 +256,7 @@ export function SensorRealtimeProvider({ selectedPlaceId, children }) {
       isReceivingReadings,
       lastReadingAt,
       latestDeviceState,
+      latestOccupancy,
       latestReading,
     ],
   );
