@@ -177,6 +177,19 @@ export async function updatePlaceLocation(placeId, lat, lon) {
   });
 }
 
+// 장소별 "덥다" 판단 기준 온도(places.target_indoor_hot_temperature)를 저장한다.
+// updatePlaceLocation과 같은 PATCH /places/{place_id}를 재사용한다
+// (places_router.py의 PlaceLocationUpdate가 선택 필드로 같이 받는다).
+export async function updatePlaceComfortTemperature(placeId, targetIndoorHotTemperature) {
+  return request(`/api/places/${placeId}`, {
+    method: 'PATCH',
+    auth: true,
+    body: JSON.stringify({
+      target_indoor_hot_temperature: targetIndoorHotTemperature,
+    }),
+  });
+}
+
 // jh 수정함 - MyPage.jsx의 "변경" 모달(이름+위치를 한 폼에서 같이 편집)이 바뀐
 // 필드만(이름만/위치만/둘 다) 한 번에 저장할 때 쓴다. updatePlaceLocation과
 // 같은 PATCH /places/{place_id}를 쓰지만, payload에 넣은 필드만 보낸다

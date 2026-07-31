@@ -483,7 +483,20 @@ export default function SensorReadings({
     refreshSeconds,
     syncStatus,
   });
-  const alerts = buildAlerts(latest, connectionState, logicThresholds);
+  // 장소별로 설정한 더위 기준 온도(target_indoor_hot_temperature)가 있으면
+  // 전역 로직 기준(logicThresholds.indoor_hot)을 덮어써서 차트/알림이
+  // 실제 추천 로직과 항상 같은 기준을 보여주게 한다.
+  const effectiveThresholds = useMemo(() => {
+    if (selectedLocation?.target_indoor_hot_temperature == null) {
+      return logicThresholds;
+    }
+
+    return {
+      ...logicThresholds,
+      indoor_hot: selectedLocation.target_indoor_hot_temperature,
+    };
+  }, [logicThresholds, selectedLocation]);
+  const alerts = buildAlerts(latest, connectionState, effectiveThresholds);
 
   return (
     <div className="mypage-screen sensor-page-shell">
@@ -641,7 +654,7 @@ export default function SensorReadings({
                   placeName={selectedLocation.name}
                   latest={latest}
                   outdoorLatest={outdoorLatest}
-                  logicThresholds={logicThresholds}
+                  logicThresholds={effectiveThresholds}
                   selectedPlaceId={selectedPlaceId}
                 />
 
@@ -650,7 +663,7 @@ export default function SensorReadings({
                   onRangeKeyChange={setRangeKey}
                   displayedReadings={displayedReadings}
                   activeRange={activeRange}
-                  logicThresholds={logicThresholds}
+                  logicThresholds={effectiveThresholds}
                   placeName={selectedLocation.name}
                 />
 

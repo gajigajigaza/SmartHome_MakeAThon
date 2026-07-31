@@ -208,6 +208,7 @@ def calculate_recommendation(
     is_ac_on: Optional[bool] = None,
     ac_run_time_minutes: int = 0,
     occupancy_signal: Optional[dict] = None,
+    indoor_hot_threshold: Optional[float] = None,
 ) -> Recommendation:
     """recommendation_engine의 단일 기준으로 추천 결과를 생성합니다."""
     if (
@@ -236,6 +237,7 @@ def calculate_recommendation(
         ac_run_time_minutes=ac_run_time_minutes,
         target_cooldown_minutes=target_cooldown_minutes,
         occupancy_signal=occupancy_signal,
+        indoor_hot_threshold=indoor_hot_threshold,
     )
 
     savings_obj = None
@@ -991,6 +993,7 @@ async def _save_reading_to_place(
             is_ac_on=actual_ac_state,
             ac_run_time_minutes=ac_run_time_minutes,
             occupancy_signal=occupancy_signal,
+            indoor_hot_threshold=place.get("target_indoor_hot_temperature"),
         )
     except HTTPException as error:
         # calculate_recommendation()도 실외값 불완전 시 503을 던질 수 있음

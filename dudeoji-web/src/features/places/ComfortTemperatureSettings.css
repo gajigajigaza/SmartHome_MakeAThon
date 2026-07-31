@@ -1,0 +1,23 @@
+/* AutoControlSettings.css는 필드 2개(방 크기 + 가동 시간)가 위, 취소/저장
+   버튼이 아래 별도 줄인 레이아웃을 가정한다. 이 컴포넌트는 필드가 1개뿐이라
+   그대로 쓰면 입력칸과 버튼 사이에 불필요한 세로 여백이 생긴다 — 입력칸과
+   취소/저장 버튼을 한 줄에 나란히 붙여서 그 여백 자체를 없앤다. 클래스
+   결합 선택자라 AutoControlSettings.css보다 명시도가 높아 뒤에 로드해도
+   안전하게 덮어씀. */
+.comfort-input-row {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.auto-control-fields.comfort-fields {
+  flex: 0 1 220px;
+  margin-top: 0;
+}
+
+.auto-control-actions.comfort-actions {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
