@@ -25,7 +25,7 @@ _model: Any | None = None
 
 
 def _min_confidence() -> float:
-    raw = os.getenv("DUDEOJI_OCCUPANCY_MIN_CONFIDENCE", "0.5")
+    raw = os.getenv("DUDEOJI_OCCUPANCY_MIN_CONFIDENCE", "0.6")
     try:
         value = float(raw)
     except ValueError as error:
@@ -60,7 +60,7 @@ def detect(jpeg_bytes: bytes) -> tuple[bool, float | None]:
     Returns:
         (person_detected, confidence). person 클래스가 전혀 검출되지
         않으면 confidence는 None입니다. 검출된 최고 confidence가 임계값
-        (DUDEOJI_OCCUPANCY_MIN_CONFIDENCE, 기본 0.5) 이상일 때만
+        (DUDEOJI_OCCUPANCY_MIN_CONFIDENCE, 기본 0.6) 이상일 때만
         person_detected=True.
     """
 
