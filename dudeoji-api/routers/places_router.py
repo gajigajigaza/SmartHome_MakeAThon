@@ -67,10 +67,16 @@ class PlaceCreate(BaseModel):
 # jh 수정함 - PATCH /places/{place_id}에서 lat/lon 그리고/또는 name을 갱신할 때 쓰는
 # 스키마. 전부 선택 필드라 이름만, 위치만, 둘 다 보내는 것 다 가능하다
 # (lat/lon은 좌표쌍이라 둘 중 하나만 오면 핸들러에서 400으로 막는다).
+# target_indoor_hot_temperature - 추천 엔진이 "덥다"고 판단하는 실내 온도
+# 기준(기본 26.0). recommendation_engine.LOGIC_THRESHOLDS["indoor_hot"]의
+# 장소별 오버라이드값이라 여기 같이 둔다.
 class PlaceLocationUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=50)
     lat: Optional[float] = None
     lon: Optional[float] = None
+    target_indoor_hot_temperature: Optional[float] = Field(
+        default=None, ge=24.0, le=30.0
+    )
 
 # 류은 수정 0718
 # 마이페이지 카드에서 에어컨 이름만 변경할 때 받는 값입니다.
@@ -279,7 +285,8 @@ def read_my_places(current_user: dict = Depends(get_current_user)):
         # jh 추가 - 웹 앱 없이도 서버가 알아서 기기를 조작하는 두 동의 플래그
         .select(
             "id,name,lat,lon,is_default,target_cooldown_minutes,auto_control_enabled,"
-            "background_condition_control_enabled,background_occupancy_control_enabled,created_at"
+            "background_condition_control_enabled,background_occupancy_control_enabled,"
+            "target_indoor_hot_temperature,created_at"
         )
         .eq("user_id", current_user["id"])
         .order("created_at")
@@ -517,10 +524,15 @@ def update_place_location(
         update_data["lat"] = payload.lat
         update_data["lon"] = payload.lon
 
+    if payload.target_indoor_hot_temperature is not None:
+        update_data["target_indoor_hot_temperature"] = (
+            payload.target_indoor_hot_temperature
+        )
+
     if not update_data:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="수정할 값(name 또는 lat/lon)이 없습니다.",
+            detail="수정할 값(name, lat/lon, target_indoor_hot_temperature 중 하나)이 없습니다.",
         )
 
     update_result = (

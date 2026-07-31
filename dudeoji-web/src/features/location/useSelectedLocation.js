@@ -30,6 +30,10 @@ function mapPlaceToLocation(place) {
     lon: place.lon,
     isDefault: place.is_default || false,
     aircons: place.aircons || [],
+    // savePlaceDetails()가 PATCH 페이로드를 그대로 이 객체에 병합하므로,
+    // 백엔드 필드명(snake_case)을 그대로 써서 병합 후에도 키가 갈라지지
+    // 않게 한다(lat/lon/name과 같은 이유).
+    target_indoor_hot_temperature: place.target_indoor_hot_temperature ?? 26,
   };
 }
 

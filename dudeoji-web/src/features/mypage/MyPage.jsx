@@ -15,6 +15,7 @@ import LocationSearchPopover from "../location/LocationSearchPopover";
 import { buildPlacePayload } from "../location/buildPlacePayload";
 import AirconPage, { createInitialAirconSlots } from "../places/AirconPage";
 import AirconSelectorModal from "../places/AirconSelectorModal";
+import ComfortTemperatureSettings from "../places/ComfortTemperatureSettings";
 // jh 수정함 - 자동제어 UI, 하드웨어 제어 연동 후 활성화 예정(팀 결정,
 // 2026-07-26). 파일은 지우지 않음 — TEAM_STRUCTURE.md 참고.
 // import AutoControlSettings from "../places/AutoControlSettings";
@@ -960,6 +961,14 @@ function MyPage({
                         </div>
                       </div>
                     </div>
+
+                    <ComfortTemperatureSettings
+                      placeId={location.id}
+                      initialTemperature={
+                        location.target_indoor_hot_temperature ?? 26
+                      }
+                      onSaved={() => refreshLocations()}
+                    />
 
                     <div
                       className="mypage-location-aircons"

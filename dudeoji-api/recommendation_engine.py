@@ -115,6 +115,7 @@ def determine_action(
     ac_run_time_minutes: int = 0,
     target_cooldown_minutes: int = 30,
     occupancy_signal: Optional[dict] = None,
+    indoor_hot_threshold: Optional[float] = None,
 ):
     """_determine_action_core()의 결과에 통일된 title을 덮어써서 반환한다.
 
@@ -137,6 +138,7 @@ def determine_action(
         ac_run_time_minutes=ac_run_time_minutes,
         target_cooldown_minutes=target_cooldown_minutes,
         occupancy_signal=occupancy_signal,
+        indoor_hot_threshold=indoor_hot_threshold,
     )
     result["title"] = _resolve_title(
         result["action"],
@@ -160,6 +162,7 @@ def _determine_action_core(
     ac_run_time_minutes: int = 0,
     target_cooldown_minutes: int = 30,
     occupancy_signal: Optional[dict] = None,
+    indoor_hot_threshold: Optional[float] = None,
 ):
     """현재 환경을 기준으로 추천 동작을 반환합니다.
 
@@ -173,8 +176,19 @@ def _determine_action_core(
     {"present": bool, "source": "LIVE"|"PATTERN"} 또는 None(재실 신호 없음/
     콜드스타트). "present": False일 때만 의미가 있으며, "present": True는
     현재 로직에서 별도 분기가 없습니다(기존 엔진이 이미 재실을 기본 가정).
+
+    indoor_hot_threshold는 장소별로 사용자가 설정한 "덥다"는 기준 온도
+    (places.target_indoor_hot_temperature)입니다. None이면(장소별 값이
+    없거나 이 함수를 threshold 없이 직접 호출하는 경우) LOGIC_THRESHOLDS
+    ["indoor_hot"](기본 26.0)로 폴백합니다 — calculate_thi()의 26.0은
+    불쾌지수 공식 자체의 상수라 이 값과 무관하며 바뀌지 않습니다.
     """
     thresholds = LOGIC_THRESHOLDS
+    hot_threshold = (
+        indoor_hot_threshold
+        if indoor_hot_threshold is not None
+        else thresholds["indoor_hot"]
+    )
     thi = calculate_thi(indoor_temp, indoor_humidity)
     is_auto = current_mode == "AUTO"
     window_state_known = window_is_open is not None
@@ -230,7 +244,7 @@ def _determine_action_core(
     # 공식이 이름만 바꿔(wind_is_helpful/wind_is_helpful_now,
     # outdoor_temp < indoor_temp/outdoor_cooler_now) 3곳에 흩어져 있어서,
     # 기준을 바꿀 때 한 곳만 고치면 나머지가 어긋날 위험이 있었다.
-    is_hot = indoor_temp >= thresholds["indoor_hot"] or thi >= thresholds["thi_high"]
+    is_hot = indoor_temp >= hot_threshold or thi >= thresholds["thi_high"]
     humidity_high = indoor_humidity >= thresholds["indoor_humidity_high"]
     wind_is_helpful = (
         wind_speed >= thresholds["wind_ventilation"]
