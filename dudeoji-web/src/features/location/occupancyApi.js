@@ -9,6 +9,21 @@ export async function getLatestOccupancy(placeId) {
   });
 }
 
+// jh 수정함 - 테스트 모드에서 "사람 있음/없음"을 재현하기 위해 occupancy_router.py의
+// POST /api/occupancy/logs를 그대로 호출한다. 원래 카메라/센서 보드가 감지할 때마다
+// 부르는 엔드포인트라, 진짜 재실 기록으로 남아서 추천 엔진(occupancy_present)에도
+// 실제로 반영된다 — 화면 아이콘만 바뀌는 가짜 표시가 아니다.
+export async function createOccupancyLog(placeId, personDetected) {
+  return request("/api/occupancy/logs", {
+    method: "POST",
+    auth: true,
+    body: JSON.stringify({
+      place_id: placeId,
+      person_detected: personDetected,
+    }),
+  });
+}
+
 // 재실 패턴 예측(도착/퇴근 전 사전조치) API — occupancy_router.py의
 // /api/occupancy/prediction* 엔드포인트에 대응.
 export async function getOccupancyPrediction(placeId, options = {}) {

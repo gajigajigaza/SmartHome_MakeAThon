@@ -7,14 +7,14 @@
 // 보여주는 실외값이 서로 다른 시점의 값이라 어긋날 수 있었다. 같은
 // reading 하나에서 실내·실외를 함께 읽도록 통일했다(중복 요청도 제거).
 // GET /api/weather 자체는 다른 용도로 쓸 수 있어 백엔드에는 그대로 둔다.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { HOME_PLACE_ID } from "../sensors/deviceState";
 import { createMockReading } from "../sensors/readingsApi";
 import { useSensorRealtimeContext } from "../sensors/SensorRealtimeContext";
 import { useLocationContext } from "./LocationContext";
 import LocationSearchPopover from "./LocationSearchPopover";
-import { getLatestOccupancy } from "./occupancyApi";
+import { createOccupancyLog, getLatestOccupancy } from "./occupancyApi";
 
 // jh 수정함 - 재실감지(카메라) 최신 상태를 폴링하는 주기. 실시간 값이 아니라
 // occupancy_service.py의 heartbeat(30초)만큼만 바뀌는 값이라 짧은 폴링은
@@ -49,6 +49,15 @@ const AC_STATE_OPTIONS = [
   { value: "on", label: "켜짐" },
   { value: "off", label: "꺼짐" },
   { value: "unknown", label: "미연결" },
+];
+
+// jh 수정함 - 테스트 모드에서 재실감지(사람 있음/없음)도 재현할 수 있게 추가.
+// "모름"을 고르면 occupancy 기록을 아예 안 보내서(카메라 미연결 상태 재현)
+// 기존 재실감지 상태를 그대로 둔다.
+const PERSON_STATE_OPTIONS = [
+  { value: "present", label: "있음" },
+  { value: "absent", label: "없음" },
+  { value: "unknown", label: "모름" },
 ];
 
 export function TemperatureValue({ value }) {
@@ -133,6 +142,18 @@ export default function EnvironmentCard({
   // 한다. selectedLocation이 바뀌면 그 장소 기준으로 다시 조회한다.
   const [occupancyStatus, setOccupancyStatus] = useState(null);
 
+  // jh 수정함 - 테스트 모드에서 사람 있음/없음을 보낸 직후 20초 폴링을
+  // 기다리지 않고 바로 반영하려고 effect 밖으로 뺐다(useCallback으로 감싸서
+  // effect의 의존성 배열에 안전하게 넣는다).
+  const refreshOccupancy = useCallback(async (placeId) => {
+    try {
+      const result = await getLatestOccupancy(placeId);
+      setOccupancyStatus(result);
+    } catch {
+      setOccupancyStatus(null);
+    }
+  }, []);
+
   useEffect(() => {
     const placeId = selectedLocation?.id;
     if (!placeId) {
@@ -140,32 +161,16 @@ export default function EnvironmentCard({
       return undefined;
     }
 
-    let isCancelled = false;
-
-    async function refreshOccupancy() {
-      try {
-        const result = await getLatestOccupancy(placeId);
-        if (!isCancelled) {
-          setOccupancyStatus(result);
-        }
-      } catch {
-        if (!isCancelled) {
-          setOccupancyStatus(null);
-        }
-      }
-    }
-
-    refreshOccupancy();
+    refreshOccupancy(placeId);
     const intervalId = window.setInterval(
-      refreshOccupancy,
+      () => refreshOccupancy(placeId),
       OCCUPANCY_POLL_INTERVAL_MS,
     );
 
     return () => {
-      isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [selectedLocation?.id]);
+  }, [selectedLocation?.id, refreshOccupancy]);
 
   const occupancyDetectedAt = occupancyStatus?.detected_at
     ? new Date(occupancyStatus.detected_at)
@@ -173,12 +178,9 @@ export default function EnvironmentCard({
   const isOccupancyFresh =
     occupancyDetectedAt != null &&
     Date.now() - occupancyDetectedAt.getTime() < OCCUPANCY_STALE_AFTER_MS;
-  const occupancyStatusText = !occupancyDetectedAt
-    ? null
-    : isOccupancyFresh
-      ? occupancyStatus.person_detected
-        ? "재실감지: 있음 🧍"
-        : null
+  const occupancyStatusText =
+    !occupancyDetectedAt || isOccupancyFresh
+      ? null
       : "재실감지: 카메라 연결 끊김 (오래된 기록)";
   // jh 수정함 - 실내 카드 아이콘을 재실감지 결과에 맞춰 바꾼다. 센서 미연결/
   // 오래된 기록 등 판단 불가한 경우는 모두 "감지됨" 아이콘으로 둔다(사용자 결정).
@@ -199,6 +201,7 @@ export default function EnvironmentCard({
   const [mockIndoorHumidity, setMockIndoorHumidity] = useState("60");
   const [mockWindowState, setMockWindowState] = useState("unknown");
   const [mockAcState, setMockAcState] = useState("unknown");
+  const [mockPersonState, setMockPersonState] = useState("unknown");
   // jh 수정함 - "실외 직접 입력(시연용)". 비워두면(빈 문자열) 저장 경로가
   // 실제 날씨 API 값을 그대로 쓴다 — 기본값이 빈 문자열인 이유.
   const [mockOutdoorTemperature, setMockOutdoorTemperature] = useState("");
@@ -246,6 +249,15 @@ export default function EnvironmentCard({
         outdoorTemperature,
         outdoorHumidity,
       });
+
+      if (mockPersonState !== "unknown" && selectedLocation?.id) {
+        await createOccupancyLog(
+          selectedLocation.id,
+          mockPersonState === "present",
+        );
+        await refreshOccupancy(selectedLocation.id);
+      }
+
       await onMockReadingCreated?.();
     } catch (error) {
       setMockReadingError(error.message);
@@ -337,6 +349,24 @@ export default function EnvironmentCard({
                       mockAcState === option.value ? "is-active" : ""
                     }`}
                     onClick={() => setMockAcState(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="environment-mock-tristate">
+              <span>사람</span>
+              <div className="environment-mock-tristate-options">
+                {PERSON_STATE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`environment-mock-tristate-button ${
+                      mockPersonState === option.value ? "is-active" : ""
+                    }`}
+                    onClick={() => setMockPersonState(option.value)}
                   >
                     {option.label}
                   </button>
